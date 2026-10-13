@@ -616,3 +616,13 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .lw-name { font-weight: 600; }
 .lw-price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lw-row .icon { color: var(--label-3); }
+
+/* ---------- Cruzá y volá ---------- */
+.cross { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.cross-head { display: flex; gap: 12px; align-items: flex-start; }
+.cross-head > .icon { color: var(--brand-ink); margin-top: 2px; }
+.cross-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cross-list li { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--separator); }
+.cross-list p { margin: 2px 0 4px; }
+.cross-price { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.cross-price .price { font-size: 20px; }

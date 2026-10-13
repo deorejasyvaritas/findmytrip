@@ -6,7 +6,7 @@ Ordenadas por impacto para el viajero. Las marcadas con (gratis) no suman costos
 1. **Alertas de precio reales** (gratis): un cron de Cloudflare revisa a diario los destinos seguidos y avisa por mail (Resend/MailChannels, plan gratis) o Telegram cuando bajan del objetivo.
 2. **Radar de ofertas** (gratis): barrido programado (por ejemplo 4-5 veces por día) de rutas desde tu ciudad con Travelpayouts, comparando contra la mediana de los últimos 30 días para marcar "precio muy bajo" o "posible error de tarifa".
 3. **Historial de precios por ruta** (gratis): guardar cada precio visto en KV/D1 para mostrar "hoy está 18 % más barato que lo habitual".
-4. **Aeropuertos cercanos**: buscar también desde Aeroparque/Ezeiza/Rosario/Montevideo y avisar si conviene salir de otro lado.
+4. **Aeropuertos cercanos** (hecho, "Cruzá y volá"): comparar con salir desde Montevideo, Santiago o San Pablo sumando el cruce.
 5. **Vuelos directos o con escalas**, horarios preferidos y aerolíneas a evitar.
 6. **Impuestos argentinos**: mostrar el precio en pesos con dólar tarjeta y percepciones, y comparar con pagar en dólares.
 7. **Multi-destino** ("Lisboa + Madrid en 12 días") y tramos con tren o bus.

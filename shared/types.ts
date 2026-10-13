@@ -405,3 +405,26 @@ export interface EscapeWeekend {
   reason: string;
   options: Escape[];
 }
+
+// ---------------------------------------------------------------------------
+// Cruzá y volá: salir desde otra ciudad
+// ---------------------------------------------------------------------------
+
+export interface CrossOption {
+  origin: string; // código de la ciudad desde la que se vuela
+  name: string;
+  /** Cómo se llega (ferry, bus, vuelo). */
+  crossing: string;
+  crossingUSD: number; // ida y vuelta por persona
+  crossingSource: "aviasales" | "estimado";
+  flightUSD: number; // vuelo desde esa ciudad, ida y vuelta por persona
+  totalUSD: number;
+  /** Cuánto se ahorra por persona contra salir desde tu ciudad (null si no hay precio base). */
+  savingUSD: number | null;
+}
+
+export interface CrossResult {
+  /** Mejor precio del mes saliendo desde tu ciudad, por persona. */
+  baseUSD: number | null;
+  options: CrossOption[];
+}

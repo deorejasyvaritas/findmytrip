@@ -46,6 +46,7 @@ import { usdArsRate } from "./providers/fx.ts";
 import { googleHotels } from "./providers/hotels.ts";
 import { xoteloHotels } from "./providers/xotelo.ts";
 import { escapes } from "./escapes.ts";
+import { crossAndFly } from "./cross.ts";
 import { buildPackage } from "./packages.ts";
 
 // API de FindMyTrip. Corre como Cloudflare Worker (gratis); el frontend se
@@ -398,6 +399,14 @@ app.get("/radar", async (c) => {
   const snap = await getRadar(env(c).TRAVELPAYOUTS_TOKEN, origin);
   if (!snap) return c.json({ error: "El radar necesita TRAVELPAYOUTS_TOKEN para funcionar." }, 503);
   return c.json(snap);
+});
+
+// Cruzá y volá: comparar con salir desde Montevideo, Santiago o San Pablo.
+app.get("/cross", async (c) => {
+  const q = z.object({ origin: originCode, dest: z.string(), month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(c.req.query());
+  const dest = getDestination(q.dest);
+  if (!dest) return c.json(notFound, 404);
+  return c.json(await crossAndFly(env(c).TRAVELPAYOUTS_TOKEN, q.origin, dest, q.month));
 });
 
 // Escapadas para los próximos fines de semana largos.

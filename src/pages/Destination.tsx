@@ -31,6 +31,7 @@ import { useApp } from "../lib/app-context.tsx";
 import { STYLE_LABEL, capitalize, formatDate, formatRange, monthName, monthShort } from "../lib/format.ts";
 import { INTEREST_ICON } from "../lib/icons.ts";
 import Icon from "../components/Icon.tsx";
+import CrossAndFly from "../components/CrossAndFly.tsx";
 
 const WEEKDAYS = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
 const STYLES: Style[] = ["low", "mid", "high"];
@@ -572,6 +573,8 @@ export default function DestinationPage() {
             )}
           </section>
         )}
+
+        {month && <CrossAndFly destId={dest.id} iata={dest.iata} month={month} day={day} travelers={travelers} />}
 
         {day && (
           <section>
