@@ -19,8 +19,9 @@ describe("feriados y fines de semana largos", () => {
   it("encuentra los próximos fines de semana largos", () => {
     const lw = longWeekends("2026-10-13", 4);
     expect(lw[0]).toMatchObject({ from: "2026-11-21", to: "2026-11-23", days: 3 });
-    expect(lw[1]).toMatchObject({ from: "2026-12-25", to: "2026-12-27", days: 3, reason: "Navidad" });
-    expect(lw[2]).toMatchObject({ from: "2027-01-01", to: "2027-01-03" });
-    expect(lw[3]).toMatchObject({ from: "2027-02-06", to: "2027-02-09", days: 4, reason: "Carnaval" });
+    // 7 de diciembre de 2026: puente turístico, se une al 8 (Inmaculada Concepción).
+    expect(lw[1]).toMatchObject({ from: "2026-12-05", to: "2026-12-08", days: 4 });
+    expect(lw[2]).toMatchObject({ from: "2026-12-25", to: "2026-12-27", days: 3, reason: "Navidad" });
+    expect(lw[3]).toMatchObject({ from: "2027-01-01", to: "2027-01-03" });
   });
 });

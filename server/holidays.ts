@@ -40,7 +40,9 @@ function movable(date: string): string {
 }
 
 /** Puentes turísticos por decreto (agregar cuando se publiquen). */
-export const PUENTES: Record<string, string> = {};
+export const PUENTES: Record<string, string> = {
+  "2026-12-07": "Puente turístico",
+};
 
 export function holidays(y: number): Record<string, string> {
   const e = easter(y);

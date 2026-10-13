@@ -217,6 +217,10 @@ export function LegalFooter() {
     <footer className="legal-footer">
       <p>{DISCLAIMER}</p>
       <p>Algunos links son de afiliado: podemos recibir una comisión, sin costo extra para vos.</p>
+      <p>
+        Fotos de destinos: <a href="https://commons.wikimedia.org" target="_blank" rel="noreferrer">Wikimedia Commons</a> y Wikipedia, de
+        sus respectivos autores, bajo licencias Creative Commons (CC BY-SA y otras).
+      </p>
       <nav aria-label="Información legal">
         {LEGAL_LINKS.map((l) => (
           <Link key={l.to} to={l.to}>
