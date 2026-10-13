@@ -56,11 +56,19 @@ describe("explore", () => {
     }
   });
 
-  it("usa precio en vivo cuando se lo pasan", () => {
-    const res = explore({ ...base, month: 11, budgetUSD: 20000 }, (iata: string) => (iata === "RIO" ? 100 : undefined), today);
-    const rio = [...res.suggestions, ...res.alternatives].find((s) => s.destination.id === "rio");
-    expect(rio?.flightSource).toBe("en vivo");
-    expect(rio?.cost.flights).toBe(200);
+  it("usa precios reales de Google y solo en esas fechas", () => {
+    const real = {
+      forDest: (d: { id: string }) =>
+        d.id === "rio"
+          ? [{ month: 11, flightPP: 100, hotelNight: 30, depart: "2026-11-10", ret: "2026-11-17", source: "google" as const }]
+          : [],
+    };
+    const res = explore({ ...base, budgetUSD: 20000 }, real, today);
+    const rio = [...res.suggestions, ...res.alternatives].find((s) => s.destination.id === "rio")!;
+    expect(rio).toMatchObject({ month: 11, flightSource: "google", lodgingSource: "google", depart: "2026-11-10" });
+    expect(rio.cost.flights).toBe(200);
+    // estilo "mid": 30 × (110 / 40) = 83 por noche × 7 noches × 1 habitación
+    expect(rio.cost.lodging).toBe(83 * 7);
   });
 
   it("presupuesto mínimo no devuelve nada", () => {

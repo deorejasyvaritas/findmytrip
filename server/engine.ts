@@ -2,10 +2,12 @@ import type {
   CostBreakdown,
   Destination,
   ExploreRequest,
+  ExtraDestination,
   ExploreResponse,
   FlightCalendar,
   FlightDay,
   MonthPrice,
+  RealPrice,
   StayOption,
   Style,
   Suggestion,
@@ -116,10 +118,16 @@ export function tripCost(
   travelers: number,
   style: Style,
   flightOverride?: number,
+  /** Precio real por noche del hotel más accesible (Google). */
+  hotelNightOverride?: number,
 ): CostBreakdown {
   const flightPP = flightOverride ?? flightEstimate(originCode, dest, month);
   const flights = flightPP * travelers;
-  const lodging = lodgingNightly(dest, style, month) * nights * roomsFor(travelers);
+  // Google da el precio de entrada; para otros estilos escalamos con la relación del catálogo.
+  const nightly = hotelNightOverride
+    ? Math.round(hotelNightOverride * (dest.lodgingUSD[style] / dest.lodgingUSD.low))
+    : lodgingNightly(dest, style, month);
+  const lodging = nightly * nights * roomsFor(travelers);
   const daily = dest.dailyUSD[style] * (nights + 1) * travelers;
   const total = Math.round(flights + lodging + daily);
   return { flights, lodging, daily, total, perPerson: Math.round(total / travelers) };
@@ -137,8 +145,8 @@ export const monthName = (m: number) => MONTHS[m - 1];
 
 export function explore(
   req: ExploreRequest,
-  /** Precio real de vuelo por persona (iata, mes) si está disponible. */
-  liveFlight?: (iata: string, month: number) => number | undefined,
+  /** Precios reales conocidos por destino (Google / Aviasales). */
+  real?: { forDest: (dest: Destination) => RealPrice[]; extra?: ExtraDestination[] },
   today = new Date(),
 ): ExploreResponse {
   const travelers = Math.max(1, req.travelers);
@@ -164,9 +172,18 @@ export function explore(
   const scored: Suggestion[] = [];
   for (const dest of candidates) {
     let best: Suggestion | null = null;
-    for (const { month, year } of months) {
-      const live = liveFlight?.(dest.iata, month);
-      const cost = tripCost(req.origin, dest, month, nights, travelers, req.style, live);
+    // Si hay precios reales para este destino, solo consideramos esos meses.
+    const realKnown = real?.forDest(dest) ?? [];
+    const google = realKnown.filter((p) => p.source === "google");
+    const realList = google.length ? google : realKnown;
+    const options = realList.length
+      ? realList.flatMap((p) => {
+          const m = months.find((x) => x.month === p.month);
+          return m ? [{ ...m, live: p }] : [];
+        })
+      : months.map((m) => ({ ...m, live: undefined as RealPrice | undefined }));
+    for (const { month, year, live } of options) {
+      const cost = tripCost(req.origin, dest, month, nights, travelers, req.style, live?.flightPP, live?.hotelNight);
       const ratio = cost.total / budget;
       if (ratio > 1.15) continue;
 
@@ -205,7 +222,7 @@ export function explore(
         score -= 15;
       }
       if (dest.hiddenGem) score += 5;
-      if (live) reasons.push("Vuelo con precio real");
+      if (live) score += 10; // preferimos lo que tiene precio real comprobado
 
       const fit: Suggestion["fit"] = ratio <= 0.85 ? "dentro" : ratio <= 1 ? "ajustado" : "estirando";
       const isAlternative =
@@ -220,7 +237,12 @@ export function explore(
         fit,
         reasons,
         isAlternative,
-        flightSource: live ? "en vivo" : "estimado",
+        flightSource: live?.source ?? "estimado",
+        lodgingSource: live?.hotelNight ? "google" : "estimado",
+        depart: live?.depart,
+        ret: live?.ret,
+        airline: live?.airline,
+        link: live?.link,
       };
       if (!best || s.score > best.score || (s.score === best.score && s.cost.total < best.cost.total)) {
         best = s;
@@ -239,7 +261,10 @@ export function explore(
   const altIds = new Set(alternatives.map((s) => s.destination.id));
   const suggestions = scored.filter((s) => !altIds.has(s.destination.id)).slice(0, 12);
 
-  return { suggestions, alternatives, considered: candidates.length };
+  const extra = (real?.extra ?? [])
+    .filter((e) => e.flightPP * travelers <= budget)
+    .slice(0, 8);
+  return { suggestions, alternatives, extra, considered: candidates.length };
 }
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

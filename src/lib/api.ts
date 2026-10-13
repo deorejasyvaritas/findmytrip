@@ -37,7 +37,8 @@ export const api = {
     request<ExploreResponse>("/api/explore", { method: "POST", body: JSON.stringify(body) }),
   calendar: (p: { origin: string; dest: string; month: string; nights: number }) =>
     request<FlightCalendar>(`/api/flights/calendar?${qs(p)}`),
-  flightQuote: (p: { origin: string; dest: string; depart: string; nights: number }) =>
+  quota: () => request<{ left: number | null; total: number | null }>("/api/quota"),
+  flightQuote: (p: { origin: string; dest: string; depart: string; ret: string }) =>
     request<FlightQuote>(`/api/flights/quote?${qs(p)}`),
   stays: (p: { dest: string; checkin: string; nights: number; travelers: number; real?: 1 }) =>
     request<{ options: StayOption[]; hotels: RealHotel[]; live: boolean }>(`/api/stays?${qs(p)}`),

@@ -51,13 +51,13 @@ export async function flightCalendar(
   );
   if (!data?.success || !data.data?.length) return estimated;
 
-  // El más barato por día de salida, con una estadía parecida a la pedida (±3 noches).
+  // El más barato por día de salida, para la misma cantidad de noches.
   const byDay = new Map<string, FlightDay>();
   for (const item of data.data) {
     const date = item.departure_at.slice(0, 10);
     const returnDate = item.return_at?.slice(0, 10) ?? addDays(date, nights);
     const stay = (Date.parse(returnDate) - Date.parse(date)) / 86400000;
-    if (Math.abs(stay - nights) > 3) continue;
+    if (stay !== nights) continue; // solo viajes de exactamente las noches pedidas
     const prev = byDay.get(date);
     if (!prev || item.price < prev.priceUSD) {
       byDay.set(date, {
@@ -97,23 +97,6 @@ export async function cheapestAnywhere(token: string, origin: string, month: str
     if (prices.length) out.set(iata, Math.round(Math.min(...prices)));
   }
   return out;
-}
-
-/** Precios reales para varios meses: devuelve un lookup (iata, mes 1-12) → USD. */
-export async function livePriceLookup(
-  token: string | undefined,
-  origin: string,
-  months: { month: number; year: number }[],
-): Promise<((iata: string, month: number) => number | undefined) | undefined> {
-  if (!token) return undefined;
-  const maps = await Promise.all(
-    months.map(async ({ month, year }) => {
-      const key = `${year}-${String(month).padStart(2, "0")}`;
-      return [month, await cheapestAnywhere(token, origin, key)] as const;
-    }),
-  );
-  const byMonth = new Map(maps);
-  return (iata, month) => byMonth.get(month)?.get(iata);
 }
 
 // ---------------------------------------------------------------------------

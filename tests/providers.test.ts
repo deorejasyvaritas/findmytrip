@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDestination } from "../server/data/destinations.ts";
-import { flightCalendar, googleFlights, livePriceLookup } from "../server/providers/flights.ts";
+import { flightCalendar, googleFlights } from "../server/providers/flights.ts";
+import { realPrices } from "../server/providers/explore.ts";
 import { googleHotels } from "../server/providers/hotels.ts";
 import { usdArsRate } from "../server/providers/fx.ts";
 
@@ -42,11 +43,26 @@ describe("Travelpayouts", () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
-  it("lookup de precios por destino y mes", async () => {
-    mockFetch((url) => (url.includes("depart_date=2027-05") ? { success: true, data: { RIO: { "0": { price: 280 }, "1": { price: 250 } } } } : undefined));
-    const lookup = await livePriceLookup("tok", "BUE", [{ month: 5, year: 2027 }]);
-    expect(lookup?.("RIO", 5)).toBe(250);
-    expect(lookup?.("CUN", 5)).toBeUndefined();
+  it("Aviasales completa los destinos que Google no trajo", async () => {
+    mockFetch((url) => {
+      if (url.includes("google_travel_explore"))
+        return {
+          destinations: [
+            { name: "Río de Janeiro", country: "Brasil", destination_airport: { code: "GIG" }, start_date: "2027-05-04", end_date: "2027-05-11", flight_price: 310, hotel_price: 45, airline: "GOL" },
+            { name: "Asunción", country: "Paraguay", destination_airport: { code: "ASU" }, start_date: "2027-05-08", end_date: "2027-05-15", flight_price: "$ 250" },
+            { name: "Lima", destination_airport: { code: "LIM" }, start_date: "2027-07-01", flight_price: 400 }, // otro mes
+          ],
+        };
+      if (url.includes("depart_date=2027-05")) return { success: true, data: { RIO: { "0": { price: 200 } }, CUN: { "0": { price: 700 } } } };
+      return undefined;
+    });
+    const r = await realPrices({ serpapi: "k", travelpayouts: "t" }, "BUE", [{ month: 5, year: 2027 }], 5);
+    expect(r.forDest(getDestination("rio")!)).toEqual([
+      expect.objectContaining({ source: "google", flightPP: 310, hotelNight: 45, depart: "2027-05-04" }),
+    ]);
+    expect(r.forDest(getDestination("cancun")!)).toEqual([{ month: 5, flightPP: 700, source: "aviasales" }]);
+    expect(r.forDest(getDestination("lima")!)).toEqual([]);
+    expect(r.extra.map((e) => [e.name, e.flightPP])).toEqual([["Asunción", 250]]);
   });
 });
 

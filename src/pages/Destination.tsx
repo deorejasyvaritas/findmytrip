@@ -18,15 +18,42 @@ import { useApp } from "../lib/app-context.tsx";
 import { INTEREST_EMOJI, STYLE_LABEL, capitalize, formatDate, monthName, monthShort } from "../lib/format.ts";
 
 const WEEKDAYS = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
+const STYLES: Style[] = ["low", "mid", "high"];
 const monthKey = (m: MonthPrice) => `${m.year}-${String(m.month).padStart(2, "0")}`;
-const LEVEL = { low: "más barato de lo habitual", typical: "precio habitual", high: "más caro de lo habitual" } as Record<string, string>;
+const LEVEL: Record<string, string> = {
+  low: "más barato de lo habitual",
+  typical: "precio habitual",
+  high: "más caro de lo habitual",
+};
 const hours = (min: number | null) => (min ? `${Math.floor(min / 60)} h ${min % 60} min` : "");
+const addDays = (iso: string, n: number) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Elige un hotel real representativo para cada estilo. */
+function pickTiers(hotels: RealHotel[]): Record<Style, RealHotel | undefined> {
+  const good = hotels.filter((h) => (h.rating ?? 0) >= 4);
+  const pool = (good.length >= 3 ? good : hotels).slice().sort((a, b) => a.nightlyUSD - b.nightlyUSD);
+  if (!pool.length) return { low: undefined, mid: undefined, high: undefined };
+  const low = pool[0];
+  const top = pool.slice(Math.floor(pool.length * 0.7));
+  const high = top.reduce((a, b) => ((b.stars ?? 0) * 10 + (b.rating ?? 0) > (a.stars ?? 0) * 10 + (a.rating ?? 0) ? b : a));
+  const median = pool[Math.floor(pool.length / 2)].nightlyUSD;
+  const midPool = pool.filter((h) => h !== low && h !== high);
+  const mid = midPool.length
+    ? midPool.reduce((a, b) => (Math.abs(b.nightlyUSD - median) < Math.abs(a.nightlyUSD - median) ? b : a))
+    : undefined;
+  return { low, mid, high: high === low ? undefined : high };
+}
 
 export default function DestinationPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const app = useApp();
   const { profile, money, meta } = app;
+  const google = Boolean(meta?.googleQuotes);
 
   const [nights, setNights] = useState(Number(params.get("nights")) || 7);
   const [travelers, setTravelers] = useState(profile.travelers);
@@ -37,11 +64,14 @@ export default function DestinationPage() {
   const [calendar, setCalendar] = useState<FlightCalendar | null>(null);
   const [day, setDay] = useState<FlightDay | null>(null);
   const [stays, setStays] = useState<StayOption[]>([]);
-  const [stayTier, setStayTier] = useState<Style>(profile.style);
   const [hotels, setHotels] = useState<RealHotel[]>([]);
-  const [hotel, setHotel] = useState<RealHotel | null>(null);
+  const [hotelsFor, setHotelsFor] = useState<string | null>(null);
+  const [tier, setTier] = useState<Style>(profile.style);
+  const [custom, setCustom] = useState<RealHotel | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [quote, setQuote] = useState<FlightQuote | null>(null);
-  const [busy, setBusy] = useState<"quote" | "hotels" | null>(null);
+  const [loading, setLoading] = useState({ quote: false, hotels: false });
+  const [quota, setQuota] = useState<{ left: number | null; total: number | null } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,38 +93,91 @@ export default function DestinationPage() {
       .calendar({ origin: profile.origin, dest: id, month, nights })
       .then((c) => {
         setCalendar(c);
-        setDay(c.cheapest);
+        // Si venimos de una sugerencia con fecha concreta, arrancamos en esa fecha.
+        const depart = params.get("depart");
+        const fromParam = depart?.startsWith(month) ? c.days.find((d) => d.date === depart) : undefined;
+        setDay(fromParam ?? c.cheapest);
       })
       .catch((e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, month, nights, profile.origin]);
 
-  // Al cambiar de día se descartan las cotizaciones exactas anteriores.
+  const dayKey = day ? `${day.date}_${day.returnDate}` : null;
+
+  // Precio exacto de Google Flights para el día elegido (automático).
   useEffect(() => {
     setQuote(null);
-    setHotels([]);
-    setHotel(null);
+    if (!day || !google) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      setLoading((l) => ({ ...l, quote: true }));
+      api
+        .flightQuote({ origin: profile.origin, dest: id, depart: day.date, ret: day.returnDate })
+        .then((q) => !cancelled && setQuote(q))
+        .catch(() => !cancelled && setQuote(null))
+        .finally(() => {
+          if (!cancelled) setLoading((l) => ({ ...l, quote: false }));
+          api.quota().then(setQuota).catch(() => {});
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayKey, google, id, profile.origin]);
+
+  // Alojamiento: estimado al instante y hoteles reales de Google (automático).
+  useEffect(() => {
+    setCustom(null);
+    setShowAll(false);
     if (!day) return;
     api
       .stays({ dest: id, checkin: day.date, nights, travelers })
       .then((r) => setStays(r.options))
       .catch((e) => setError(e.message));
-  }, [id, day, nights, travelers]);
+    if (!google) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      setLoading((l) => ({ ...l, hotels: true }));
+      api
+        .stays({ dest: id, checkin: day.date, nights, travelers, real: 1 })
+        .then((r) => {
+          if (cancelled) return;
+          setHotels(r.hotels);
+          setHotelsFor(`${day.date}_${nights}`);
+        })
+        .catch(() => !cancelled && setHotels([]))
+        .finally(() => !cancelled && setLoading((l) => ({ ...l, hotels: false })));
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day?.date, nights, travelers, google, id]);
 
   const priceBands = useMemo(() => {
     const prices = (calendar?.days ?? []).map((d) => d.priceUSD).sort((a, b) => a - b);
     return { low: prices[Math.floor(prices.length / 3)] ?? 0, high: prices[Math.floor((prices.length * 2) / 3)] ?? 0 };
   }, [calendar]);
 
+  const realHotels = day && hotelsFor === `${day.date}_${nights}` ? hotels : [];
+  const tiers = useMemo(() => pickTiers(realHotels), [realHotels]);
+
   if (error && !dest) return <p className="error">{error}</p>;
   if (!dest) return <p className="muted">Cargando…</p>;
 
   const rooms = Math.max(1, Math.ceil(travelers / 2));
-  const stay = stays.find((s) => s.tier === stayTier);
-  const flightPP = quote?.lowestUSD ?? day?.priceUSD ?? 0;
-  const flightSource = quote ? "Google Flights" : day?.source === "en vivo" ? "precio real" : "estimado";
+  const quoteOk = quote && day && quote.depart === day.date && quote.returnDate === day.returnDate;
+  const flightPP = quoteOk ? quote.lowestUSD : (day?.priceUSD ?? 0);
+  const flightSource = quoteOk ? "Google Flights, hoy" : day?.source === "en vivo" ? "visto en los últimos días" : "estimado";
   const flights = flightPP * travelers;
-  const lodging = hotel ? hotel.totalUSD * rooms : (stay?.totalUSD ?? 0);
-  const lodgingLabel = hotel ? hotel.name : stay ? `${stay.label} (${stay.source === "en vivo" ? "precio real" : "estimado"})` : "";
+
+  const realPick = custom ?? tiers[tier];
+  const estStay = stays.find((s) => s.tier === tier);
+  const lodging = realPick ? realPick.totalUSD * rooms : (estStay?.totalUSD ?? 0);
+  const lodgingLabel = realPick ? realPick.name : estStay ? `${estStay.label} (estimado)` : "";
   const daily = dest.dailyUSD[style] * (nights + 1) * travelers;
   const total = flights + lodging + daily;
   const maxMonth = Math.max(...months.map((m) => m.totalPerPersonUSD), 1);
@@ -102,40 +185,12 @@ export default function DestinationPage() {
   function selectMonth(key: string) {
     setMonth(key);
     params.set("month", key);
+    params.delete("depart");
     setParams(params, { replace: true });
   }
 
-  async function confirmFlight() {
-    if (!day) return;
-    setBusy("quote");
-    setError(null);
-    try {
-      setQuote(await api.flightQuote({ origin: profile.origin, dest: id, depart: day.date, nights }));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function loadHotels() {
-    if (!day) return;
-    setBusy("hotels");
-    setError(null);
-    try {
-      const r = await api.stays({ dest: id, checkin: day.date, nights, travelers, real: 1 });
-      setStays(r.options);
-      setHotels(r.hotels);
-      if (!r.live) setError("Google Hotels no devolvió resultados para esas fechas.");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
   function savePackage() {
-    if (!dest || !day || (!stay && !hotel)) return;
+    if (!dest || !day || (!realPick && !estStay)) return;
     const pkg: TripPackage = {
       id: `pkg_${Date.now().toString(36)}`,
       destinationId: dest.id,
@@ -150,13 +205,13 @@ export default function DestinationPage() {
           kind: "vuelo",
           label: `Vuelo ${profile.origin} ⇄ ${dest.iata} (${travelers} × USD ${flightPP}, ${flightSource})`,
           amountUSD: flights,
-          link: quote?.url ?? flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers)[0].url,
+          link: (quoteOk && quote.url) || flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers)[0].url,
         },
         {
           kind: "alojamiento",
-          label: `${lodgingLabel} · ${nights} noches${rooms > 1 ? ` · ${rooms} hab.` : ""}`,
+          label: `${lodgingLabel} · ${nights} noches${rooms > 1 ? ` · ${rooms} hab.` : ""}${realPick ? " (precio real)" : ""}`,
           amountUSD: lodging,
-          link: hotel?.link ?? stay?.links[0].url,
+          link: realPick?.link ?? estStay?.links[0].url,
         },
         {
           kind: "gastos",
@@ -220,9 +275,13 @@ export default function DestinationPage() {
               <input type="number" min={1} max={12} value={travelers} onChange={(e) => setTravelers(Number(e.target.value) || 1)} />
             </label>
             <Segmented
-              label="Estilo de gastos"
+              label="Estilo"
               value={style}
-              onChange={setStyle}
+              onChange={(s) => {
+                setStyle(s);
+                setTier(s);
+                setCustom(null);
+              }}
               options={[
                 { value: "low", label: "Económico" },
                 { value: "mid", label: "Confort" },
@@ -234,9 +293,7 @@ export default function DestinationPage() {
 
         <section>
           <h2>¿Cuándo conviene ir?</h2>
-          <p className="muted small">
-            Costo total por persona (estimación para comparar meses). ★ = mejor combinación de precio y clima.
-          </p>
+          <p className="muted small">Comparación aproximada entre meses. ★ = mejor combinación de precio y clima.</p>
           <div className="month-bars" role="list">
             {months.map((m) => (
               <button
@@ -263,7 +320,7 @@ export default function DestinationPage() {
               <h2>Vuelos en {monthName(Number(month.slice(5, 7)))}</h2>
               <span className="muted small">
                 Ida y vuelta por persona, {nights} noches ·{" "}
-                {calendar?.live ? "● precios reales (los días con ~ son estimados)" : "estimados"}
+                {calendar?.live ? "precios vistos en los últimos días (~ = estimado)" : "estimados"}
               </span>
             </div>
             <div className="calendar">
@@ -278,12 +335,14 @@ export default function DestinationPage() {
               {Array.from({ length: daysInMonth }, (_, i) => {
                 const date = `${month}-${String(i + 1).padStart(2, "0")}`;
                 const d = byDate.get(date);
+                const selected = day?.date === date;
+                const price = selected && quoteOk ? quote.lowestUSD : d?.priceUSD;
                 const band = !d ? "" : d.priceUSD <= priceBands.low ? "cheap" : d.priceUSD >= priceBands.high ? "pricey" : "midp";
-                const est = calendar?.live && d?.source === "estimado";
+                const est = !(selected && quoteOk) && d?.source === "estimado";
                 return (
                   <button
                     key={date}
-                    className={`cal-day ${band} ${est ? "est" : ""} ${day?.date === date ? "on" : ""}`}
+                    className={`cal-day ${band} ${est ? "est" : ""} ${selected ? "on" : ""}`}
                     disabled={!d}
                     onClick={() => d && setDay(d)}
                     title={d?.airline ? `${d.airline} · ${d.stops ?? 0} escala(s)` : undefined}
@@ -292,13 +351,14 @@ export default function DestinationPage() {
                     {d && (
                       <span className="cal-price">
                         {est && "~"}
-                        {d.priceUSD}
+                        {price}
                       </span>
                     )}
                   </button>
                 );
               })}
             </div>
+
             {day && (
               <div className="stack">
                 <div className="row wrap gap small">
@@ -312,15 +372,11 @@ export default function DestinationPage() {
                     </a>
                   ))}
                 </div>
-                {meta?.googleQuotes && !quote && (
-                  <button className="secondary" onClick={confirmFlight} disabled={busy !== null}>
-                    {busy === "quote" ? "Consultando Google Flights…" : "Ver precio exacto en Google Flights"}
-                  </button>
-                )}
-                {quote && (
+                {loading.quote && <p className="muted small">Buscando el precio de hoy en Google Flights…</p>}
+                {quoteOk && (
                   <div className="card quote">
                     <div className="section-head">
-                      <strong>Google Flights · precio real por persona</strong>
+                      <strong>Precio real hoy · Google Flights (por persona)</strong>
                       {quote.typicalRangeUSD && (
                         <span className="muted small">
                           Habitual: USD {quote.typicalRangeUSD[0]}–{quote.typicalRangeUSD[1]}
@@ -346,90 +402,124 @@ export default function DestinationPage() {
                     )}
                   </div>
                 )}
+                {google && !loading.quote && !quoteOk && (
+                  <p className="muted small">Google Flights no devolvió vuelos para estas fechas; se muestra el precio del calendario.</p>
+                )}
               </div>
             )}
           </section>
         )}
 
-        {stays.length > 0 && (
+        {day && (
           <section>
             <div className="section-head">
               <h2>Alojamiento</h2>
-              {meta?.googleQuotes && hotels.length === 0 && (
-                <button className="secondary small" onClick={loadHotels} disabled={busy !== null}>
-                  {busy === "hotels" ? "Buscando hoteles…" : "Ver hoteles reales (Google Hotels)"}
-                </button>
-              )}
+              <span className="muted small">
+                {formatDate(day.date)} → {formatDate(addDays(day.date, nights))} · {rooms} hab.
+                {realHotels.length ? " · precios reales de Google Hotels" : google ? "" : " · estimado"}
+              </span>
             </div>
-            {hotels.length > 0 && (
-              <div className="hotel-list">
-                {hotels.slice(0, 12).map((h) => (
-                  <button
-                    key={h.name}
-                    className={`card hotel ${hotel?.name === h.name ? "on" : ""}`}
-                    onClick={() => setHotel(hotel?.name === h.name ? null : h)}
-                    aria-pressed={hotel?.name === h.name}
-                  >
-                    {h.thumbnail && <img src={h.thumbnail} alt="" loading="lazy" />}
-                    <span className="hotel-body">
-                      <strong>{h.name}</strong>
-                      <span className="muted small">
-                        {h.stars ? `${h.stars}★ · ` : ""}
-                        {h.rating ? `${h.rating}/5` : ""}
-                        {h.reviews ? ` (${h.reviews.toLocaleString("es-AR")} reseñas)` : ""}
-                      </span>
-                      <span>
-                        <strong>{money(h.nightlyUSD)}</strong>
-                        <span className="muted small"> /noche · {money(h.totalUSD * rooms)} total</span>
-                      </span>
-                      {h.link && (
-                        <a href={h.link} target="_blank" rel="noreferrer" className="small" onClick={(e) => e.stopPropagation()}>
-                          Ver hotel ↗
-                        </a>
-                      )}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="grid-3">
-              {stays.map((s) => (
-                <button
-                  key={s.tier}
-                  className={`card stay ${!hotel && stayTier === s.tier ? "on" : ""}`}
-                  onClick={() => {
-                    setHotel(null);
-                    setStayTier(s.tier);
-                  }}
-                  aria-pressed={!hotel && stayTier === s.tier}
-                >
-                  <strong>{s.label}</strong>
-                  <span className="muted small">
-                    {s.area} · {s.source === "en vivo" ? "precio real (Google Hotels)" : "estimado"}
-                  </span>
-                  <span className="price">{money(s.totalUSD)}</span>
-                  <span className="muted small">
-                    {money(s.nightlyUSD)}/noche · {s.rooms} hab.
-                  </span>
-                  <span className="small">{s.description}</span>
-                  <span className="row gap small">
-                    {s.links.map((l) => (
-                      <a key={l.label} href={l.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-                        {l.label} ↗
-                      </a>
+            {loading.hotels && <p className="muted small">Buscando hoteles en Google Hotels…</p>}
+
+            {realHotels.length > 0 ? (
+              <>
+                <div className="grid-3">
+                  {STYLES.map((s) => {
+                    const h = tiers[s];
+                    if (!h) return null;
+                    const on = !custom && tier === s;
+                    return (
+                      <button key={s} className={`card stay ${on ? "on" : ""}`} onClick={() => (setCustom(null), setTier(s))} aria-pressed={on}>
+                        {h.thumbnail && <img className="stay-img" src={h.thumbnail} alt="" loading="lazy" />}
+                        <span className="muted small">{STYLE_LABEL[s]}</span>
+                        <strong>{h.name}</strong>
+                        <span className="muted small">
+                          {h.stars ? `${h.stars}★ · ` : ""}
+                          {h.rating ? `${h.rating}/5` : ""}
+                          {h.reviews ? ` (${h.reviews.toLocaleString("es-AR")})` : ""}
+                        </span>
+                        <span className="price">{money(h.totalUSD * rooms)}</span>
+                        <span className="muted small">{money(h.nightlyUSD)}/noche</span>
+                        {h.link && (
+                          <a href={h.link} target="_blank" rel="noreferrer" className="small" onClick={(e) => e.stopPropagation()}>
+                            Ver hotel ↗
+                          </a>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button className="ghost small" onClick={() => setShowAll((v) => !v)}>
+                  {showAll ? "Ocultar" : `Ver los ${realHotels.length} hoteles`}
+                </button>
+                {showAll && (
+                  <div className="hotel-list">
+                    {realHotels.map((h) => (
+                      <button
+                        key={h.name}
+                        className={`card hotel ${custom?.name === h.name ? "on" : ""}`}
+                        onClick={() => setCustom(custom?.name === h.name ? null : h)}
+                        aria-pressed={custom?.name === h.name}
+                      >
+                        {h.thumbnail && <img src={h.thumbnail} alt="" loading="lazy" />}
+                        <span className="hotel-body">
+                          <strong>{h.name}</strong>
+                          <span className="muted small">
+                            {h.stars ? `${h.stars}★ · ` : ""}
+                            {h.rating ? `${h.rating}/5` : ""}
+                          </span>
+                          <span>
+                            <strong>{money(h.nightlyUSD)}</strong>
+                            <span className="muted small"> /noche · {money(h.totalUSD * rooms)} total</span>
+                          </span>
+                        </span>
+                      </button>
                     ))}
-                  </span>
-                </button>
-              ))}
-            </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              !loading.hotels && (
+                <div className="grid-3">
+                  {stays.map((s) => (
+                    <button
+                      key={s.tier}
+                      className={`card stay ${tier === s.tier ? "on" : ""}`}
+                      onClick={() => setTier(s.tier)}
+                      aria-pressed={tier === s.tier}
+                    >
+                      <strong>{s.label}</strong>
+                      <span className="muted small">{s.area} · estimado</span>
+                      <span className="price">{money(s.totalUSD)}</span>
+                      <span className="muted small">
+                        {money(s.nightlyUSD)}/noche · {s.rooms} hab.
+                      </span>
+                      <span className="row gap small">
+                        {s.links.map((l) => (
+                          <a key={l.label} href={l.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                            {l.label} ↗
+                          </a>
+                        ))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
           </section>
         )}
         {error && <p className="error">{error}</p>}
+        {quota?.left != null && (
+          <p className="muted small">
+            Búsquedas de Google disponibles este mes: {quota.left}
+            {quota.total ? ` de ${quota.total}` : ""}. Las búsquedas repetidas no se descuentan (caché de 12-24 h).
+          </p>
+        )}
       </div>
 
       <aside className="card summary">
         <h2>Tu paquete</h2>
-        {day && (stay || hotel) ? (
+        {day && (realPick || estStay) ? (
           <>
             <p className="muted small">
               {formatDate(day.date)} → {formatDate(day.returnDate)} · {travelers} {travelers === 1 ? "viajero" : "viajeros"}
@@ -437,12 +527,15 @@ export default function DestinationPage() {
             <ul className="items">
               <li>
                 <span>
-                  ✈ Vuelos <span className="muted small">({flightSource})</span>
+                  ✈ Vuelos <span className="muted small">({loading.quote ? "actualizando…" : flightSource})</span>
                 </span>
                 <span>{money(flights)}</span>
               </li>
               <li>
-                <span>🛏 {hotel ? hotel.name : stay?.label}</span>
+                <span>
+                  🛏 {lodgingLabel}
+                  {realPick && <span className="muted small"> (real)</span>}
+                </span>
                 <span>{money(lodging)}</span>
               </li>
               <li>

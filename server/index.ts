@@ -3,9 +3,11 @@ import { z } from "zod";
 import type { Meta } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
-import { addDays, baseFlightFrom, explore, monthOverview, stayOptions, upcomingMonths, yearFor } from "./engine.ts";
+import { baseFlightFrom, explore, monthOverview, stayOptions, upcomingMonths, yearFor } from "./engine.ts";
+import { fetchJSON } from "./cache.ts";
 import { config, has, type Env } from "./env.ts";
-import { flightCalendar, googleFlights, livePriceLookup } from "./providers/flights.ts";
+import { realPrices } from "./providers/explore.ts";
+import { flightCalendar, googleFlights } from "./providers/flights.ts";
 import { usdArsRate } from "./providers/fx.ts";
 import { googleHotels } from "./providers/hotels.ts";
 import { buildPackage } from "./packages.ts";
@@ -91,8 +93,14 @@ app.get("/destinations/:id", (c) => {
 app.post("/explore", async (c) => {
   const body = exploreSchema.parse(await c.req.json());
   const months = body.month != null ? [{ month: body.month, year: body.year ?? yearFor(body.month) }] : upcomingMonths();
-  const live = await livePriceLookup(env(c).TRAVELPAYOUTS_TOKEN, body.origin, months);
-  return c.json(explore(body, live));
+  const keys = env(c);
+  const real = await realPrices(
+    { serpapi: keys.SERPAPI_KEY, travelpayouts: keys.TRAVELPAYOUTS_TOKEN },
+    body.origin,
+    months,
+    body.month,
+  );
+  return c.json(explore(body, real));
 });
 
 app.get("/flights/calendar", async (c) => {
@@ -108,10 +116,10 @@ app.get("/flights/calendar", async (c) => {
 app.get("/flights/quote", async (c) => {
   const serpKey = env(c).SERPAPI_KEY;
   if (!has(serpKey)) return c.json({ error: "Falta SERPAPI_KEY para cotizar con Google Flights." }, 503);
-  const q = z.object({ origin: originCode, dest: z.string(), depart: isoDate, nights: nightsQ }).parse(c.req.query());
+  const q = z.object({ origin: originCode, dest: z.string(), depart: isoDate, ret: isoDate }).parse(c.req.query());
   const dest = getDestination(q.dest);
   if (!dest) return c.json(notFound, 404);
-  const quote = await googleFlights(serpKey, q.origin, dest, q.depart, addDays(q.depart, q.nights));
+  const quote = await googleFlights(serpKey, q.origin, dest, q.depart, q.ret);
   if (!quote) return c.json({ error: "Google Flights no devolvió resultados para esa fecha." }, 502);
   return c.json(quote);
 });
@@ -136,6 +144,17 @@ app.get("/stays", async (c) => {
     hotels: quote?.hotels ?? [],
     live: Boolean(quote),
   });
+});
+
+// Búsquedas de Google que quedan este mes (consultar la cuenta no consume cuota).
+app.get("/quota", async (c) => {
+  const key = env(c).SERPAPI_KEY;
+  if (!has(key)) return c.json({ left: null, total: null });
+  const r = await fetchJSON<{ plan_searches_left?: number; searches_per_month?: number; total_searches_left?: number }>(
+    `https://serpapi.com/account.json?api_key=${encodeURIComponent(key)}`,
+    "serpapi-account",
+  );
+  return c.json({ left: r?.total_searches_left ?? r?.plan_searches_left ?? null, total: r?.searches_per_month ?? null });
 });
 
 app.post("/packages/build", async (c) => {

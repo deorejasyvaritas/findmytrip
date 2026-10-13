@@ -5,7 +5,8 @@ import type { Interest, Profile, Region, Style, TripPackage } from "../shared/ty
 import { DESTINATIONS, getDestination } from "./data/destinations.ts";
 import { explore, monthOverview, monthName, stayOptions, upcomingMonths, yearFor } from "./engine.ts";
 import type { Env } from "./env.ts";
-import { flightCalendar, livePriceLookup } from "./providers/flights.ts";
+import { realPrices } from "./providers/explore.ts";
+import { flightCalendar } from "./providers/flights.ts";
 import { buildPackage } from "./packages.ts";
 
 const MODEL = "claude-opus-5-5";
@@ -84,10 +85,11 @@ export async function runAgent(
       }),
       run: async (input) => {
         const month = input.month ?? null;
-        const live = await livePriceLookup(
-          tpToken,
+        const live = await realPrices(
+          { serpapi: env.SERPAPI_KEY, travelpayouts: tpToken },
           origin,
           month != null ? [{ month, year: yearFor(month, today) }] : upcomingMonths(today),
+          month,
         );
         const res = explore(
           {
@@ -117,12 +119,15 @@ export async function runAgent(
           encaje: s.fit,
           motivos: s.reasons,
           fuenteVuelo: s.flightSource,
+          fuenteHotel: s.lodgingSource,
+          fechas: s.depart ? `${s.depart} a ${s.ret ?? "?"}` : undefined,
           docs: s.destination.docs,
         });
         return json({
           origen: origin,
           principales: res.suggestions.slice(0, 8).map(compact),
           alternativas: res.alternatives.map(compact),
+          otrosDestinosGoogle: res.extra.slice(0, 5),
         });
       },
     }),

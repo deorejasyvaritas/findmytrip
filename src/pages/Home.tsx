@@ -6,7 +6,7 @@ import Segmented from "../components/Segmented.tsx";
 import SuggestionCard from "../components/SuggestionCard.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { capitalize, monthName } from "../lib/format.ts";
+import { capitalize, formatDate, monthName } from "../lib/format.ts";
 import { useStored } from "../lib/storage.ts";
 
 interface Search {
@@ -274,6 +274,41 @@ export default function Home() {
               <div className="grid-cards">
                 {result.alternatives.map((s) => (
                   <SuggestionCard key={s.destination.id} s={s} nights={(lastSearch ?? defaults).nights} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {result.extra.length > 0 && (
+            <section>
+              <div className="section-head">
+                <h2>🌎 Más destinos con precio real de Google</h2>
+                <span className="muted small">Vuelo ida y vuelta por persona, fechas sugeridas por Google</span>
+              </div>
+              <div className="grid-cards">
+                {result.extra.map((e) => (
+                  <a key={`${e.name}-${e.airport}`} className="card suggestion" href={e.link ?? "#"} target="_blank" rel="noreferrer">
+                    <div className="suggestion-head">
+                      <div>
+                        <h3>{e.name}</h3>
+                        <p className="muted small">
+                          {e.country} · {formatDate(e.depart)}
+                          {e.ret ? ` → ${formatDate(e.ret)}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="price-row">
+                      <div>
+                        <div className="price">{app.money(e.flightPP)}</div>
+                        <div className="muted small">vuelo p/p{e.airline ? ` · ${e.airline}` : ""}</div>
+                      </div>
+                      {e.hotelNight && <div className="small muted">🛏 desde {app.money(e.hotelNight)}/noche</div>}
+                    </div>
+                    <div className="card-foot small muted">
+                      <span>● precio real hoy (Google)</span>
+                      <span>Ver en Google ↗</span>
+                    </div>
+                  </a>
                 ))}
               </div>
             </section>

@@ -106,12 +106,50 @@ export interface Suggestion {
   fit: "dentro" | "ajustado" | "estirando";
   reasons: string[];
   isAlternative: boolean; // algo que el usuario probablemente no estaba considerando
-  flightSource: "estimado" | "en vivo";
+  /** google = Google Flights/Hotels hoy · aviasales = visto por usuarios en los últimos días. */
+  flightSource: PriceSource;
+  lodgingSource: PriceSource;
+  /** Fechas concretas del precio real (si las hay). */
+  depart?: string;
+  ret?: string;
+  airline?: string;
+  link?: string;
+}
+
+export type PriceSource = "google" | "aviasales" | "estimado";
+
+/** Precio real conocido de un destino para un mes. */
+export interface RealPrice {
+  month: number;
+  flightPP: number; // ida y vuelta por persona
+  hotelNight?: number;
+  depart?: string;
+  ret?: string;
+  airline?: string;
+  link?: string;
+  source: "google" | "aviasales";
+}
+
+/** Destino que encontró Google y no está en nuestro catálogo. */
+export interface ExtraDestination {
+  name: string;
+  country: string;
+  airport: string;
+  flightPP: number;
+  hotelNight: number | null;
+  depart: string;
+  ret: string | null;
+  airline: string | null;
+  link: string | null;
+  thumbnail: string | null;
+  stops: number | null;
 }
 
 export interface ExploreResponse {
   suggestions: Suggestion[];
   alternatives: Suggestion[];
+  /** Más destinos con precio real de Google, fuera del catálogo. */
+  extra: ExtraDestination[];
   considered: number;
 }
 

@@ -1,21 +1,30 @@
 import { Link } from "react-router-dom";
-import type { Suggestion } from "../../shared/types.ts";
+import type { PriceSource, Suggestion } from "../../shared/types.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { capitalize, monthName } from "../lib/format.ts";
+import { capitalize, formatDate, monthName } from "../lib/format.ts";
 
 const FIT_LABEL = { dentro: "Entra holgado", ajustado: "Entra justo", estirando: "Estirando un poco" };
+export const SOURCE_LABEL: Record<PriceSource, string> = {
+  google: "precio real hoy (Google)",
+  aviasales: "visto en los últimos días",
+  estimado: "estimado",
+};
 
 export default function SuggestionCard({ s, nights }: { s: Suggestion; nights: number }) {
   const { money } = useApp();
   const d = s.destination;
   const q = new URLSearchParams({ month: `${s.year}-${String(s.month).padStart(2, "0")}`, nights: String(nights) });
+  if (s.depart) q.set("depart", s.depart);
   return (
     <Link to={`/destino/${d.id}?${q}`} className="card suggestion">
       <div className="suggestion-head">
         <div>
           <h3>{d.name}</h3>
           <p className="muted small">
-            {d.country} · {capitalize(monthName(s.month))} {s.year}
+            {d.country} ·{" "}
+            {s.depart
+              ? `${formatDate(s.depart)}${s.ret ? ` → ${formatDate(s.ret)}` : ""}`
+              : `${capitalize(monthName(s.month))} ${s.year}`}
           </p>
         </div>
         <span className={`fit fit-${s.fit}`}>{FIT_LABEL[s.fit]}</span>
@@ -27,8 +36,8 @@ export default function SuggestionCard({ s, nights }: { s: Suggestion; nights: n
           <div className="muted small">total · {money(s.cost.perPerson)} p/p</div>
         </div>
         <div className="breakdown small muted">
-          <span>✈ {money(s.cost.flights)}</span>
-          <span>🛏 {money(s.cost.lodging)}</span>
+          <span className={s.flightSource !== "estimado" ? "real" : ""}>✈ {money(s.cost.flights)}</span>
+          <span className={s.lodgingSource !== "estimado" ? "real" : ""}>🛏 {money(s.cost.lodging)}</span>
           <span>🍽 {money(s.cost.daily)}</span>
         </div>
       </div>
@@ -41,7 +50,10 @@ export default function SuggestionCard({ s, nights }: { s: Suggestion; nights: n
       )}
       <div className="card-foot small muted">
         <span>{d.docs}</span>
-        <span>{s.flightSource === "en vivo" ? "● vuelo en vivo" : "vuelo estimado"}</span>
+        <span>
+          {s.flightSource !== "estimado" && "● "}vuelo {SOURCE_LABEL[s.flightSource]}
+          {s.airline ? ` · ${s.airline}` : ""}
+        </span>
       </div>
     </Link>
   );
