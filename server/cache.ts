@@ -72,3 +72,23 @@ export async function fetchJSON<T>(url: string, label: string, init?: RequestIni
     return null;
   }
 }
+
+// Datos persistentes (historial del radar, alertas): sin vencimiento.
+const persistent = new Map<string, unknown>();
+
+export async function loadJSON<T>(key: string): Promise<T | null> {
+  if (!store) return (persistent.get(key) as T | undefined) ?? null;
+  try {
+    return ((await store.get(key, "json")) as T | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveJSON(key: string, value: unknown): Promise<void> {
+  if (!store) {
+    persistent.set(key, value);
+    return;
+  }
+  await store.put(key, JSON.stringify(value));
+}

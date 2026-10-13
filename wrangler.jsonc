@@ -14,6 +14,12 @@
   // Workers AI: el agente funciona gratis (cuota diaria) si no hay clave de Claude.
   "ai": { "binding": "AI" },
   // Tu ID de afiliado de Travelpayouts (no es secreto: viaja en los links).
-  "vars": { "TRAVELPAYOUTS_MARKER": "789588" },
+  "vars": {
+    "TRAVELPAYOUTS_MARKER": "789588",
+    "SITE_URL": "https://findmytrip.deorejasyvaritas.workers.dev",
+    "RADAR_ORIGINS": "BUE"
+  },
+  // Radar automático: 5 barridos por día (horas UTC; 22, 3, 8, 13 y 18 h en Argentina).
+  "triggers": { "crons": ["17 1,6,11,16,21 * * *"] },
   "observability": { "enabled": true }
 }

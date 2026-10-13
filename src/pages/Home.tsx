@@ -4,6 +4,7 @@ import type { Bags, ExploreResponse, Interest, Party, Region, Style, WatchItem, 
 import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
+import RadarSection from "../components/RadarSection.tsx";
 import Segmented from "../components/Segmented.tsx";
 import SuggestionCard, { Photo, SuggestionSkeleton } from "../components/SuggestionCard.tsx";
 import { PartyPicker, WhenPicker, describeWhen, validateWhen } from "../components/TripPickers.tsx";
@@ -286,6 +287,8 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      <RadarSection />
 
       {watchlist.length > 0 && (
         <section>

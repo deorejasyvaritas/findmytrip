@@ -16,6 +16,12 @@ export interface Env {
   TRAVELPAYOUTS_TOKEN?: string;
   /** Gratis hasta 250 búsquedas/mes: hoteles y vuelos de Google. */
   SERPAPI_KEY?: string;
+  /** Gratis: tu bot de Telegram (BotFather) para recibir alertas. */
+  TELEGRAM_BOT_TOKEN?: string;
+  /** Dirección pública del sitio, para los links de las alertas. */
+  SITE_URL?: string;
+  /** Ciudades de salida que barre el radar automático (ej. "BUE,COR"). */
+  RADAR_ORIGINS?: string;
   /** Cotización de respaldo si no responde dolarapi.com. */
   USD_ARS_RATE?: string;
 }
@@ -31,6 +37,9 @@ export function config(env: Env): Env {
     SERPAPI_KEY: clean(env.SERPAPI_KEY),
     USD_ARS_RATE: clean(env.USD_ARS_RATE),
     TRAVELPAYOUTS_MARKER: clean(env.TRAVELPAYOUTS_MARKER),
+    TELEGRAM_BOT_TOKEN: clean(env.TELEGRAM_BOT_TOKEN),
+    SITE_URL: clean(env.SITE_URL),
+    RADAR_ORIGINS: clean(env.RADAR_ORIGINS),
     CACHE: env.CACHE,
     AI: env.AI,
   };

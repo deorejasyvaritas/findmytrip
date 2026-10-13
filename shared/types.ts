@@ -305,4 +305,63 @@ export interface Meta {
   usdArsSource: string;
   /** ID de afiliado de Travelpayouts para los links de Aviasales. */
   marker: string | null;
+  /** Hay bot de Telegram configurado para las alertas. */
+  telegram: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Radar de ofertas y alertas
+// ---------------------------------------------------------------------------
+
+export interface RadarItem {
+  destinationId: string;
+  name: string;
+  iata: string;
+  priceUSD: number; // ida y vuelta por persona
+  typicalUSD: number; // precio habitual de referencia
+  discountPct: number; // cuánto más barato que lo habitual (0-100)
+  baseline: "historial" | "estimado";
+  trend: "down" | "up" | "same" | "new";
+  isMinimum: boolean; // mínimo desde que el radar sigue la ruta
+  isDeal: boolean;
+  depart?: string;
+  ret?: string;
+  airline?: string;
+  flightNumber?: string;
+  score: number;
+}
+
+export interface RadarSnapshot {
+  origin: string;
+  updatedAt: string;
+  routes: number;
+  stats: { deals: number; down: number; up: number; minimums: number };
+  items: RadarItem[];
+  /** Mejor precio por destino y mes (YYYY-MM), para evaluar alertas. */
+  byMonth: Record<string, Record<string, { p: number; dep?: string; ret?: string; al?: string }>>;
+  live: boolean;
+}
+
+export interface AlertSub {
+  id: string;
+  destinationId: string;
+  origin: string;
+  /** Presupuesto objetivo para todo el grupo, en USD. */
+  targetUSD: number;
+  nights: number;
+  month: number | null;
+  party: Party;
+  style: Style;
+  createdAt: string;
+  lastNotifiedUSD?: number;
+  lastNotifiedAt?: string;
+}
+
+export interface AlertSettings {
+  telegramChatId?: string;
+  telegramName?: string;
+  /** Avisar también de las mejores ofertas del radar. */
+  radarDeals: boolean;
+  /** Descuento mínimo (0-100) para avisar una oferta del radar. */
+  minDiscount: number;
 }

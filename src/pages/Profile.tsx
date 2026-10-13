@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { Bags, Profile } from "../../shared/types.ts";
 import { BAGS_LABEL } from "../../shared/pricing.ts";
 import { PartyPicker } from "../components/TripPickers.tsx";
+import AlertsSettings from "../components/AlertsSettings.tsx";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import Segmented from "../components/Segmented.tsx";
@@ -154,6 +155,8 @@ export default function ProfilePage() {
         </div>
         <p className="grouped-note">Los dejo fuera de las sugerencias para mostrarte lugares nuevos.</p>
       </section>
+
+      <AlertsSettings />
 
       <div className="row gap">
         <button className="primary">Guardar perfil</button>

@@ -80,6 +80,15 @@ Te devuelve una URL tipo `https://findmytrip.<tu-usuario>.workers.dev`. Para act
 > Ojo: si publicás la URL, cualquiera que entre usa tu cuota de SerpApi (y tu saldo de Claude si lo activaste).
 > Para uso personal, no la compartas o protegela con Cloudflare Access (gratis hasta 50 usuarios).
 
+## Radar de ofertas y alertas (gratis)
+
+- **Radar:** 5 veces por día (cron de Cloudflare) revisa los precios reales desde tu ciudad hacia todos los destinos,
+  guarda el historial y marca lo que está por debajo de lo habitual ("bajó", "subió", "mínimo"). Ciudades: variable
+  `RADAR_ORIGINS` en `wrangler.jsonc` (por defecto `BUE`).
+- **Alertas por Telegram:** con tu propio bot. En Telegram buscá @BotFather, mandale `/newbot` y copiá el token; después
+  `echo TU_TOKEN| npx wrangler secret put TELEGRAM_BOT_TOKEN`. En el sitio: Perfil, Alertas, Conectar.
+  Te avisa cuando un destino que seguís ("Avisarme si baja") entra en tu presupuesto y de las mejores ofertas del radar.
+
 ## Códigos de Travelpayouts (Drive y buscador en vivo)
 
 Los scripts que da Travelpayouts van en `partner-head.html` (no se sube a git, así nunca hay conflictos):

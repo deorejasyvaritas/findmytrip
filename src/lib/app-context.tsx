@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Destination, Meta, Profile, TripPackage, WatchItem } from "../../shared/types.ts";
+import type { Destination, Meta, Party, Profile, Style, TripPackage, WatchItem } from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { formatMoney } from "./format.ts";
 import { useStored } from "./storage.ts";
@@ -30,7 +30,7 @@ interface AppState {
   updatePackage: (id: string, patch: Partial<TripPackage>) => void;
   removePackage: (id: string) => void;
   watchlist: WatchItem[];
-  addWatch: (w: Omit<WatchItem, "id" | "createdAt">) => void;
+  addWatch: (w: Omit<WatchItem, "id" | "createdAt">, extra?: { party: Party; style: Style }) => void;
   removeWatch: (id: string) => void;
   money: (usd: number) => string;
   /** Convierte un monto ingresado en la moneda del perfil a USD. */
@@ -70,12 +70,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updatePackage: (id, patch) => setPackages((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x))),
       removePackage: (id) => setPackages((prev) => prev.filter((x) => x.id !== id)),
       watchlist,
-      addWatch: (w) =>
+      addWatch: (w, extra) => {
+        // También se guarda en el servidor para que el radar pueda avisar por Telegram.
+        api
+          .saveAlert({
+            destinationId: w.destinationId,
+            origin: profile.origin,
+            targetUSD: w.targetUSD,
+            nights: w.nights,
+            month: w.month,
+            party: extra?.party ?? { adults: profile.travelers, childAges: profile.childAges ?? [], bags: profile.bags ?? "cabin" },
+            style: extra?.style ?? profile.style,
+          })
+          .catch(() => {});
         setWatchlist((prev) => [
           { ...w, id: `w_${Date.now().toString(36)}`, createdAt: new Date().toISOString() },
           ...prev.filter((x) => x.destinationId !== w.destinationId),
-        ]),
-      removeWatch: (id) => setWatchlist((prev) => prev.filter((x) => x.id !== id)),
+        ]);
+      },
+      removeWatch: (id) =>
+        setWatchlist((prev) => {
+          const item = prev.find((x) => x.id === id);
+          if (item) api.deleteAlert(item.destinationId).catch(() => {});
+          return prev.filter((x) => x.id !== id);
+        }),
       money: (usd) => formatMoney(usd, profile.currency, rate),
       toUSD: (amount) => (profile.currency === "ARS" ? amount / rate : amount),
       fromUSD: (usd) => (profile.currency === "ARS" ? Math.round(usd * rate) : Math.round(usd)),

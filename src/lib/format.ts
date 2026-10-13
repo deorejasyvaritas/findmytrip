@@ -23,3 +23,14 @@ export const STYLE_LABEL = { low: "Económico", mid: "Confort", high: "Premium" 
 
 /** "7 jun – 14 jun" */
 export const formatRange = (a: string, b: string) => `${formatDate(a)} – ${formatDate(b)}`;
+
+/** "hace 5 min", "hace 2 h", "hace 3 días". */
+export function timeAgo(iso: string, now = Date.now()): string {
+  const min = Math.max(0, Math.round((now - Date.parse(iso)) / 60000));
+  if (min < 1) return "recién";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  return `hace ${d} ${d === 1 ? "día" : "días"}`;
+}

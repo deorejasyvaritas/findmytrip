@@ -530,3 +530,55 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .dest-thumb { width: 44px; height: 44px; border-radius: var(--r-sm); object-fit: cover; flex-shrink: 0; }
 .wl-panel .search-tabs { margin-bottom: 8px; }
 .items li > span:last-child { white-space: nowrap; }
+
+/* ---------- Radar ---------- */
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--label-2); margin-bottom: 4px; }
+.radar { display: flex; flex-direction: column; gap: 16px; }
+.radar-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.radar-head h2 { margin-bottom: 4px; }
+.radar-live { display: inline-flex; align-items: center; gap: 6px; color: var(--green); }
+.radar-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+@media (prefers-reduced-motion: no-preference) { .radar-live i { animation: blink 2s ease-in-out infinite; } }
+.radar-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.radar-stat { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: var(--r-md); padding: 12px 16px; box-shadow: var(--shadow-sm); }
+.radar-stat .icon { color: var(--label-2); }
+.radar-stat strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.radar-stat span { font-size: 13px; color: var(--label-2); }
+.radar-card:hover { transform: none; }
+.warn-text { color: var(--orange); }
+
+/* ---------- Ventana "Elegí dónde comprar" ---------- */
+.modal { border: 0; padding: 0; border-radius: 24px; width: min(640px, calc(100vw - 32px)); background: var(--surface); color: var(--label); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.25); }
+.modal::backdrop { background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px); }
+.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.modal-head { display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: start; padding-bottom: 16px; border-bottom: 1px solid var(--separator); }
+.modal-head h2 { font-size: 28px; }
+.modal-price { text-align: right; }
+.modal-price .price { color: var(--green); font-size: 28px; }
+.modal-close { margin: -8px -8px 0 0; }
+.buy-options { display: flex; flex-direction: column; gap: 8px; }
+.buy-option { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--separator); color: var(--label); }
+.buy-option:hover { text-decoration: none; background: var(--fill-2); }
+.buy-option.recommended { background: var(--brand-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 45%, transparent); }
+.buy-option .eyebrow { margin: 0; color: var(--brand-ink); }
+.buy-option strong { display: block; font-size: 17px; }
+.buy-option .small { display: block; }
+.buy-option .icon { color: var(--label-2); }
+.buy-num { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--fill); font-size: 13px; font-weight: 700; flex-shrink: 0; }
+.recommended .buy-num { background: color-mix(in srgb, var(--brand) 20%, transparent); color: var(--brand-ink); }
+@media (max-width: 767px) {
+  .radar-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .modal-head { grid-template-columns: 1fr auto; }
+  .modal-price { grid-column: 1 / -1; text-align: left; }
+  .modal-close { grid-row: 1; grid-column: 2; }
+}
+.alert-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--tint); color: var(--on-tint); flex-shrink: 0; }
+.steps { margin: 12px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--label-2); }
+.steps code { word-break: break-all; }
+/* Interruptor estilo iOS */
+.switch { appearance: none; width: 51px; min-width: 51px; height: 31px; min-height: 31px; padding: 0; border-radius: 999px; background: var(--fill); border: 0; position: relative; cursor: pointer; transition: background-color 160ms var(--ease-out); }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fefefe; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); transition: transform 160ms var(--ease-out); }
+.switch:checked { background: #34c759; }
+.switch:checked::after { transform: translateX(20px); }
+.switch:focus { box-shadow: 0 0 0 3px var(--tint-soft); }
+.list-row .switch { width: 51px; min-width: 51px; }

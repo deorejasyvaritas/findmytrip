@@ -7,6 +7,17 @@ import { baseFlightFrom, explore, monthOverview, resolveWhen, stayOptions } from
 import { fetchJSON, useCacheStore } from "./cache.ts";
 import { config, has, type Env } from "./env.ts";
 import { realPrices } from "./providers/explore.ts";
+import { getRadar, runRadar } from "./radar.ts";
+import {
+  connectTelegram,
+  evaluateAlerts,
+  getSettings,
+  listSubs,
+  removeSub,
+  saveSettings,
+  sendTelegram,
+  upsertSub,
+} from "./alerts.ts";
 import { destinationPhotos } from "./providers/photos.ts";
 import { flightCalendar, googleFlights } from "./providers/flights.ts";
 import { usdArsRate } from "./providers/fx.ts";
@@ -94,6 +105,7 @@ app.get("/meta", async (c) => {
     usdArsRate: fx.rate,
     usdArsSource: fx.source,
     marker: env(c).TRAVELPAYOUTS_MARKER ?? null,
+    telegram: has(env(c).TELEGRAM_BOT_TOKEN),
   };
   return c.json(meta);
 });
@@ -237,6 +249,86 @@ app.post("/agent", async (c) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Radar de ofertas
+// ---------------------------------------------------------------------------
+
+app.get("/radar", async (c) => {
+  const { origin } = z.object({ origin: originCode }).parse(c.req.query());
+  const snap = await getRadar(env(c).TRAVELPAYOUTS_TOKEN, origin);
+  if (!snap) return c.json({ error: "El radar necesita TRAVELPAYOUTS_TOKEN para funcionar." }, 503);
+  return c.json(snap);
+});
+
+// Barrido manual (además de los automáticos). Limitado para no abusar de la API.
+app.post("/radar/run", async (c) => {
+  const { origin } = z.object({ origin: originCode }).parse(c.req.query());
+  const token = env(c).TRAVELPAYOUTS_TOKEN;
+  if (!token) return c.json({ error: "Falta TRAVELPAYOUTS_TOKEN." }, 503);
+  const prev = await getRadar(undefined, origin);
+  if (prev && Date.now() - Date.parse(prev.updatedAt) < 20 * 60000) return c.json(prev);
+  const snap = await runRadar(token, origin);
+  const e = env(c);
+  await evaluateAlerts(snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL ?? new URL(c.req.url).origin });
+  return c.json(snap);
+});
+
+// ---------------------------------------------------------------------------
+// Alertas
+// ---------------------------------------------------------------------------
+
+const partySchema = z.object({
+  adults: z.number().int().min(1).max(12),
+  childAges: z.array(z.number().int().min(0).max(17)).max(10),
+  bags: z.enum(["personal", "cabin", "checked1", "checked2"]),
+});
+
+app.get("/alerts", async (c) => {
+  const [subs, settings] = await Promise.all([listSubs(), getSettings()]);
+  return c.json({ subs, settings, telegram: has(env(c).TELEGRAM_BOT_TOKEN) });
+});
+
+app.post("/alerts/subs", async (c) => {
+  const body = z
+    .object({
+      destinationId: z.string(),
+      origin: originCode,
+      targetUSD: z.number().positive(),
+      nights: z.number().int().min(1).max(60),
+      month: z.number().int().min(1).max(12).nullable(),
+      party: partySchema,
+      style,
+    })
+    .parse(await c.req.json());
+  if (!getDestination(body.destinationId)) return c.json(notFound, 404);
+  const subs = await upsertSub({ ...body, id: body.destinationId, createdAt: new Date().toISOString() });
+  return c.json({ subs });
+});
+
+app.delete("/alerts/subs/:id", async (c) => c.json({ subs: await removeSub(c.req.param("id")) }));
+
+app.put("/alerts/settings", async (c) => {
+  const body = z.object({ radarDeals: z.boolean(), minDiscount: z.number().int().min(5).max(80) }).parse(await c.req.json());
+  const settings = { ...(await getSettings()), ...body };
+  await saveSettings(settings);
+  return c.json({ settings });
+});
+
+app.post("/alerts/telegram/connect", async (c) => {
+  const token = env(c).TELEGRAM_BOT_TOKEN;
+  if (!token) return c.json({ ok: false, error: "Falta cargar TELEGRAM_BOT_TOKEN en Cloudflare." }, 503);
+  const res = await connectTelegram(token);
+  return c.json(res, res.ok ? 200 : 400);
+});
+
+app.post("/alerts/telegram/test", async (c) => {
+  const token = env(c).TELEGRAM_BOT_TOKEN;
+  const settings = await getSettings();
+  if (!token || !settings.telegramChatId) return c.json({ ok: false, error: "Primero conectá Telegram." }, 400);
+  const ok = await sendTelegram(token, settings.telegramChatId, "Prueba de FindMyTrip: las alertas llegan bien.");
+  return c.json({ ok });
+});
+
 app.notFound((c) => c.json({ error: "No encontrado" }, 404));
 
 app.onError((err, c) => {
@@ -245,4 +337,21 @@ app.onError((err, c) => {
   return c.json({ error: "Algo salió mal. Probá de nuevo en un momento." }, 500);
 });
 
-export default app;
+/** Barrido programado: radar de cada ciudad configurada y aviso de alertas. */
+async function scheduledRadar(raw: Env): Promise<void> {
+  useCacheStore(raw.CACHE);
+  const e = config(raw);
+  if (!e.TRAVELPAYOUTS_TOKEN) return;
+  const origins = (e.RADAR_ORIGINS ?? "BUE").split(",").map((o) => o.trim().toUpperCase()).filter(Boolean);
+  for (const origin of origins.slice(0, 3)) {
+    const snap = await runRadar(e.TRAVELPAYOUTS_TOKEN, origin);
+    await evaluateAlerts(snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL });
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  scheduled(_controller: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    ctx.waitUntil(scheduledRadar(env));
+  },
+};

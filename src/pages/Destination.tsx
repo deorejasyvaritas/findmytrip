@@ -276,7 +276,7 @@ export default function DestinationPage() {
   function follow() {
     if (!dest) return;
     const m = month ? Number(month.slice(5, 7)) : null;
-    app.addWatch({ destinationId: dest.id, targetUSD: Math.round(total), month: m, nights });
+    app.addWatch({ destinationId: dest.id, targetUSD: Math.round(total), month: m, nights }, { party, style });
     setSaved("watch");
   }
 

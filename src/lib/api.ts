@@ -1,5 +1,8 @@
 import type {
+  AlertSettings,
+  AlertSub,
   Destination,
+  RadarSnapshot,
   ExploreRequest,
   ExploreResponse,
   FlightCalendar,
@@ -38,6 +41,16 @@ export const api = {
     request<ExploreResponse>("/api/explore", { method: "POST", body: JSON.stringify(body) }),
   calendar: (p: { origin: string; dest: string; month: string; nights: number }) =>
     request<FlightCalendar>(`/api/flights/calendar?${qs(p)}`),
+  radar: (origin: string) => request<RadarSnapshot>(`/api/radar?origin=${origin}`),
+  radarRun: (origin: string) => request<RadarSnapshot>(`/api/radar/run?origin=${origin}`, { method: "POST" }),
+  alerts: () => request<{ subs: AlertSub[]; settings: AlertSettings; telegram: boolean }>("/api/alerts"),
+  saveAlert: (sub: Omit<AlertSub, "id" | "createdAt" | "lastNotifiedUSD" | "lastNotifiedAt">) =>
+    request<{ subs: AlertSub[] }>("/api/alerts/subs", { method: "POST", body: JSON.stringify(sub) }),
+  deleteAlert: (id: string) => request<{ subs: AlertSub[] }>(`/api/alerts/subs/${id}`, { method: "DELETE" }),
+  alertSettings: (s: Pick<AlertSettings, "radarDeals" | "minDiscount">) =>
+    request<{ settings: AlertSettings }>("/api/alerts/settings", { method: "PUT", body: JSON.stringify(s) }),
+  telegramConnect: () => request<{ ok: boolean; name?: string; error?: string }>("/api/alerts/telegram/connect", { method: "POST" }),
+  telegramTest: () => request<{ ok: boolean; error?: string }>("/api/alerts/telegram/test", { method: "POST" }),
   quota: () => request<{ left: number | null; total: number | null }>("/api/quota"),
   flightQuote: (p: { origin: string; dest: string; depart: string; ret: string; cacheOnly?: 1 }) =>
     request<FlightQuote>(`/api/flights/quote?${qs(p)}`),
