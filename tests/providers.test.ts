@@ -36,6 +36,20 @@ describe("Travelpayouts", () => {
     expect(cal.days.some((d) => d.source === "estimado")).toBe(true);
   });
 
+  it("completa el calendario con otras fuentes de Aviasales y estadías parecidas", async () => {
+    mockFetch((url) => {
+      if (url.includes("/v1/prices/calendar"))
+        return { success: true, data: { "2027-05-12": { price: 280, airline: "AR", transfers: 0, departure_at: "2027-05-12T08:00:00-03:00", return_at: "2027-05-19T08:00:00-03:00" } } };
+      if (url.includes("month-matrix"))
+        return { success: true, data: [{ value: 260, depart_date: "2027-05-20", return_date: "2027-05-28", number_of_changes: 1 }] };
+      return { success: true, data: [] };
+    });
+    const cal = await flightCalendar("tok", "BUE", rio, "2027-05", 7);
+    expect(cal.days.find((d) => d.date === "2027-05-12")).toMatchObject({ priceUSD: 280, source: "en vivo", airline: "AR" });
+    // Sin precio para 7 noches ese día: usa el de 8 noches con su fecha de vuelta real.
+    expect(cal.days.find((d) => d.date === "2027-05-20")).toMatchObject({ priceUSD: 260, returnDate: "2027-05-28", source: "en vivo" });
+  });
+
   it("sin token usa estimaciones y no llama a la API", async () => {
     const fn = mockFetch(() => ({}));
     const cal = await flightCalendar(undefined, "BUE", rio, "2027-04", 7);

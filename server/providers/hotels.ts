@@ -55,7 +55,7 @@ export function hotelQuery(dest: Destination): string {
 }
 
 /** Descarta hoteles que Google devuelve lejos del destino. */
-export function nearDestination(dest: Destination, p: GoogleHotelProperty): boolean {
+export function nearDestination(dest: Destination, p: Pick<GoogleHotelProperty, "gps_coordinates">): boolean {
   const lat = p.gps_coordinates?.latitude;
   const lon = p.gps_coordinates?.longitude;
   if (typeof lat !== "number" || typeof lon !== "number") return false;
@@ -116,5 +116,5 @@ export async function googleHotels(
     mid: percentile(prices, 0.5),
     high: percentile(prices, 0.85),
   };
-  return { checkin, checkout, hotels, tiers };
+  return { checkin, checkout, hotels, tiers, source: "google" };
 }

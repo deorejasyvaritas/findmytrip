@@ -17,9 +17,10 @@ pero sin ruido, todo personalizado y pensado para **llegar al mejor viaje posibl
 
 | Qué | Fuente | Costo | Clave |
 |---|---|---|---|
-| Vuelos para explorar y calendarios | Travelpayouts / Aviasales Data API (precios reales que encontraron usuarios en los últimos días) | Gratis | `TRAVELPAYOUTS_TOKEN` |
+| Vuelos para explorar y calendarios | Travelpayouts / Aviasales Data API: 3 fuentes combinadas (precios reales que encontraron usuarios en los últimos días) | Gratis, sin límite | `TRAVELPAYOUTS_TOKEN` |
 | Precio exacto de un vuelo (botón) | Google Flights vía SerpApi | Gratis hasta 250 búsquedas/mes | `SERPAPI_KEY` |
-| Hoteles reales (botón) | Google Hotels vía SerpApi | Comparte las mismas 250/mes | `SERPAPI_KEY` |
+| Hoteles reales | Xotelo (compara Booking, Agoda, Expedia, Hotels.com y más) | Gratis, sin clave ni límite | — |
+| Hoteles reales, respaldo | Google Hotels vía SerpApi | Comparte las mismas 250/mes | `SERPAPI_KEY` |
 | Dólar tarjeta para ver precios en pesos | dolarapi.com | Gratis, sin clave | — |
 | Gastos diarios (comida, transporte) | Estimación curada por destino | — | — (no hay API gratuita) |
 | Chat del agente | Workers AI de Cloudflare (Llama 3.3) | **Gratis** con cuota diaria | — (viene con Cloudflare) |

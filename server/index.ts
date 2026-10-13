@@ -44,6 +44,7 @@ import { destinationPhotos } from "./providers/photos.ts";
 import { flightCalendar, googleFlights } from "./providers/flights.ts";
 import { usdArsRate } from "./providers/fx.ts";
 import { googleHotels } from "./providers/hotels.ts";
+import { xoteloHotels } from "./providers/xotelo.ts";
 import { buildPackage } from "./packages.ts";
 
 // API de FindMyTrip. Corre como Cloudflare Worker (gratis); el frontend se
@@ -289,24 +290,37 @@ app.get("/flights/quote", async (c) => {
   return c.json(quote);
 });
 
-// Alojamiento: estimado siempre; con `real=1` agrega hoteles reales de Google Hotels.
+// Alojamiento: estimado siempre; con `real=1` agrega hoteles reales.
+// Primero Xotelo (compara Booking, Agoda, Expedia...; gratis y sin cuota) y,
+// si no hay datos, Google Hotels solo cuando el cliente lo pide (`google=1`, usa cuota).
 app.get("/stays", async (c) => {
   const q = z
-    .object({ dest: z.string(), checkin: isoDate, nights: nightsQ, travelers: travelersQ, real: z.string().optional() })
+    .object({
+      dest: z.string(),
+      checkin: isoDate,
+      nights: nightsQ,
+      travelers: travelersQ,
+      real: z.string().optional(),
+      google: z.string().optional(),
+    })
     .parse(c.req.query());
   const dest = getDestination(q.dest);
   if (!dest) return c.json(notFound, 404);
   const serpKey = env(c).SERPAPI_KEY;
-  if (q.real === "1" && !has(serpKey)) {
-    return c.json({ error: "Falta SERPAPI_KEY para ver hoteles reales." }, 503);
+  let quote = null;
+  if (q.real === "1") {
+    quote = await xoteloHotels(dest, q.checkin, q.nights).catch((err) => {
+      console.error("xotelo", err);
+      return null;
+    });
+    if (!quote && q.google === "1" && has(serpKey)) {
+      quote = await googleHotels(serpKey, dest, q.checkin, q.nights, Math.min(q.travelers, 2));
+    }
   }
-  const quote =
-    q.real === "1" && has(serpKey)
-      ? await googleHotels(serpKey, dest, q.checkin, q.nights, Math.min(q.travelers, 2))
-      : null;
   return c.json({
     options: stayOptions(dest, q.checkin, q.nights, q.travelers, quote?.tiers),
     hotels: quote?.hotels ?? [],
+    source: quote?.source ?? null,
     live: Boolean(quote),
   });
 });

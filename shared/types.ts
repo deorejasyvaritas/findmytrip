@@ -280,6 +280,8 @@ export interface RealHotel {
   type: string | null;
   thumbnail: string | null;
   link: string | null;
+  /** Sitio con el precio más barato (Booking.com, Agoda, ...). */
+  site?: string | null;
 }
 
 export interface HotelQuote {
@@ -288,6 +290,8 @@ export interface HotelQuote {
   hotels: RealHotel[];
   /** Precio por noche de referencia para cada estilo (percentiles reales). */
   tiers: Record<Style, number>;
+  /** xotelo = comparador gratis sin cuota · google = Google Hotels (SerpApi). */
+  source?: "xotelo" | "google";
 }
 
 export interface Meta {

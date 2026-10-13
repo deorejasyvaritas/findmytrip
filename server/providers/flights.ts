@@ -25,6 +25,61 @@ interface PricesForDatesItem {
   transfers: number;
 }
 
+interface CalendarItem {
+  price: number;
+  depart: string;
+  ret?: string;
+  airline?: string;
+  transfers?: number;
+}
+
+/** Cuántas noches de diferencia aceptamos si no hay precio para la estadía exacta. */
+const NIGHTS_TOLERANCE = 2;
+
+/** Precios reales de Aviasales para un mes, de tres fuentes de la Data API (todas gratis). */
+async function aviasalesMonth(token: string, origin: string, dest: string, month: string, nights: number): Promise<CalendarItem[]> {
+  const [forDates, calendar, matrix] = await Promise.all([
+    tp<{ success: boolean; data: PricesForDatesItem[] }>(
+      token,
+      "/aviasales/v3/prices_for_dates",
+      { origin, destination: dest, departure_at: month, one_way: "false", currency: "usd", sorting: "price", limit: "1000" },
+      3 * 3600,
+    ),
+    // Más barato por día de salida para una estadía de `nights` días.
+    tp<{ success: boolean; data: Record<string, { price: number; airline?: string; transfers?: number; departure_at?: string; return_at?: string }> }>(
+      token,
+      "/v1/prices/calendar",
+      { origin, destination: dest, depart_date: month, calendar_type: "departure_date", length: String(nights), currency: "usd" },
+      3 * 3600,
+    ),
+    // Matriz del mes: todas las combinaciones vistas, de cualquier duración.
+    tp<{ success: boolean; data: { value: number; depart_date: string; return_date?: string; number_of_changes?: number; gate?: string }[] }>(
+      token,
+      "/v2/prices/month-matrix",
+      { origin, destination: dest, month: `${month}-01`, currency: "usd", show_to_affiliates: "true" },
+      3 * 3600,
+    ),
+  ]);
+
+  const out: CalendarItem[] = [];
+  if (forDates?.success && Array.isArray(forDates.data)) {
+    for (const i of forDates.data) {
+      if (i?.price && i.departure_at) out.push({ price: i.price, depart: i.departure_at, ret: i.return_at, airline: i.airline, transfers: i.transfers });
+    }
+  }
+  if (calendar?.success && calendar.data && !Array.isArray(calendar.data)) {
+    for (const [date, i] of Object.entries(calendar.data)) {
+      if (i?.price) out.push({ price: i.price, depart: i.departure_at ?? date, ret: i.return_at, airline: i.airline, transfers: i.transfers });
+    }
+  }
+  if (matrix?.success && Array.isArray(matrix.data)) {
+    for (const i of matrix.data) {
+      if (i?.value && i.depart_date) out.push({ price: i.value, depart: i.depart_date, ret: i.return_date, transfers: i.number_of_changes });
+    }
+  }
+  return out;
+}
+
 /** Calendario del mes: precio real donde hay datos, estimado (marcado) en el resto. */
 export async function flightCalendar(
   token: string | undefined,
@@ -35,44 +90,30 @@ export async function flightCalendar(
 ): Promise<FlightCalendar> {
   const estimated = estimatedCalendar(origin, dest, month, nights);
   if (!token) return estimated;
-  const data = await tp<{ success: boolean; data: PricesForDatesItem[] }>(
-    token,
-    "/aviasales/v3/prices_for_dates",
-    {
-      origin,
-      destination: dest.iata,
-      departure_at: month,
-      one_way: "false",
-      currency: "usd",
-      sorting: "price",
-      limit: "1000",
-    },
-    3 * 3600,
-  );
-  if (!data?.success || !data.data?.length) return estimated;
+  const items = await aviasalesMonth(token, origin, dest.iata, month, nights);
+  if (!items.length) return estimated;
 
-  // El más barato por día de salida, para la misma cantidad de noches.
-  const byDay = new Map<string, FlightDay>();
-  for (const item of data.data) {
-    const date = item.departure_at.slice(0, 10);
-    const returnDate = item.return_at?.slice(0, 10) ?? addDays(date, nights);
-    const stay = (Date.parse(returnDate) - Date.parse(date)) / 86400000;
-    if (stay !== nights) continue; // solo viajes de exactamente las noches pedidas
+  // Por día de salida: primero la estadía exacta; si no hay, la más parecida (hasta 2 noches de diferencia).
+  const byDay = new Map<string, { day: FlightDay; off: number }>();
+  for (const item of items) {
+    const date = item.depart.slice(0, 10);
+    if (!date.startsWith(month)) continue;
+    const returnDate = item.ret?.slice(0, 10) ?? addDays(date, nights);
+    const stay = Math.round((Date.parse(returnDate) - Date.parse(date)) / 86400000);
+    const off = Math.abs(stay - nights);
+    if (off > NIGHTS_TOLERANCE) continue;
     const prev = byDay.get(date);
-    if (!prev || item.price < prev.priceUSD) {
+    const price = Math.round(item.price);
+    if (!prev || off < prev.off || (off === prev.off && price < prev.day.priceUSD)) {
       byDay.set(date, {
-        date,
-        returnDate,
-        priceUSD: Math.round(item.price),
-        source: "en vivo",
-        airline: item.airline,
-        stops: item.transfers,
+        off,
+        day: { date, returnDate, priceUSD: price, source: "en vivo", airline: item.airline, stops: item.transfers },
       });
     }
   }
   if (!byDay.size) return estimated;
 
-  const days = estimated.days.map((d) => byDay.get(d.date) ?? d);
+  const days = estimated.days.map((d) => byDay.get(d.date)?.day ?? d);
   const cheapest = days.reduce<FlightDay | null>((acc, d) => {
     // Preferimos precios reales al elegir el día más barato.
     if (!acc) return d;

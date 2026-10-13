@@ -11,8 +11,8 @@ describe("hoteles reales", () => {
   });
 
   it("descarta hoteles lejos del destino", () => {
-    expect(nearDestination(aruba, { name: "Llao Llao", gps_coordinates: { latitude: -41.05, longitude: -71.53 } })).toBe(false);
-    expect(nearDestination(aruba, { name: "Eagle Beach", gps_coordinates: { latitude: 12.55, longitude: -70.06 } })).toBe(true);
-    expect(nearDestination(aruba, { name: "Sin ubicación" })).toBe(false);
+    expect(nearDestination(aruba, { gps_coordinates: { latitude: -41.05, longitude: -71.53 } })).toBe(false);
+    expect(nearDestination(aruba, { gps_coordinates: { latitude: 12.55, longitude: -70.06 } })).toBe(true);
+    expect(nearDestination(aruba, {})).toBe(false);
   });
 });

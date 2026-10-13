@@ -63,6 +63,8 @@ function pickTiers(hotels: RealHotel[]): Record<Style, RealHotel | undefined> {
   return { low, mid, high: high === low ? undefined : high };
 }
 
+const nightsBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+
 export default function DestinationPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
@@ -86,6 +88,7 @@ export default function DestinationPage() {
   const [stays, setStays] = useState<StayOption[]>([]);
   const [hotels, setHotels] = useState<RealHotel[]>([]);
   const [hotelsFor, setHotelsFor] = useState<string | null>(null);
+  const [hotelsSource, setHotelsSource] = useState<"xotelo" | "google" | null>(null);
   const [tier, setTier] = useState<Style>(profile.style);
   const [custom, setCustom] = useState<RealHotel | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -159,8 +162,13 @@ export default function DestinationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayKey, autoKey, google, id, profile.origin]);
 
-  // Alojamiento: estimado al instante y hoteles reales de Google (automático).
-  // Los hoteles se buscan una vez por mes (con la fecha inicial) para cuidar la cuota.
+  // Los hoteles siguen al día elegido en el calendario.
+  useEffect(() => {
+    if (day) setHotelsCheckin(day.date);
+  }, [day?.date]);
+
+  // Alojamiento: estimado al instante y hoteles reales (automático).
+  // Xotelo no tiene cuota; Google Hotels (con cuota) solo de respaldo y solo para la fecha inicial del mes.
   useEffect(() => {
     setCustom(null);
     setShowAll(false);
@@ -170,21 +178,22 @@ export default function DestinationPage() {
       .stays({ dest: id, checkin, nights, travelers })
       .then((r) => setStays(r.options))
       .catch((e) => setError(e.message));
-    if (!google) return;
     let cancelled = false;
+    const allowGoogle = google && Boolean(autoKey?.startsWith(checkin));
     const t = setTimeout(() => {
       setLoading((l) => ({ ...l, hotels: true }));
       api
-        .stays({ dest: id, checkin, nights, travelers, real: 1 })
+        .stays({ dest: id, checkin, nights, travelers, real: 1, ...(allowGoogle ? { google: 1 as const } : {}) })
         .then((r) => {
           if (cancelled) return;
           setHotels(r.hotels);
+          setHotelsSource(r.source);
           setHotelsFor(`${checkin}_${nights}`);
-          api.quota().then(setQuota).catch(() => {});
+          if (r.source === "google") api.quota().then(setQuota).catch(() => {});
         })
         .catch(() => !cancelled && setHotels([]))
         .finally(() => !cancelled && setLoading((l) => ({ ...l, hotels: false })));
-    }, 500);
+    }, 600);
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -472,6 +481,9 @@ export default function DestinationPage() {
                   <span>
                     Salida <strong>{formatDate(day.date, { weekday: "short", day: "numeric", month: "short" })}</strong>, vuelta{" "}
                     <strong>{formatDate(day.returnDate, { weekday: "short", day: "numeric", month: "short" })}</strong>
+                    {nightsBetween(day.date, day.returnDate) !== nights && (
+                      <> · {nightsBetween(day.date, day.returnDate)} noches (el precio real más cercano a {nights})</>
+                    )}
                   </span>
                 </div>
                 <div className="date-line">
@@ -553,7 +565,11 @@ export default function DestinationPage() {
               <h2>Dónde dormir</h2>
               <span className="small muted">
                 {formatRange(stayStart ?? day.date, stayEnd)} · {rooms} {rooms === 1 ? "habitación" : "habitaciones"}
-                {realHotels.length ? " · precios reales de Google Hotels" : google ? "" : " · precios estimados"}
+                {realHotels.length
+                  ? hotelsSource === "google"
+                    ? " · precios reales de Google Hotels"
+                    : " · el mejor precio entre Booking, Agoda, Expedia y más"
+                  : " · precios estimados"}
               </span>
             </div>
             {loading.hotels && (
@@ -590,7 +606,9 @@ export default function DestinationPage() {
                         <strong>{h.name}</strong>
                         <Rating stars={h.stars} rating={h.rating} reviews={h.reviews} />
                         <span className="price">{money(h.totalUSD * rooms)}</span>
-                        <span className="small muted">{money(h.nightlyUSD)} por noche</span>
+                        <span className="small muted">
+                          {money(h.nightlyUSD)} por noche{h.site ? ` en ${h.site}` : ""}
+                        </span>
                         {h.link && (
                           <a href={h.link} target="_blank" rel="noreferrer" className="small row gap-sm" onClick={(e) => e.stopPropagation()}>
                             Ver hotel <Icon name="external" size={14} />
@@ -619,7 +637,10 @@ export default function DestinationPage() {
                           <Rating stars={h.stars} rating={h.rating} />
                           <span className="small">
                             <strong>{money(h.nightlyUSD)}</strong>
-                            <span className="muted"> por noche · {money(h.totalUSD * rooms)} total</span>
+                            <span className="muted">
+                              {" "}
+                              por noche{h.site ? ` en ${h.site}` : ""} · {money(h.totalUSD * rooms)} total
+                            </span>
                           </span>
                         </span>
                       </button>
