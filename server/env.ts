@@ -10,6 +10,8 @@ export interface Env {
   CACHE?: KVStore;
   /** Tu ID de afiliado de Travelpayouts (para ganar comisión con los links de Aviasales). */
   TRAVELPAYOUTS_MARKER?: string;
+  /** ID del proyecto en Travelpayouts ("trs"): para convertir links de Klook, Airalo, etc. en links con comisión. */
+  TRAVELPAYOUTS_TRS?: string;
   /** Opcional (pago por uso): habilita el agente conversacional. */
   ANTHROPIC_API_KEY?: string;
   /** Gratis: precios reales de vuelos (Aviasales Data API). */
@@ -37,6 +39,7 @@ export function config(env: Env): Env {
     SERPAPI_KEY: clean(env.SERPAPI_KEY),
     USD_ARS_RATE: clean(env.USD_ARS_RATE),
     TRAVELPAYOUTS_MARKER: clean(env.TRAVELPAYOUTS_MARKER),
+    TRAVELPAYOUTS_TRS: clean(env.TRAVELPAYOUTS_TRS),
     TELEGRAM_BOT_TOKEN: clean(env.TELEGRAM_BOT_TOKEN),
     SITE_URL: clean(env.SITE_URL),
     RADAR_ORIGINS: clean(env.RADAR_ORIGINS),

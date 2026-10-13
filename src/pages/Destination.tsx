@@ -32,6 +32,7 @@ import { STYLE_LABEL, capitalize, formatDate, formatRange, monthName, monthShort
 import { INTEREST_ICON } from "../lib/icons.ts";
 import Icon from "../components/Icon.tsx";
 import CrossAndFly from "../components/CrossAndFly.tsx";
+import TripExtras from "../components/TripExtras.tsx";
 
 const WEEKDAYS = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
 const STYLES: Style[] = ["low", "mid", "high"];
@@ -690,6 +691,8 @@ export default function DestinationPage() {
             )}
           </section>
         )}
+        <TripExtras destId={dest.id} />
+
         {error && (
           <p className="error" role="alert">
             {error}

@@ -1,3 +1,4 @@
+import type { Extra } from "../../shared/extras.ts";
 import type {
   CrossResult,
   EscapeWeekend,
@@ -63,6 +64,7 @@ export const api = {
     request<ExploreResponse>("/api/explore", { method: "POST", body: JSON.stringify(body) }),
   calendar: (p: { origin: string; dest: string; month: string; nights: number }) =>
     request<FlightCalendar>(`/api/flights/calendar?${qs(p)}`),
+  extras: (dest: string) => request<{ extras: Extra[]; partner: boolean }>(`/api/extras?dest=${dest}`),
   cross: (p: { origin: string; dest: string; month: string }) => request<CrossResult>(`/api/cross?${qs(p)}`),
   escapes: (origin: string) => request<EscapeWeekend[]>(`/api/escapes?origin=${origin}`),
   radar: (origin: string) => request<RadarSnapshot>(`/api/radar?origin=${origin}`),

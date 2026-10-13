@@ -155,16 +155,22 @@ export default function Home() {
   return (
     <div className="stack-lg">
       <section className="search-panel" aria-labelledby="search-title">
-        <div>
-          <h1 id="search-title">{profile.name ? `Hola ${profile.name}, ¿a dónde vamos?` : "¿A dónde vamos?"}</h1>
-          <p className="lead">
-            Saliendo desde {originName}.{" "}
-            {!app.profileSaved && (
-              <>
-                <Link to="/perfil">Completá tu perfil</Link> para recomendaciones a tu medida.
-              </>
-            )}
-          </p>
+        <div className="hero">
+          <div className="hero-copy">
+            <p className="hero-eyebrow">{profile.name ? `Hola ${profile.name}` : "Tu agente de viajes"}</p>
+            <h1 id="search-title">
+              Viajá más lejos <span>con lo que tenés.</span>
+            </h1>
+            <p className="lead">
+              Precios reales de vuelos y hoteles, saliendo desde {originName}.{" "}
+              {!app.profileSaved && (
+                <>
+                  <Link to="/perfil">Completá tu perfil</Link> para recomendaciones a tu medida.
+                </>
+              )}
+            </p>
+          </div>
+          <HeroPostcards />
         </div>
 
         <div className="search-tabs" role="tablist" aria-label="Tipo de búsqueda">
@@ -486,6 +492,25 @@ function WatchRow({ w }: { w: WatchItem }) {
       <button className="icon-btn" onClick={() => removeWatch(w.id)} aria-label={`Dejar de seguir ${dest.name}`}>
         <Icon name="trash" size={18} />
       </button>
+    </div>
+  );
+}
+
+// Postales del banner: tres destinos con foto, inclinadas como en una cartelera de viaje.
+const HERO_PICKS = ["florianopolis", "bariloche", "cusco", "madrid", "cartagena", "rio"];
+
+function HeroPostcards() {
+  const { photos, destinations } = useApp();
+  const picks = HERO_PICKS.map((id) => destinations.find((d) => d.id === id)).filter((d) => d && photos[d.id]).slice(0, 3);
+  if (picks.length < 3) return null;
+  return (
+    <div className="hero-cards" aria-hidden="true">
+      {picks.map((d) => (
+        <figure key={d!.id} className="postcard">
+          <img src={photos[d!.id]} alt="" referrerPolicy="no-referrer" />
+          <figcaption>{d!.name}</figcaption>
+        </figure>
+      ))}
     </div>
   );
 }

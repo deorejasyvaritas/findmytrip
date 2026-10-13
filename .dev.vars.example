@@ -18,3 +18,5 @@ ANTHROPIC_API_KEY=
 
 # Respaldo si no responde dolarapi.com (el dólar tarjeta se toma en vivo).
 USD_ARS_RATE=1450
+# ID del proyecto en Travelpayouts ("trs"): convierte los links de extras (Klook, Airalo...) en links con comisión.
+TRAVELPAYOUTS_TRS=

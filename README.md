@@ -81,6 +81,13 @@ Te devuelve una URL tipo `https://findmytrip.<tu-usuario>.workers.dev`. Para act
 > Ojo: si publicás la URL, cualquiera que entre usa tu cuota de SerpApi (y tu saldo de Claude si lo activaste).
 > Para uso personal, no la compartas o protegela con Cloudflare Access (gratis hasta 50 usuarios).
 
+## Extras del viaje con comisión
+
+En cada destino, "Completá el viaje" ofrece traslado (Welcome Pickups), excursiones (Klook), eSIM (Airalo) y seguro
+(EKTA). Con el ID de tu proyecto de Travelpayouts (`trs`, el número que aparece como `trs=` en cualquier link generado
+desde Tools → Links) los links se convierten solos en links con comisión. Va en `TRAVELPAYOUTS_TRS` (en `wrangler.jsonc`,
+sección `vars`). Sin ese número, los links funcionan igual pero sin comisión.
+
 ## Cuentas (registro desde el sitio)
 
 La primera persona que entra crea su cuenta y queda como dueña del sitio. Después el registro queda cerrado; la dueña

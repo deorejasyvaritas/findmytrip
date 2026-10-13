@@ -47,6 +47,8 @@ import { googleHotels } from "./providers/hotels.ts";
 import { xoteloHotels } from "./providers/xotelo.ts";
 import { escapes } from "./escapes.ts";
 import { crossAndFly } from "./cross.ts";
+import { partnerLinks } from "./partner-links.ts";
+import { extrasFor } from "../shared/extras.ts";
 import { buildPackage } from "./packages.ts";
 
 // API de FindMyTrip. Corre como Cloudflare Worker (gratis); el frontend se
@@ -399,6 +401,20 @@ app.get("/radar", async (c) => {
   const snap = await getRadar(env(c).TRAVELPAYOUTS_TOKEN, origin);
   if (!snap) return c.json({ error: "El radar necesita TRAVELPAYOUTS_TOKEN para funcionar." }, 503);
   return c.json(snap);
+});
+
+// Extras opcionales del viaje (traslado, eSIM, excursiones, seguro) con links de afiliado.
+app.get("/extras", async (c) => {
+  const { dest: id } = z.object({ dest: z.string() }).parse(c.req.query());
+  const dest = getDestination(id);
+  if (!dest) return c.json(notFound, 404);
+  const e = env(c);
+  const extras = extrasFor(dest);
+  const links = await partnerLinks(
+    { token: e.TRAVELPAYOUTS_TOKEN, marker: e.TRAVELPAYOUTS_MARKER, trs: e.TRAVELPAYOUTS_TRS },
+    extras.map((x) => x.url),
+  );
+  return c.json({ extras: extras.map((x) => ({ ...x, url: links[x.url] ?? x.url })), partner: has(e.TRAVELPAYOUTS_TRS) });
 });
 
 // Cruzá y volá: comparar con salir desde Montevideo, Santiago o San Pablo.
