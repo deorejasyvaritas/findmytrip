@@ -79,9 +79,24 @@ async function googleExploreRaw(apiKey: string, origin: string, month: number | 
     });
     if (month) params.set("month", String(month));
     const r = await fetchJSON<GoogleExploreResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-explore");
-    return r && !r.error && r.destinations?.length ? r.destinations : null;
+    if (!r || r.error || !r.destinations?.length) return null;
+    // Guardamos solo los campos que usamos: la respuesta completa es pesada.
+    return r.destinations.map((d) => ({
+      name: d.name,
+      country: d.country,
+      destination_airport: { code: d.destination_airport?.code },
+      start_date: d.start_date,
+      end_date: d.end_date,
+      flight_price: d.flight_price,
+      hotel_price: d.hotel_price,
+      airline: d.airline,
+      link: d.link,
+      flight_duration: d.flight_duration,
+      number_of_stops: d.number_of_stops,
+      thumbnail: d.thumbnail,
+    }));
   };
-  const data = await cached<GoogleExploreDestination[]>(`gx:${origin}-${month ?? "flex"}`, 24 * 3600, async () => {
+  const data = await cached<GoogleExploreDestination[]>(`gx2:${origin}-${month ?? "flex"}`, 24 * 3600, async () => {
     const airports = airportsFor(origin);
     return (await run(airports)) ?? (airports.includes(",") ? await run(airports.split(",")[0]) : null);
   });
@@ -110,7 +125,8 @@ export async function realPrices(
     keys.serpapi ? googleExploreRaw(keys.serpapi, origin, singleMonth) : Promise.resolve([]),
     keys.travelpayouts
       ? Promise.all(
-          months.map(async ({ month, year }) => [
+          // Hasta 6 meses: alcanza para comparar y no pasa el límite de CPU del plan gratuito.
+          months.slice(0, 6).map(async ({ month, year }) => [
             month,
             await cheapestAnywhere(keys.travelpayouts!, origin, `${year}-${String(month).padStart(2, "0")}`),
           ] as const),

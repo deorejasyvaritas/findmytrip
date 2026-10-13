@@ -84,19 +84,24 @@ export async function flightCalendar(
 
 /** Precio real más barato del mes desde `origin` hacia cualquier destino (por IATA de ciudad). */
 export async function cheapestAnywhere(token: string, origin: string, month: string): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  const data = await tp<{ success: boolean; data: Record<string, Record<string, { price: number }>> }>(
-    token,
-    "/v1/prices/cheap",
-    { origin, destination: "-", depart_date: month, return_date: month, currency: "usd" },
-    6 * 3600,
-  );
-  if (!data?.success || !data.data) return out;
-  for (const [iata, offers] of Object.entries(data.data)) {
-    const prices = Object.values(offers).map((o) => o.price);
-    if (prices.length) out.set(iata, Math.round(Math.min(...prices)));
-  }
-  return out;
+  // Guardamos solo destino -> precio: la respuesta cruda es grande y procesarla
+  // en cada búsqueda gasta CPU (el plan gratuito de Workers da 10 ms por pedido).
+  const compact = await cached<Record<string, number>>(`tpc:${origin}-${month}`, 6 * 3600, async () => {
+    const qs = new URLSearchParams({ origin, destination: "-", depart_date: month, return_date: month, currency: "usd" });
+    const data = await fetchJSON<{ success: boolean; data: Record<string, Record<string, { price: number }>> }>(
+      `${TP}/v1/prices/cheap?${qs}`,
+      "travelpayouts",
+      { headers: { "X-Access-Token": token } },
+    );
+    if (!data?.success || !data.data) return null;
+    const out: Record<string, number> = {};
+    for (const [iata, offers] of Object.entries(data.data)) {
+      const prices = Object.values(offers).map((o) => o.price);
+      if (prices.length) out[iata] = Math.round(Math.min(...prices));
+    }
+    return out;
+  });
+  return new Map(Object.entries(compact ?? {}));
 }
 
 // ---------------------------------------------------------------------------

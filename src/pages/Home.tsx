@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { Bags, ExploreResponse, Interest, Party, Region, Style, WatchItem, When } from "../../shared/types.ts";
 import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
@@ -63,6 +63,9 @@ export default function Home() {
   const [result, setResult] = useState<ExploreResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Resultado de la última búsqueda pedida con el botón (se muestra al lado del botón).
+  const [status, setStatus] = useState<string | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const [destQuery, setDestQuery] = useState("");
 
   // Destinos que el usuario ya tiene en mente: los usamos para sugerir alternativas.
@@ -71,9 +74,10 @@ export default function Home() {
     [packages, watchlist],
   );
 
-  async function run(s: Search) {
+  async function run(s: Search, fromButton = false) {
     setLoading(true);
     setError(null);
+    if (fromButton) setStatus(null);
     try {
       const nights = s.when.kind === "exact" ? nightsBetween(s.when.depart, s.when.ret) : s.nights;
       const res = await api.explore({
@@ -92,8 +96,14 @@ export default function Home() {
         maxFlightHours: profile.maxFlightHours,
       });
       setResult(res);
+      if (fromButton) {
+        const n = res.suggestions.length + res.alternatives.length;
+        setStatus(n ? `Listo: ${n} destinos para tu búsqueda.` : "No encontramos destinos con esos datos. Probá subir el presupuesto o cambiar fechas.");
+        requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      }
     } catch (e) {
       setError((e as Error).message);
+      if (fromButton) setStatus(`No pudimos buscar: ${(e as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -113,12 +123,17 @@ export default function Home() {
       setSheet("when");
       return;
     }
+    const budgetUSD = Math.round(app.toUSD(Number(budgetInput) || 0));
+    if (budgetUSD <= 0) {
+      setFormError("Poné cuánto querés gastar en total.");
+      return;
+    }
     setFormError(null);
     setSheet(null);
-    const s = { ...form, budgetUSD: Math.round(app.toUSD(Number(budgetInput) || 0)) };
+    const s = { ...form, budgetUSD };
     setForm(s);
     setLastSearch(s);
-    run(s);
+    run(s, true);
   }
 
   const filteredDest = destinations.filter((d) =>
@@ -256,6 +271,11 @@ export default function Home() {
               <Icon name="search" size={18} />
               {loading ? "Buscando precios…" : "Ver a dónde me alcanza"}
             </button>
+            {status && !loading && (
+              <p className={status.startsWith("Listo") ? "search-status" : "form-error"} role="status">
+                {status}
+              </p>
+            )}
           </form>
         ) : (
           <div className="stack">
@@ -311,6 +331,7 @@ export default function Home() {
         </div>
       )}
 
+      <div ref={resultsRef} className="scroll-anchor" />
       {loading && (
         <section aria-busy="true" aria-label="Buscando opciones">
           <div className="section-head">

@@ -90,6 +90,7 @@ describe("SerpApi", () => {
         total_rate: { extracted_lowest: p * 7 },
         overall_rating: 4.2,
         extracted_hotel_class: 3,
+        gps_coordinates: { latitude: -22.97, longitude: -43.18 },
       })),
     }));
     const q = await googleHotels("key", rio, "2027-03-10", 7, 2);

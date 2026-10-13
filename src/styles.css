@@ -506,6 +506,8 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .stepper button { min-height: 36px; width: 36px; padding: 0; border-radius: 50%; background: var(--fill); color: var(--label); }
 .stepper output { min-width: 28px; text-align: center; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .form-error { background: #fefefe; color: var(--red); border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; font-weight: 600; }
+.search-status { color: var(--green, #1f8a4c); font-size: 13px; font-weight: 600; margin: 0; text-align: center; }
+.scroll-anchor { scroll-margin-top: 72px; }
 
 /* CTA principal de búsqueda: negro de la marca sobre el panel rosa. */
 .search-cta { background: #1c1c1e; color: #fefefe; box-shadow: 0 8px 20px rgba(60, 10, 25, 0.3); }

@@ -251,12 +251,16 @@ app.post("/explore", async (c) => {
   const body = exploreSchema.parse(await c.req.json());
   const { months } = resolveWhen(body);
   const keys = env(c);
+  // Si fallan las fuentes de precios, igual devolvemos resultados (estimados).
   const real = await realPrices(
     { serpapi: keys.SERPAPI_KEY, travelpayouts: keys.TRAVELPAYOUTS_TOKEN },
     body.origin,
     months,
     months.length === 1 ? months[0].month : null,
-  );
+  ).catch((err) => {
+    console.error("explore: precios reales", err);
+    return undefined;
+  });
   return c.json(explore(body, real));
 });
 
@@ -463,7 +467,11 @@ app.post("/alerts/telegram/test", async (c) => {
 app.notFound((c) => c.json({ error: "No encontrado" }, 404));
 
 app.onError((err, c) => {
-  if (err instanceof z.ZodError) return c.json({ error: "Parámetros inválidos", details: err.issues }, 400);
+  if (err instanceof z.ZodError) {
+    const field = err.issues[0]?.path.join(".");
+    const msg = field === "budgetUSD" ? "Poné un presupuesto mayor a cero." : `Revisá los datos de la búsqueda${field ? ` (${field})` : ""}.`;
+    return c.json({ error: msg, details: err.issues }, 400);
+  }
   console.error(err);
   return c.json({ error: "Algo salió mal. Probá de nuevo en un momento." }, 500);
 });
