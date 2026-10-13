@@ -4,6 +4,7 @@ import type { Bags, ExploreResponse, Interest, Party, Region, Style, WatchItem, 
 import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
+import LongWeekends from "../components/LongWeekends.tsx";
 import RadarSection from "../components/RadarSection.tsx";
 import Segmented from "../components/Segmented.tsx";
 import SuggestionCard, { Photo, SuggestionSkeleton } from "../components/SuggestionCard.tsx";
@@ -316,6 +317,8 @@ export default function Home() {
       </section>
 
       <RadarSection />
+
+      <LongWeekends />
 
       {watchlist.length > 0 && (
         <section>

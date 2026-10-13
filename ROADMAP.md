@@ -10,7 +10,7 @@ Ordenadas por impacto para el viajero. Las marcadas con (gratis) no suman costos
 5. **Vuelos directos o con escalas**, horarios preferidos y aerolíneas a evitar.
 6. **Impuestos argentinos**: mostrar el precio en pesos con dólar tarjeta y percepciones, y comparar con pagar en dólares.
 7. **Multi-destino** ("Lisboa + Madrid en 12 días") y tramos con tren o bus.
-8. **Fin de semana largo**: detectar feriados y proponer escapadas que aprovechen los días.
+8. **Fin de semana largo** (hecho): feriados calculados según la ley y escapadas con precio real en Explorar.
 
 ## Paquete y viaje
 9. **Extras del paquete con comisión**: traslados (Kiwitaxi, GetTransfer), auto (Localrent, GetRentacar), eSIM (Airalo, Yesim), seguro (EKTA), excursiones (Klook, Tiqets).

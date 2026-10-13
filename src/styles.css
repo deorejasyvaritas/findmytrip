@@ -601,3 +601,18 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 /* ---------- Filtros del radar ---------- */
 .radar-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .radar-filters select.inline { width: auto; min-width: 0; max-width: 100%; min-height: 36px; border-radius: 999px; font-size: 13px; font-weight: 500; padding-left: 12px; background-color: var(--surface); box-shadow: var(--shadow-sm); }
+
+/* ---------- Fines de semana largos ---------- */
+.lw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.lw-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.lw-card header { display: flex; flex-direction: column; gap: 2px; }
+.lw-date { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--brand-ink); }
+.lw-list { display: flex; flex-direction: column; }
+.lw-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; color: var(--label); font-weight: 400; position: relative; }
+.lw-row:hover { text-decoration: none; }
+.lw-row:hover .lw-name { text-decoration: underline; }
+.lw-row + .lw-row::before { content: ""; position: absolute; top: 0; left: 56px; right: 0; border-top: 1px solid var(--separator); }
+.lw-row img, .lw-thumb { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; background: var(--brand-soft); flex-shrink: 0; }
+.lw-name { font-weight: 600; }
+.lw-price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lw-row .icon { color: var(--label-3); }

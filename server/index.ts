@@ -45,6 +45,7 @@ import { flightCalendar, googleFlights } from "./providers/flights.ts";
 import { usdArsRate } from "./providers/fx.ts";
 import { googleHotels } from "./providers/hotels.ts";
 import { xoteloHotels } from "./providers/xotelo.ts";
+import { escapes } from "./escapes.ts";
 import { buildPackage } from "./packages.ts";
 
 // API de FindMyTrip. Corre como Cloudflare Worker (gratis); el frontend se
@@ -397,6 +398,12 @@ app.get("/radar", async (c) => {
   const snap = await getRadar(env(c).TRAVELPAYOUTS_TOKEN, origin);
   if (!snap) return c.json({ error: "El radar necesita TRAVELPAYOUTS_TOKEN para funcionar." }, 503);
   return c.json(snap);
+});
+
+// Escapadas para los próximos fines de semana largos.
+app.get("/escapes", async (c) => {
+  const { origin } = z.object({ origin: originCode }).parse(c.req.query());
+  return c.json(await escapes(env(c).TRAVELPAYOUTS_TOKEN, origin));
 });
 
 // Barrido manual (además de los automáticos). Limitado para no abusar de la API.

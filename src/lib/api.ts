@@ -1,4 +1,5 @@
 import type {
+  EscapeWeekend,
   AlertSettings,
   AlertSub,
   Destination,
@@ -61,6 +62,7 @@ export const api = {
     request<ExploreResponse>("/api/explore", { method: "POST", body: JSON.stringify(body) }),
   calendar: (p: { origin: string; dest: string; month: string; nights: number }) =>
     request<FlightCalendar>(`/api/flights/calendar?${qs(p)}`),
+  escapes: (origin: string) => request<EscapeWeekend[]>(`/api/escapes?origin=${origin}`),
   radar: (origin: string) => request<RadarSnapshot>(`/api/radar?origin=${origin}`),
   radarRun: (origin: string) => request<RadarSnapshot>(`/api/radar/run?origin=${origin}`, { method: "POST" }),
   alerts: () => request<{ subs: AlertSub[]; settings: AlertSettings; telegram: boolean }>("/api/alerts"),

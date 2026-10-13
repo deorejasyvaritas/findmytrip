@@ -379,3 +379,29 @@ export interface AlertSettings {
   /** Ciudad desde la que se avisan las ofertas del radar. */
   origin?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Fines de semana largos
+// ---------------------------------------------------------------------------
+
+export interface Escape {
+  destinationId: string;
+  name: string;
+  /** Vuelo ida y vuelta por persona (precio real visto en Aviasales). */
+  flightUSD: number;
+  /** Alojamiento económico estimado por persona (habitación compartida de a dos). */
+  lodgingUSD: number;
+  totalPerPersonUSD: number;
+  depart: string;
+  ret: string;
+  nights: number;
+  airline?: string;
+}
+
+export interface EscapeWeekend {
+  from: string;
+  to: string;
+  days: number;
+  reason: string;
+  options: Escape[];
+}

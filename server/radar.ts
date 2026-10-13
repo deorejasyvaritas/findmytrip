@@ -27,7 +27,7 @@ interface CheapOffer {
   return_at?: string;
 }
 
-const BY_CODE = new Map<string, Destination>();
+export const BY_CODE = new Map<string, Destination>();
 for (const d of DESTINATIONS) {
   for (const code of [d.iata, ...airportsFor(d.iata).split(",")]) if (!BY_CODE.has(code)) BY_CODE.set(code, d);
 }
