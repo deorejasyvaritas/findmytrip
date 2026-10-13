@@ -1,13 +1,43 @@
-import { useEffect, useState } from "react";
-import type { RadarItem, RadarSnapshot } from "../../shared/types.ts";
+import { useEffect, useMemo, useState } from "react";
+import type { RadarItem, RadarSnapshot, Region } from "../../shared/types.ts";
 import { airlineName } from "../../shared/airlines.ts";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { formatRange, timeAgo } from "../lib/format.ts";
+import { capitalize, formatRange, timeAgo } from "../lib/format.ts";
 import Icon from "./Icon.tsx";
 import PurchaseModal, { type PurchaseTarget } from "./PurchaseModal.tsx";
 import Segmented from "./Segmented.tsx";
 import { Photo } from "./SuggestionCard.tsx";
+
+const MAX_PRICES = [300, 500, 800, 1200, 2000];
+
+const monthLabel = (key: string) =>
+  capitalize(new Date(`${key}-15T12:00:00`).toLocaleDateString("es-AR", { month: "long", year: "numeric" }));
+
+/** Ofertas de un mes puntual, armadas con el mejor precio de cada destino en ese mes. */
+function itemsForMonth(snap: RadarSnapshot, month: string): RadarItem[] {
+  const out: RadarItem[] = [];
+  for (const item of snap.items) {
+    const m = snap.byMonth[item.destinationId]?.[month];
+    if (!m) continue;
+    const discountPct = Math.max(0, Math.round((1 - m.p / item.typicalUSD) * 100));
+    const isMinimum = item.isMinimum && m.p <= item.priceUSD;
+    out.push({
+      ...item,
+      priceUSD: m.p,
+      depart: m.dep,
+      ret: m.ret,
+      airline: m.al,
+      flightNumber: m.p === item.priceUSD ? item.flightNumber : undefined,
+      discountPct,
+      isMinimum,
+      isDeal: discountPct >= 15 || isMinimum,
+      trend: m.p === item.priceUSD ? item.trend : "same",
+      score: discountPct + (isMinimum ? 10 : 0),
+    });
+  }
+  return out.sort((a, b) => b.score - a.score || a.priceUSD - b.priceUSD);
+}
 
 const TREND = {
   down: { icon: "trendDown" as const, label: "Bajó", cls: "success" },
@@ -17,13 +47,21 @@ const TREND = {
 };
 
 export default function RadarSection() {
-  const { profile, meta, money, photos } = useApp();
+  const { profile, meta, money, photos, destinations } = useApp();
   const [snap, setSnap] = useState<RadarSnapshot | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [view, setView] = useState<"deals" | "all">("deals");
   const [showMore, setShowMore] = useState(false);
   const [buying, setBuying] = useState<PurchaseTarget | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [month, setMonth] = useState("");
+  const [region, setRegion] = useState<Region | "">("");
+  const [maxPrice, setMaxPrice] = useState(0);
+  const regionOf = useMemo(() => new Map(destinations.map((d) => [d.id, d.region])), [destinations]);
+  const months = useMemo(
+    () => [...new Set(Object.values(snap?.byMonth ?? {}).flatMap((m) => Object.keys(m)))].sort(),
+    [snap],
+  );
 
   useEffect(() => {
     if (!meta?.liveFlights) return;
@@ -49,9 +87,14 @@ export default function RadarSection() {
     }
   }
 
-  const deals = snap?.items.filter((i) => i.isDeal) ?? [];
-  const list = view === "deals" && deals.length ? deals : (snap?.items ?? []);
+  const base = snap ? (month ? itemsForMonth(snap, month) : snap.items) : [];
+  const filtered = base.filter(
+    (i) => (!region || regionOf.get(i.destinationId) === region) && (!maxPrice || i.priceUSD <= maxPrice),
+  );
+  const deals = filtered.filter((i) => i.isDeal);
+  const list = view === "deals" && deals.length ? deals : filtered;
   const visible = list.slice(0, showMore ? 24 : 6);
+  const filtering = Boolean(month || region || maxPrice);
 
   return (
     <section className="radar" aria-labelledby="radar-title">
@@ -84,6 +127,38 @@ export default function RadarSection() {
         </div>
       )}
 
+      {snap && snap.items.length > 0 && (
+        <div className="radar-filters" role="group" aria-label="Filtrar ofertas">
+          <select className="inline" aria-label="Mes" value={month} onChange={(e) => (setMonth(e.target.value), setShowMore(false))}>
+            <option value="">Cualquier mes</option>
+            {months.map((m) => (
+              <option key={m} value={m}>
+                {monthLabel(m)}
+              </option>
+            ))}
+          </select>
+          <select className="inline" aria-label="Región" value={region} onChange={(e) => (setRegion(e.target.value as Region | ""), setShowMore(false))}>
+            <option value="">Cualquier región</option>
+            {meta.regions.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+          <select className="inline" aria-label="Precio máximo por persona" value={maxPrice} onChange={(e) => (setMaxPrice(Number(e.target.value)), setShowMore(false))}>
+            <option value={0}>Sin tope de precio</option>
+            {MAX_PRICES.map((p) => (
+              <option key={p} value={p}>
+                Hasta {money(p)} por persona
+              </option>
+            ))}
+          </select>
+          {filtering && (
+            <button className="plain" onClick={() => (setMonth(""), setRegion(""), setMaxPrice(0))}>
+              Limpiar
+            </button>
+          )}
+        </div>
+      )}
+
       {snap && deals.length > 0 && (
         <Segmented
           label="Qué mostrar"
@@ -109,6 +184,12 @@ export default function RadarSection() {
           <RadarCard key={item.destinationId} item={item} photo={photos[item.destinationId]} money={money} onBuy={setBuying} />
         ))}
       </div>
+      {snap && snap.items.length > 0 && list.length === 0 && (
+        <div className="card empty">
+          <Icon name="radar" size={28} />
+          <p className="muted">No hay precios del radar con esos filtros. Probá otro mes o subí el tope.</p>
+        </div>
+      )}
       {snap && snap.items.length === 0 && (
         <div className="card empty">
           <Icon name="radar" size={28} />
