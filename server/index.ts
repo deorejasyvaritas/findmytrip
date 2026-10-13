@@ -4,7 +4,7 @@ import type { Meta } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
 import { baseFlightFrom, explore, monthOverview, stayOptions, upcomingMonths, yearFor } from "./engine.ts";
-import { fetchJSON } from "./cache.ts";
+import { fetchJSON, useCacheStore } from "./cache.ts";
 import { config, has, type Env } from "./env.ts";
 import { realPrices } from "./providers/explore.ts";
 import { flightCalendar, googleFlights } from "./providers/flights.ts";
@@ -16,6 +16,11 @@ import { buildPackage } from "./packages.ts";
 // sirve como archivos estáticos desde el mismo Worker.
 
 const app = new Hono<{ Bindings: Env }>().basePath("/api");
+
+app.use(async (c, next) => {
+  useCacheStore(c.env.CACHE);
+  await next();
+});
 
 const INTERESTS = [
   "playa", "montaña", "ciudad", "gastronomía", "aventura", "nieve",
@@ -71,6 +76,7 @@ app.get("/meta", async (c) => {
     agent: has(env(c).ANTHROPIC_API_KEY),
     usdArsRate: fx.rate,
     usdArsSource: fx.source,
+    marker: env(c).TRAVELPAYOUTS_MARKER ?? null,
   };
   return c.json(meta);
 });
@@ -116,10 +122,14 @@ app.get("/flights/calendar", async (c) => {
 app.get("/flights/quote", async (c) => {
   const serpKey = env(c).SERPAPI_KEY;
   if (!has(serpKey)) return c.json({ error: "Falta SERPAPI_KEY para cotizar con Google Flights." }, 503);
-  const q = z.object({ origin: originCode, dest: z.string(), depart: isoDate, ret: isoDate }).parse(c.req.query());
+  const q = z
+    .object({ origin: originCode, dest: z.string(), depart: isoDate, ret: isoDate, cacheOnly: z.string().optional() })
+    .parse(c.req.query());
   const dest = getDestination(q.dest);
   if (!dest) return c.json(notFound, 404);
-  const quote = await googleFlights(serpKey, q.origin, dest, q.depart, q.ret);
+  // cacheOnly=1: devuelve el precio solo si ya se buscó antes (no gasta cuota).
+  const quote = await googleFlights(serpKey, q.origin, dest, q.depart, q.ret, q.cacheOnly === "1");
+  if (!quote && q.cacheOnly === "1") return c.json({ cached: false }, 404);
   if (!quote) return c.json({ error: "Google Flights no devolvió resultados para esa fecha." }, 502);
   return c.json(quote);
 });

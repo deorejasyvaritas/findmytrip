@@ -274,4 +274,6 @@ export interface Meta {
   agent: boolean;
   usdArsRate: number;
   usdArsSource: string;
+  /** ID de afiliado de Travelpayouts para los links de Aviasales. */
+  marker: string | null;
 }

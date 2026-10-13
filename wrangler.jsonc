@@ -9,5 +9,9 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  // Caché de búsquedas (gratis). Wrangler crea el KV solo en el primer deploy.
+  "kv_namespaces": [{ "binding": "CACHE" }],
+  // Tu ID de afiliado de Travelpayouts (no es secreto: viaja en los links).
+  "vars": { "TRAVELPAYOUTS_MARKER": "789588" },
   "observability": { "enabled": true }
 }

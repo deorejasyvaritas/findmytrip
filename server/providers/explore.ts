@@ -81,7 +81,7 @@ async function googleExploreRaw(apiKey: string, origin: string, month: number | 
     const r = await fetchJSON<GoogleExploreResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-explore");
     return r && !r.error && r.destinations?.length ? r.destinations : null;
   };
-  const data = await cached<GoogleExploreDestination[]>(`gx:${origin}-${month ?? "flex"}`, 12 * 3600, async () => {
+  const data = await cached<GoogleExploreDestination[]>(`gx:${origin}-${month ?? "flex"}`, 24 * 3600, async () => {
     const airports = airportsFor(origin);
     return (await run(airports)) ?? (airports.includes(",") ? await run(airports.split(",")[0]) : null);
   });

@@ -70,6 +70,9 @@ export default function DestinationPage() {
   const [custom, setCustom] = useState<RealHotel | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [quote, setQuote] = useState<FlightQuote | null>(null);
+  // Día que se cotiza solo (el primero de cada mes); el resto, a pedido o desde la caché.
+  const [autoKey, setAutoKey] = useState<string | null>(null);
+  const [hotelsCheckin, setHotelsCheckin] = useState<string | null>(null);
   const [loading, setLoading] = useState({ quote: false, hotels: false });
   const [quota, setQuota] = useState<{ left: number | null; total: number | null } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -96,7 +99,10 @@ export default function DestinationPage() {
         // Si venimos de una sugerencia con fecha concreta, arrancamos en esa fecha.
         const depart = params.get("depart");
         const fromParam = depart?.startsWith(month) ? c.days.find((d) => d.date === depart) : undefined;
-        setDay(fromParam ?? c.cheapest);
+        const first = fromParam ?? c.cheapest;
+        setDay(first);
+        setAutoKey(first ? `${first.date}_${first.returnDate}` : null);
+        setHotelsCheckin(first?.date ?? null);
       })
       .catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,36 +110,44 @@ export default function DestinationPage() {
 
   const dayKey = day ? `${day.date}_${day.returnDate}` : null;
 
-  // Precio exacto de Google Flights para el día elegido (automático).
+  // Precio de hoy en Google Flights: automático para el primer día del mes;
+  // para los demás días, solo si ya está en caché (no gasta cuota).
+  async function fetchQuote(cacheOnly: boolean, target: FlightDay) {
+    setLoading((l) => ({ ...l, quote: true }));
+    try {
+      const q = await api.flightQuote({
+        origin: profile.origin,
+        dest: id,
+        depart: target.date,
+        ret: target.returnDate,
+        ...(cacheOnly ? { cacheOnly: 1 as const } : {}),
+      });
+      setQuote(q);
+    } catch {
+      setQuote(null);
+    } finally {
+      setLoading((l) => ({ ...l, quote: false }));
+      if (!cacheOnly) api.quota().then(setQuota).catch(() => {});
+    }
+  }
+
   useEffect(() => {
     setQuote(null);
     if (!day || !google) return;
-    let cancelled = false;
-    const t = setTimeout(() => {
-      setLoading((l) => ({ ...l, quote: true }));
-      api
-        .flightQuote({ origin: profile.origin, dest: id, depart: day.date, ret: day.returnDate })
-        .then((q) => !cancelled && setQuote(q))
-        .catch(() => !cancelled && setQuote(null))
-        .finally(() => {
-          if (!cancelled) setLoading((l) => ({ ...l, quote: false }));
-          api.quota().then(setQuota).catch(() => {});
-        });
-    }, 500);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
+    const t = setTimeout(() => fetchQuote(dayKey !== autoKey, day), 400);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayKey, google, id, profile.origin]);
+  }, [dayKey, autoKey, google, id, profile.origin]);
 
   // Alojamiento: estimado al instante y hoteles reales de Google (automático).
+  // Los hoteles se buscan una vez por mes (con la fecha inicial) para cuidar la cuota.
   useEffect(() => {
     setCustom(null);
     setShowAll(false);
-    if (!day) return;
+    if (!hotelsCheckin) return;
+    const checkin = hotelsCheckin;
     api
-      .stays({ dest: id, checkin: day.date, nights, travelers })
+      .stays({ dest: id, checkin, nights, travelers })
       .then((r) => setStays(r.options))
       .catch((e) => setError(e.message));
     if (!google) return;
@@ -141,11 +155,12 @@ export default function DestinationPage() {
     const t = setTimeout(() => {
       setLoading((l) => ({ ...l, hotels: true }));
       api
-        .stays({ dest: id, checkin: day.date, nights, travelers, real: 1 })
+        .stays({ dest: id, checkin, nights, travelers, real: 1 })
         .then((r) => {
           if (cancelled) return;
           setHotels(r.hotels);
-          setHotelsFor(`${day.date}_${nights}`);
+          setHotelsFor(`${checkin}_${nights}`);
+          api.quota().then(setQuota).catch(() => {});
         })
         .catch(() => !cancelled && setHotels([]))
         .finally(() => !cancelled && setLoading((l) => ({ ...l, hotels: false })));
@@ -155,14 +170,14 @@ export default function DestinationPage() {
       clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day?.date, nights, travelers, google, id]);
+  }, [hotelsCheckin, nights, travelers, google, id]);
 
   const priceBands = useMemo(() => {
     const prices = (calendar?.days ?? []).map((d) => d.priceUSD).sort((a, b) => a - b);
     return { low: prices[Math.floor(prices.length / 3)] ?? 0, high: prices[Math.floor((prices.length * 2) / 3)] ?? 0 };
   }, [calendar]);
 
-  const realHotels = day && hotelsFor === `${day.date}_${nights}` ? hotels : [];
+  const realHotels = hotelsCheckin && hotelsFor === `${hotelsCheckin}_${nights}` ? hotels : [];
   const tiers = useMemo(() => pickTiers(realHotels), [realHotels]);
 
   if (error && !dest) return <p className="error">{error}</p>;
@@ -205,7 +220,7 @@ export default function DestinationPage() {
           kind: "vuelo",
           label: `Vuelo ${profile.origin} ⇄ ${dest.iata} (${travelers} × USD ${flightPP}, ${flightSource})`,
           amountUSD: flights,
-          link: (quoteOk && quote.url) || flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers)[0].url,
+          link: (quoteOk && quote.url) || flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers, meta?.marker)[0].url,
         },
         {
           kind: "alojamiento",
@@ -366,7 +381,7 @@ export default function DestinationPage() {
                     Salida <strong>{formatDate(day.date, { weekday: "short", day: "numeric", month: "short" })}</strong> · vuelta{" "}
                     <strong>{formatDate(day.returnDate, { weekday: "short", day: "numeric", month: "short" })}</strong>
                   </span>
-                  {flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers).map((l) => (
+                  {flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers, meta?.marker).map((l) => (
                     <a key={l.label} href={l.url} target="_blank" rel="noreferrer" className="pill-link">
                       {l.label} ↗
                     </a>
@@ -403,7 +418,17 @@ export default function DestinationPage() {
                   </div>
                 )}
                 {google && !loading.quote && !quoteOk && (
-                  <p className="muted small">Google Flights no devolvió vuelos para estas fechas; se muestra el precio del calendario.</p>
+                  <p className="muted small">
+                    {dayKey === autoKey
+                      ? "Google Flights no devolvió vuelos para estas fechas; se muestra el precio del calendario."
+                      : "Para no gastar cuota, este día muestra el precio del calendario. "}
+                    {dayKey !== autoKey && (
+                      <button className="link" onClick={() => fetchQuote(false, day)}>
+                        Ver precio de hoy en Google (usa 1 búsqueda)
+                      </button>
+                    )}{" "}
+                    O buscalo gratis y sin límite en Aviasales con el link de arriba.
+                  </p>
                 )}
               </div>
             )}
@@ -415,7 +440,7 @@ export default function DestinationPage() {
             <div className="section-head">
               <h2>Alojamiento</h2>
               <span className="muted small">
-                {formatDate(day.date)} → {formatDate(addDays(day.date, nights))} · {rooms} hab.
+                {formatDate(hotelsCheckin ?? day.date)} → {formatDate(addDays(hotelsCheckin ?? day.date, nights))} · {rooms} hab.
                 {realHotels.length ? " · precios reales de Google Hotels" : google ? "" : " · estimado"}
               </span>
             </div>

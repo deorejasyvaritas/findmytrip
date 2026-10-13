@@ -1,6 +1,12 @@
 // Configuración del Worker. En local se lee de `.dev.vars`; en Cloudflare,
 // de los "secrets" del proyecto (wrangler secret put ...).
+import type { KVStore } from "./cache.ts";
+
 export interface Env {
+  /** KV de Cloudflare para cachear búsquedas (se crea solo en el primer deploy). */
+  CACHE?: KVStore;
+  /** Tu ID de afiliado de Travelpayouts (para ganar comisión con los links de Aviasales). */
+  TRAVELPAYOUTS_MARKER?: string;
   /** Opcional (pago por uso): habilita el agente conversacional. */
   ANTHROPIC_API_KEY?: string;
   /** Gratis: precios reales de vuelos (Aviasales Data API). */
@@ -21,5 +27,7 @@ export function config(env: Env): Env {
     TRAVELPAYOUTS_TOKEN: clean(env.TRAVELPAYOUTS_TOKEN),
     SERPAPI_KEY: clean(env.SERPAPI_KEY),
     USD_ARS_RATE: clean(env.USD_ARS_RATE),
+    TRAVELPAYOUTS_MARKER: clean(env.TRAVELPAYOUTS_MARKER),
+    CACHE: env.CACHE,
   };
 }

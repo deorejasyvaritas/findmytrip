@@ -24,8 +24,9 @@ pero sin ruido, todo personalizado y pensado para **llegar al mejor viaje posibl
 | Gastos diarios (comida, transporte) | Estimación curada por destino | — | — (no hay API gratuita) |
 | Chat del agente | API de Claude | **Pago por uso** (opcional) | `ANTHROPIC_API_KEY` |
 
-Las consultas a SerpApi se hacen solo cuando tocás el botón y quedan en caché (12 h vuelos, 24 h hoteles),
-así la cuota rinde. Si falta una clave, esa parte muestra estimaciones marcadas como "estimado".
+Para que la cuota de SerpApi rinda: cada búsqueda queda guardada en Cloudflare KV (gratis) por 12-24 h, los hoteles
+se buscan una vez por mes de viaje, y el precio de Google se trae solo para el primer día que se abre (los demás días
+usan el calendario o el link a Aviasales, que busca en tiempo real sin límite). Si falta una clave, esa parte muestra estimaciones marcadas como "estimado".
 
 ## Probarlo en tu PC (Windows, CMD)
 

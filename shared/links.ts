@@ -9,10 +9,17 @@ export function flightLinks(
   depart: string,
   ret: string,
   adults: number,
+  marker?: string | null,
 ): { label: string; url: string }[] {
   const o = origin.toLowerCase();
   const d = dest.toLowerCase();
+  const ddmm = (iso: string) => `${iso.slice(8, 10)}${iso.slice(5, 7)}`;
   return [
+    {
+      // Buscador de Aviasales: búsqueda en tiempo real, sin cuota. Con tu marker ganás comisión.
+      label: "Aviasales",
+      url: `https://www.aviasales.com/search/${origin}${ddmm(depart)}${dest}${ddmm(ret)}${adults}${marker ? `?marker=${marker}` : ""}`,
+    },
     {
       label: "Google Flights",
       url: `https://www.google.com/travel/flights?q=${encodeURIComponent(

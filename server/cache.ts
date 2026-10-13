@@ -1,42 +1,59 @@
-// Caché para respuestas de APIs externas. En Cloudflare usamos la Cache API
-// (gratis); en tests/Node cae a un Map en memoria.
+// Caché para respuestas de APIs externas, para no gastar cuota repitiendo
+// búsquedas. Usa Cloudflare KV (gratis, compartido entre visitas y que sí
+// funciona en *.workers.dev) y una copia en memoria del Worker. Sin KV (tests)
+// queda solo la memoria.
 
-interface EdgeCache {
-  match(key: string): Promise<Response | undefined>;
-  put(key: string, res: Response): Promise<void>;
+export interface KVStore {
+  get(key: string, type: "json"): Promise<unknown>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
 }
 
-const memory = new Map<string, { at: number; ttl: number; value: unknown }>();
+let store: KVStore | null = null;
 
-function edgeCache(): EdgeCache | null {
-  const c = (globalThis as { caches?: { default?: EdgeCache } }).caches;
-  return c?.default ?? null;
+/** Se llama al inicio de cada request con el binding de KV (si existe). */
+export function useCacheStore(kv: KVStore | undefined): void {
+  store = kv ?? null;
+}
+
+const memory = new Map<string, { until: number; value: unknown }>();
+
+function fromMemory<T>(key: string): T | null {
+  const hit = memory.get(key);
+  if (!hit) return null;
+  if (hit.until < Date.now()) {
+    memory.delete(key);
+    return null;
+  }
+  return hit.value as T;
+}
+
+/** Valor cacheado sin ir a la API (null si no hay). */
+export async function peek<T>(key: string): Promise<T | null> {
+  const mem = fromMemory<T>(key);
+  if (mem != null) return mem;
+  if (!store) return null;
+  try {
+    return ((await store.get(key, "json")) as T | null) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Devuelve el valor cacheado o ejecuta `load`. No cachea `null`. */
 export async function cached<T>(key: string, ttlSeconds: number, load: () => Promise<T | null>): Promise<T | null> {
-  // La Cache API necesita una URL como clave.
-  const url = `https://cache.findmytrip.internal/${encodeURIComponent(key)}`;
-  const edge = edgeCache();
-  if (edge) {
-    const hit = await edge.match(url);
-    if (hit) return (await hit.json()) as T;
-  } else {
-    const hit = memory.get(url);
-    if (hit && Date.now() - hit.at < hit.ttl * 1000) return hit.value as T;
-  }
+  const hit = await peek<T>(key);
+  if (hit != null) return hit;
 
   const value = await load();
   if (value == null) return null;
-  if (edge) {
-    await edge.put(
-      url,
-      new Response(JSON.stringify(value), {
-        headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${ttlSeconds}` },
-      }),
-    );
-  } else {
-    memory.set(url, { at: Date.now(), ttl: ttlSeconds, value });
+  memory.set(key, { until: Date.now() + ttlSeconds * 1000, value });
+  if (store) {
+    try {
+      // KV exige al menos 60 s de vida.
+      await store.put(key, JSON.stringify(value), { expirationTtl: Math.max(60, ttlSeconds) });
+    } catch (err) {
+      console.warn("[cache] no se pudo guardar en KV:", (err as Error).message);
+    }
   }
   return value;
 }
@@ -44,7 +61,7 @@ export async function cached<T>(key: string, ttlSeconds: number, load: () => Pro
 /** fetch JSON con timeout; devuelve null ante cualquier error. */
 export async function fetchJSON<T>(url: string, label: string, init?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(10000) });
+    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
       console.warn(`[${label}] HTTP ${res.status}`);
       return null;

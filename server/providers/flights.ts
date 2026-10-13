@@ -1,5 +1,5 @@
 import type { Destination, FlightCalendar, FlightDay, FlightOffer, FlightQuote } from "../../shared/types.ts";
-import { cached, fetchJSON } from "../cache.ts";
+import { cached, fetchJSON, peek } from "../cache.ts";
 import { addDays, estimatedCalendar } from "../engine.ts";
 
 // ---------------------------------------------------------------------------
@@ -138,6 +138,7 @@ export async function googleFlights(
   dest: Destination,
   depart: string,
   ret: string,
+  cacheOnly = false,
 ): Promise<FlightQuote | null> {
   const params = new URLSearchParams({
     engine: "google_flights",
@@ -152,14 +153,13 @@ export async function googleFlights(
     gl: "ar",
     api_key: apiKey,
   });
-  const data = await cached<GoogleFlightsResponse>(
-    `gf:${origin}-${dest.iata}-${depart}-${ret}`,
-    12 * 3600,
-    async () => {
-      const r = await fetchJSON<GoogleFlightsResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-flights");
-      return r && !r.error ? r : null;
-    },
-  );
+  const key = `gf:${origin}-${dest.iata}-${depart}-${ret}`;
+  const data = cacheOnly
+    ? await peek<GoogleFlightsResponse>(key)
+    : await cached<GoogleFlightsResponse>(key, 12 * 3600, async () => {
+        const r = await fetchJSON<GoogleFlightsResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-flights");
+        return r && !r.error ? r : null;
+      });
   if (!data) return null;
 
   const toOffer = (f: GoogleFlight): FlightOffer | null =>
