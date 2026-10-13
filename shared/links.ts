@@ -1,0 +1,51 @@
+// Links de reserva/comparación. La app arma el plan; la compra final se hace
+// donde esté más barato, con la búsqueda ya precargada.
+
+const yymmdd = (iso: string) => iso.slice(2).replaceAll("-", "");
+
+export function flightLinks(
+  origin: string,
+  dest: string,
+  depart: string,
+  ret: string,
+  adults: number,
+): { label: string; url: string }[] {
+  const o = origin.toLowerCase();
+  const d = dest.toLowerCase();
+  return [
+    {
+      label: "Google Flights",
+      url: `https://www.google.com/travel/flights?q=${encodeURIComponent(
+        `Flights from ${origin} to ${dest} on ${depart} through ${ret} ${adults} adults`,
+      )}&hl=es-419&curr=USD`,
+    },
+    {
+      label: "Skyscanner",
+      url: `https://www.skyscanner.com.ar/transporte/vuelos/${o}/${d}/${yymmdd(depart)}/${yymmdd(ret)}/?adultsv2=${adults}`,
+    },
+    {
+      label: "Despegar",
+      url: `https://www.despegar.com.ar/shop/flights/results/roundtrip/${origin}/${dest}/${depart}/${ret}/${adults}/0/0`,
+    },
+  ];
+}
+
+export function stayLinks(
+  place: string,
+  checkin: string,
+  checkout: string,
+  adults: number,
+  rooms: number,
+): { label: string; url: string }[] {
+  const q = encodeURIComponent(place);
+  return [
+    {
+      label: "Booking",
+      url: `https://www.booking.com/searchresults.es.html?ss=${q}&checkin=${checkin}&checkout=${checkout}&group_adults=${adults}&no_rooms=${rooms}&selected_currency=USD`,
+    },
+    {
+      label: "Airbnb",
+      url: `https://www.airbnb.com.ar/s/${q}/homes?checkin=${checkin}&checkout=${checkout}&adults=${adults}`,
+    },
+  ];
+}
