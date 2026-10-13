@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Buscador de vuelos en tiempo real, sin límite de búsquedas." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Vuelos · FindMyTrip</title>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">✈</span> FindMyTrip</a>
+        <nav class="nav">
+          <a href="/">Explorar</a>
+          <a href="/vuelos.html" class="active">Vuelos</a>
+          <a href="/agente">Agente</a>
+          <a href="/viajes">Mis viajes</a>
+          <a href="/perfil">Perfil</a>
+        </nav>
+      </header>
+      <main class="main stack-lg">
+        <section>
+          <h1>Buscador de vuelos en vivo</h1>
+          <p class="muted">
+            Precios en tiempo real de aerolíneas y agencias (Aviasales). Sin límite de búsquedas y sin rastreo de tus
+            búsquedas anteriores: lo que ves es el precio del momento.
+          </p>
+          <p id="prefill" class="muted small" hidden></p>
+        </section>
+        <div id="tpwl-search"></div>
+        <div id="tpwl-tickets"></div>
+        <p id="wl-missing" class="card empty" hidden>
+          El buscador todavía no está activado: falta pegar el código del White Label de Travelpayouts en
+          <code>partner-head.html</code> y volver a publicar.
+        </p>
+      </main>
+    </div>
+    <script type="module" src="/src/vuelos.ts"></script>
+  </body>
+</html>

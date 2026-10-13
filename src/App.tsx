@@ -16,6 +16,8 @@ export default function App() {
         </NavLink>
         <nav className="nav">
           <NavLink to="/" end>Explorar</NavLink>
+          {/* Página aparte (carga completa) para el buscador en vivo de Aviasales. */}
+          <a href="/vuelos.html">Vuelos</a>
           <NavLink to="/agente">Agente</NavLink>
           <NavLink to="/viajes">
             Mis viajes{packages.length > 0 && <span className="badge">{packages.length}</span>}

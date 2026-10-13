@@ -78,6 +78,20 @@ Te devuelve una URL tipo `https://findmytrip.<tu-usuario>.workers.dev`. Para act
 > Ojo: si publicás la URL, cualquiera que entre usa tu cuota de SerpApi (y tu saldo de Claude si lo activaste).
 > Para uso personal, no la compartas o protegela con Cloudflare Access (gratis hasta 50 usuarios).
 
+## Códigos de Travelpayouts (Drive y buscador en vivo)
+
+Los scripts que da Travelpayouts van en `partner-head.html` (no se sube a git, así nunca hay conflictos):
+
+```cmd
+copy partner-head.example.html partner-head.html
+notepad partner-head.html
+npm run deploy
+```
+
+Pegá ahí el script de **Drive** y el **Main White Label code** del widget de vuelos. La página
+`/vuelos.html` ya tiene los contenedores `tpwl-search` y `tpwl-tickets`: es un buscador de vuelos en
+tiempo real, sin límite de búsquedas y con comisión para vos.
+
 ## Comandos
 
 | Comando | Qué hace |

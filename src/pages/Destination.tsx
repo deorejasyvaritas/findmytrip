@@ -381,6 +381,12 @@ export default function DestinationPage() {
                     Salida <strong>{formatDate(day.date, { weekday: "short", day: "numeric", month: "short" })}</strong> · vuelta{" "}
                     <strong>{formatDate(day.returnDate, { weekday: "short", day: "numeric", month: "short" })}</strong>
                   </span>
+                  <a
+                    className="pill-link live"
+                    href={`/vuelos.html?${new URLSearchParams({ from: profile.origin, to: dest.iata, depart: day.date, ret: day.returnDate })}`}
+                  >
+                    🔎 Buscar en vivo (sin límite)
+                  </a>
                   {flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers, meta?.marker).map((l) => (
                     <a key={l.label} href={l.url} target="_blank" rel="noreferrer" className="pill-link">
                       {l.label} ↗
@@ -427,7 +433,7 @@ export default function DestinationPage() {
                         Ver precio de hoy en Google (usa 1 búsqueda)
                       </button>
                     )}{" "}
-                    O buscalo gratis y sin límite en Aviasales con el link de arriba.
+                    O usá "Buscar en vivo", que no tiene límite.
                   </p>
                 )}
               </div>
