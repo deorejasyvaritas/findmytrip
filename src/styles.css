@@ -5,8 +5,10 @@
   --text: #1c1c1a;
   --muted: #6b6b66;
   --border: #e3e3de;
-  --accent: #0f766e;
-  --accent-soft: #e6f4f2;
+  /* Color de marca (el mismo rosa del buscador de Aviasales). */
+  --accent: #e8436c;
+  --accent-ink: #c72a54; /* versión más oscura para textos y links (mejor contraste) */
+  --accent-soft: #fdecf0;
   --accent-text: #ffffff;
   --warn: #b45309;
   --warn-soft: #fef3e2;
@@ -29,9 +31,10 @@
     --text: #ececea;
     --muted: #9a9e99;
     --border: #2e332f;
-    --accent: #2dd4bf;
-    --accent-soft: #163330;
-    --accent-text: #08201d;
+    --accent: #e8436c;
+    --accent-ink: #ff7d9c;
+    --accent-soft: #3a1721;
+    --accent-text: #ffffff;
     --warn: #f59e0b;
     --warn-soft: #33270f;
     --danger: #f87171;
@@ -57,7 +60,7 @@ h1 { font-size: 1.75rem; line-height: 1.2; margin: 0.25rem 0 0.5rem; letter-spac
 h2 { font-size: 1.15rem; margin: 0 0 0.75rem; letter-spacing: -0.01em; }
 h3 { font-size: 1.05rem; margin: 0; }
 p { margin: 0 0 0.5rem; }
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--accent-ink); text-decoration: none; }
 a:hover { text-decoration: underline; }
 code { background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 4px; }
 
@@ -86,7 +89,11 @@ code { background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 4px; 
 }
 .brand { font-weight: 700; color: var(--text); font-size: 1.05rem; }
 .brand:hover { text-decoration: none; }
-.brand-mark { color: var(--accent); }
+.brand { display: inline-flex; align-items: center; gap: 0.5rem; }
+.brand-mark {
+  display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 50%;
+  background: var(--accent); color: var(--accent-text); font-size: 1rem; line-height: 1;
+}
 .nav { display: flex; gap: 0.25rem; overflow-x: auto; }
 .nav a { color: var(--muted); padding: 0.4rem 0.7rem; border-radius: 999px; white-space: nowrap; }
 .nav a:hover { text-decoration: none; color: var(--text); }
@@ -119,7 +126,7 @@ button, .button {
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 .primary { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 .primary:hover:not(:disabled) { filter: brightness(1.05); }
-.secondary { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.secondary { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 .secondary:hover { text-decoration: none; }
 .ghost { color: var(--muted); }
 .ghost:hover { color: var(--text); background: var(--surface-2); }
@@ -134,7 +141,7 @@ button.small { padding: 0.35rem 0.6rem; }
   padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--border);
   background: var(--surface); font-size: 0.85rem; color: var(--text);
 }
-.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .chips.static .chip { cursor: default; }
 
 /* Cards */
@@ -173,7 +180,7 @@ button.small { padding: 0.35rem 0.6rem; }
 .card-foot { display: flex; justify-content: space-between; gap: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.5rem; margin-top: auto; }
 .fit { font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.55rem; border-radius: 999px; white-space: nowrap; }
 .fit-dentro { background: var(--ok-soft); color: var(--ok); }
-.fit-ajustado { background: var(--accent-soft); color: var(--accent); }
+.fit-ajustado { background: var(--accent-soft); color: var(--accent-ink); }
 .fit-estirando { background: var(--warn-soft); color: var(--warn); }
 .alt-section { background: var(--accent-soft); margin: 0 -1rem; padding: 1.25rem 1rem; border-radius: var(--radius); }
 
@@ -268,5 +275,8 @@ button.small { padding: 0.35rem 0.6rem; }
 .hotel.on { border-color: var(--accent); outline: 1px solid var(--accent); }
 .stay-img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; margin-bottom: 0.3rem; }
 .breakdown .real { color: var(--ok); font-weight: 600; }
-button.link { padding: 0; color: var(--accent); text-decoration: underline; font-size: inherit; }
+button.link { padding: 0; color: var(--accent-ink); text-decoration: underline; font-size: inherit; }
 .pill-link.live { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+
+/* Buscador en vivo (White Label): el widget usa textos blancos, va sobre un panel oscuro. */
+.wl-panel { background: #1f2430; border-radius: var(--radius); padding: 1.25rem 1rem; color: #fff; }

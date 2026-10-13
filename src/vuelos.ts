@@ -19,5 +19,7 @@ if (prefill && from && to && depart) {
 setTimeout(() => {
   const search = document.getElementById("tpwl-search");
   const missing = document.getElementById("wl-missing");
-  if (search && missing && search.childElementCount === 0) missing.hidden = false;
-}, 6000);
+  // El widget puede dibujarse dentro de un shadow DOM: miramos si ocupa lugar.
+  const rendered = search && (search.childElementCount > 0 || search.shadowRoot || search.offsetHeight > 20);
+  if (missing && !rendered) missing.hidden = false;
+}, 8000);
