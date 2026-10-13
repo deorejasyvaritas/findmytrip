@@ -89,6 +89,7 @@ export default function ProfilePage() {
                 { value: "ARS", label: `Pesos (1 USD = $${meta?.usdArsRate ?? "…"})` },
               ]}
             />
+            {meta && <span className="muted small">{meta.usdArsSource}</span>}
           </div>
         </div>
       </section>

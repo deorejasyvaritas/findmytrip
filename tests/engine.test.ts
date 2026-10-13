@@ -57,7 +57,7 @@ describe("explore", () => {
   });
 
   it("usa precio en vivo cuando se lo pasan", () => {
-    const res = explore({ ...base, month: 11, budgetUSD: 20000 }, new Map([["RIO", 100]]), today);
+    const res = explore({ ...base, month: 11, budgetUSD: 20000 }, (iata: string) => (iata === "RIO" ? 100 : undefined), today);
     const rio = [...res.suggestions, ...res.alternatives].find((s) => s.destination.id === "rio");
     expect(rio?.flightSource).toBe("en vivo");
     expect(rio?.cost.flights).toBe(200);

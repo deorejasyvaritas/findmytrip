@@ -59,7 +59,7 @@ export default function Agent() {
     return (
       <div className="card empty stack">
         <h1>Agente de viajes</h1>
-        <p>El agente conversacional necesita una clave de la API de Claude.</p>
+        <p>El agente conversacional necesita una clave de la API de Claude (es lo único de la app que tiene costo por uso).</p>
         <p className="muted small">
           Agregá <code>ANTHROPIC_API_KEY</code> en el archivo <code>.env</code> y reiniciá el servidor. Mientras tanto, podés usar{" "}
           <Link to="/">Explorar</Link>, que funciona sin IA.

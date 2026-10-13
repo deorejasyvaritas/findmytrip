@@ -257,3 +257,12 @@ button.small { padding: 0.35rem 0.6rem; }
   .grid-cards { grid-template-columns: 1fr; }
   .alt-section { margin: 0; }
 }
+
+/* Precios reales */
+.cal-day.est { opacity: 0.6; }
+.quote { display: flex; flex-direction: column; gap: 0.6rem; }
+.hotel-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.6rem; margin-bottom: 1rem; }
+.hotel { display: flex; gap: 0.7rem; align-items: flex-start; text-align: left; padding: 0.6rem; }
+.hotel img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+.hotel-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.hotel.on { border-color: var(--accent); outline: 1px solid var(--accent); }

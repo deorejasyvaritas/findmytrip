@@ -1,0 +1,17 @@
+# Copiá este archivo como .dev.vars (no se sube a git) y completá las claves.
+# En Cloudflare se cargan con: npx wrangler secret put NOMBRE
+
+# GRATIS. Precios reales de vuelos para explorar y calendarios.
+# https://www.travelpayouts.com → Perfil → API token
+TRAVELPAYOUTS_TOKEN=
+
+# GRATIS (250 búsquedas/mes). Hoteles reales y precio exacto de Google Flights.
+# https://serpapi.com → Dashboard → API Key
+SERPAPI_KEY=
+
+# PAGO POR USO (opcional). Habilita el chat del agente. Dejalo vacío para no gastar.
+# https://console.anthropic.com → API Keys
+ANTHROPIC_API_KEY=
+
+# Respaldo si no responde dolarapi.com (el dólar tarjeta se toma en vivo).
+USD_ARS_RATE=1450

@@ -8,71 +8,97 @@ pero sin ruido, todo personalizado y pensado para **llegar al mejor viaje posibl
 - **¿A dónde me alcanza?** Ponés presupuesto total, noches, viajeros y (opcional) el mes.
   Rankea destinos por encaje con tus intereses, época del año y cuánto rinde la plata,
   con el desglose vuelo + alojamiento + gastos diarios.
-- **Lugares que quizás no estabas considerando.** Una sección aparte con destinos menos obvios
-  que también entran en el presupuesto (y distintos de los que ya tenés en mente).
-- **Fechas flexibles.** Si no elegís mes, busca el mejor de los próximos 12.
-- **Ficha de destino:** costo por mes (★ mejores meses por precio + clima), calendario de vuelos
-  día por día con los días baratos resaltados, opciones de alojamiento por estilo y zona.
-- **Armado de paquetes:** elegís día y alojamiento, ves el total y lo guardás en *Mis viajes*
-  (estados: idea → armando → reservado). Cada ítem tiene link directo a Google Flights,
-  Skyscanner, Despegar, Booking o Airbnb con la búsqueda ya cargada.
-- **Seguir destinos:** guardás un objetivo de presupuesto y en el inicio ves si hoy entra o no.
-- **Agente conversacional (Claude):** le hablás normal ("tengo USD 2.500 para 2, 10 días en marzo")
-  y busca, compara y te propone paquetes guardables usando las mismas herramientas de la app.
-- **Perfil:** ciudad de salida, viajeros, estilo, intereses, lugares ya visitados (se excluyen),
-  límite de horas de vuelo, y precios en USD o pesos.
+- **Lugares que quizás no estabas considerando.** Destinos menos obvios que también entran en el presupuesto.
+- **Ficha de destino:** costo por mes, calendario de vuelos día por día con precios reales,
+  precio exacto de Google Flights a pedido, hoteles reales de Google Hotels y armado del paquete.
+- **Mis viajes**, **seguir destinos** con presupuesto objetivo, **perfil** y **agente conversacional** (opcional).
 
-Todo lo personal (perfil, paquetes, chat) se guarda en tu navegador.
+## Precios reales: de dónde salen (todo gratis)
 
-## Cómo correrlo
+| Qué | Fuente | Costo | Clave |
+|---|---|---|---|
+| Vuelos para explorar y calendarios | Travelpayouts / Aviasales Data API (precios reales que encontraron usuarios en los últimos días) | Gratis | `TRAVELPAYOUTS_TOKEN` |
+| Precio exacto de un vuelo (botón) | Google Flights vía SerpApi | Gratis hasta 250 búsquedas/mes | `SERPAPI_KEY` |
+| Hoteles reales (botón) | Google Hotels vía SerpApi | Comparte las mismas 250/mes | `SERPAPI_KEY` |
+| Dólar tarjeta para ver precios en pesos | dolarapi.com | Gratis, sin clave | — |
+| Gastos diarios (comida, transporte) | Estimación curada por destino | — | — (no hay API gratuita) |
+| Chat del agente | API de Claude | **Pago por uso** (opcional) | `ANTHROPIC_API_KEY` |
 
-Requisitos: Node 20+.
+Las consultas a SerpApi se hacen solo cuando tocás el botón y quedan en caché (12 h vuelos, 24 h hoteles),
+así la cuota rinde. Si falta una clave, esa parte muestra estimaciones marcadas como "estimado".
 
-```bash
+## Probarlo en tu PC (Windows, CMD)
+
+1. Instalá **Node.js LTS** (https://nodejs.org) y **Git** (https://git-scm.com).
+2. En CMD:
+
+```cmd
+git clone https://github.com/deorejasyvaritas/findmytrip.git
+cd findmytrip
+git checkout claude/brave-pascal-6h0ge1
 npm install
-cp .env.example .env   # opcional: completá las claves
-npm run dev            # web en http://localhost:5173, API en :8787
+copy .dev.vars.example .dev.vars
+notepad .dev.vars
 ```
 
-Producción:
+3. Pegá tus claves en `.dev.vars` (ver abajo cómo sacarlas), guardá y corré:
 
-```bash
-npm run build
-npm start              # sirve web + API en http://localhost:8787
+```cmd
+npm run dev
 ```
 
-Otros comandos: `npm test` (tests del motor de precios), `npm run typecheck`.
+4. Abrí http://localhost:5173
 
-### Variables de entorno (`.env`)
+## Cómo sacar las claves
 
-| Variable | Para qué | Sin ella |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Habilita el agente conversacional | El resto de la app funciona igual |
-| `TRAVELPAYOUTS_TOKEN` | Precios de vuelos reales (Aviasales Data API, gratis en travelpayouts.com) | Se usan estimaciones por temporada, distancia, día de semana y anticipación |
-| `USD_ARS_RATE` | Cotización para mostrar precios en pesos | 1450 |
+**Travelpayouts (vuelos, gratis):** registrate en https://www.travelpayouts.com → en tu perfil, sección
+*API token*, copiá el token (si te pide registrar un sitio, podés usar la URL de Cloudflare del paso de publicación). Uniéndote al programa de Aviasales también podés ganar comisión por las reservas.
+
+**SerpApi (hoteles y Google Flights, gratis 250/mes):** registrate en https://serpapi.com (plan Free) →
+*Dashboard* → copiá tu *API Key*.
+
+**Claude (opcional, pago):** https://console.anthropic.com → *API Keys*. Si no la ponés, la app funciona
+completa salvo el chat.
+
+## Publicarlo en Cloudflare (gratis)
+
+Corre como un Cloudflare Worker en el plan gratuito (100.000 requests por día), con la web y la API juntas.
+
+```cmd
+npx wrangler login
+npx wrangler secret put TRAVELPAYOUTS_TOKEN
+npx wrangler secret put SERPAPI_KEY
+npm run deploy
+```
+
+Te devuelve una URL tipo `https://findmytrip.<tu-usuario>.workers.dev`. Para actualizar, volvé a correr
+`npm run deploy`. (Opcional: `npx wrangler secret put ANTHROPIC_API_KEY` para el agente.)
+
+> Ojo: si publicás la URL, cualquiera que entre usa tu cuota de SerpApi (y tu saldo de Claude si lo activaste).
+> Para uso personal, no la compartas o protegela con Cloudflare Access (gratis hasta 50 usuarios).
+
+## Comandos
+
+| Comando | Qué hace |
+|---|---|
+| `npm run dev` | Web + API en http://localhost:5173 (usa `.dev.vars`) |
+| `npm test` | Tests del motor y de los proveedores de precios |
+| `npm run typecheck` | Chequeo de tipos |
+| `npm run deploy` | Build y publicación en Cloudflare |
 
 ## Cómo está armado
 
 ```
 shared/          tipos y links de reserva (usados por web y API)
 server/
-  data/          catálogo curado de ~40 destinos (costos, temporada, zonas, docs)
-  engine.ts      estimaciones de precios, ranking de destinos, calendario, alojamiento
-  providers/     precios de vuelos en vivo (Travelpayouts) con caché y fallback
-  agent.ts       agente con Claude + herramientas (explorar, precios por mes, calendario, alojamiento, paquete)
-  index.ts       API Express
+  index.ts       API (Hono) que corre como Cloudflare Worker
+  data/          catálogo curado de ~40 destinos (temporada, zonas, docs, gastos diarios)
+  engine.ts      ranking de destinos, estimaciones de respaldo, calendario, alojamiento
+  providers/     Travelpayouts (vuelos), SerpApi (Google Flights/Hotels), dolarapi (cotización)
+  cache.ts       caché en Cloudflare para no repetir consultas
+  agent.ts       agente con Claude + herramientas
 src/             web React (Explorar, Destino, Mis viajes, Agente, Perfil)
-tests/           tests del motor
+tests/           tests
 ```
 
-### Importante sobre precios
-
-Los montos de alojamiento y gastos diarios son **estimaciones** del catálogo, útiles para comparar
-destinos entre sí. Los vuelos son estimados salvo que tengas `TRAVELPAYOUTS_TOKEN` (ahí se marcan
-"en vivo"). Antes de comprar, confirmá en el sitio de reserva con los links de cada paquete.
-
-## Próximos pasos posibles
-
-- Alertas por mail/WhatsApp cuando un destino seguido baja de tu objetivo.
-- Hoteles con precios reales (API de Booking/Hotellook) y más destinos en el catálogo.
-- Cuenta de usuario para sincronizar viajes entre dispositivos.
+Todo lo personal (perfil, paquetes, chat) se guarda en tu navegador.

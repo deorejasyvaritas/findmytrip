@@ -137,7 +137,8 @@ export const monthName = (m: number) => MONTHS[m - 1];
 
 export function explore(
   req: ExploreRequest,
-  liveFlights?: Map<string, number>,
+  /** Precio real de vuelo por persona (iata, mes) si está disponible. */
+  liveFlight?: (iata: string, month: number) => number | undefined,
   today = new Date(),
 ): ExploreResponse {
   const travelers = Math.max(1, req.travelers);
@@ -164,7 +165,7 @@ export function explore(
   for (const dest of candidates) {
     let best: Suggestion | null = null;
     for (const { month, year } of months) {
-      const live = req.month ? liveFlights?.get(dest.iata) : undefined;
+      const live = liveFlight?.(dest.iata, month);
       const cost = tripCost(req.origin, dest, month, nights, travelers, req.style, live);
       const ratio = cost.total / budget;
       if (ratio > 1.15) continue;
@@ -204,7 +205,7 @@ export function explore(
         score -= 15;
       }
       if (dest.hiddenGem) score += 5;
-      if (live) reasons.push("Precio de vuelo en vivo");
+      if (live) reasons.push("Vuelo con precio real");
 
       const fit: Suggestion["fit"] = ratio <= 0.85 ? "dentro" : ratio <= 1 ? "ajustado" : "estirando";
       const isAlternative =
@@ -310,12 +311,14 @@ export function stayOptions(
   checkin: string,
   nights: number,
   travelers: number,
+  /** Precio real por noche por estilo (Google Hotels), si se consultó. */
+  realTiers?: Record<Style, number>,
 ): StayOption[] {
   const month = Number(checkin.slice(5, 7));
   const checkout = addDays(checkin, nights);
   const rooms = roomsFor(travelers);
   return (["low", "mid", "high"] as Style[]).map((tier, i) => {
-    const nightlyUSD = lodgingNightly(dest, tier, month);
+    const nightlyUSD = realTiers?.[tier] ?? lodgingNightly(dest, tier, month);
     const area = dest.areas[i % dest.areas.length];
     return {
       tier,
@@ -326,6 +329,7 @@ export function stayOptions(
       rooms,
       area,
       links: stayLinks(`${area}, ${dest.name}`, checkin, checkout, travelers, rooms),
+      source: realTiers ? "en vivo" : "estimado",
     };
   });
 }

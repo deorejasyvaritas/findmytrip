@@ -3,13 +3,11 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import type { Interest, Profile, Region, Style, TripPackage } from "../shared/types.ts";
 import { DESTINATIONS, getDestination } from "./data/destinations.ts";
-import { explore, monthOverview, monthName, stayOptions } from "./engine.ts";
-import { cheapestAnywhere, flightCalendar } from "./providers/flights.ts";
+import { explore, monthOverview, monthName, stayOptions, upcomingMonths, yearFor } from "./engine.ts";
+import type { Env } from "./env.ts";
+import { flightCalendar, livePriceLookup } from "./providers/flights.ts";
 import { buildPackage } from "./packages.ts";
 
-export const agentEnabled = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
-
-const client = agentEnabled ? new Anthropic() : null;
 const MODEL = "claude-opus-5-5";
 
 const INTERESTS = [
@@ -55,8 +53,15 @@ export interface AgentReply {
   packages: TripPackage[];
 }
 
-export async function runAgent(messages: AgentMessage[], profile: Profile, today = new Date()): Promise<AgentReply> {
-  if (!client) throw new Error("El agente no está configurado (falta ANTHROPIC_API_KEY).");
+export async function runAgent(
+  env: Env,
+  messages: AgentMessage[],
+  profile: Profile,
+  today = new Date(),
+): Promise<AgentReply> {
+  if (!env.ANTHROPIC_API_KEY) throw new Error("El agente no está configurado (falta ANTHROPIC_API_KEY).");
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const tpToken = env.TRAVELPAYOUTS_TOKEN;
 
   const proposals: TripPackage[] = [];
   const origin = profile.origin || "BUE";
@@ -79,10 +84,11 @@ export async function runAgent(messages: AgentMessage[], profile: Profile, today
       }),
       run: async (input) => {
         const month = input.month ?? null;
-        const live =
-          month != null
-            ? await cheapestAnywhere(origin, `${today.getUTCFullYear() + (month < today.getUTCMonth() + 1 ? 1 : 0)}-${String(month).padStart(2, "0")}`)
-            : undefined;
+        const live = await livePriceLookup(
+          tpToken,
+          origin,
+          month != null ? [{ month, year: yearFor(month, today) }] : upcomingMonths(today),
+        );
         const res = explore(
           {
             origin,
@@ -147,7 +153,7 @@ export async function runAgent(messages: AgentMessage[], profile: Profile, today
       run: async (input) => {
         const dest = getDestination(input.destinationId);
         if (!dest) return `Destino desconocido: ${input.destinationId}`;
-        const cal = await flightCalendar(origin, dest, input.month, input.nights);
+        const cal = await flightCalendar(tpToken, origin, dest, input.month, input.nights);
         const top = [...cal.days].sort((a, b) => a.priceUSD - b.priceUSD).slice(0, 5);
         return json({ enVivo: cal.live, masBaratos: top });
       },
@@ -185,7 +191,7 @@ export async function runAgent(messages: AgentMessage[], profile: Profile, today
         if (!dest) return `Destino desconocido: ${input.destinationId}`;
         const travelers = input.travelers ?? profile.travelers;
         const style = input.style ?? profile.style;
-        const cal = await flightCalendar(origin, dest, input.departDate.slice(0, 7), input.nights);
+        const cal = await flightCalendar(tpToken, origin, dest, input.departDate.slice(0, 7), input.nights);
         const day = cal.days.find((d) => d.date === input.departDate);
         const pkg = buildPackage({
           dest,

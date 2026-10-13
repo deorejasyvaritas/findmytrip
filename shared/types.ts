@@ -151,6 +151,7 @@ export interface StayOption {
   area: string;
   description: string;
   links: { label: string; url: string }[];
+  source: "estimado" | "en vivo";
 }
 
 export interface PackageItem {
@@ -185,11 +186,54 @@ export interface WatchItem {
   createdAt: string;
 }
 
+export interface FlightOffer {
+  priceUSD: number; // ida y vuelta por persona
+  airlines: string[];
+  stops: number;
+  durationMin: number | null;
+  departTime: string | null;
+}
+
+/** Cotización exacta de Google Flights para un par de fechas. */
+export interface FlightQuote {
+  depart: string;
+  returnDate: string;
+  offers: FlightOffer[];
+  lowestUSD: number;
+  typicalRangeUSD: [number, number] | null;
+  priceLevel: string | null; // "low" | "typical" | "high"
+  url: string | null;
+}
+
+export interface RealHotel {
+  name: string;
+  nightlyUSD: number;
+  totalUSD: number;
+  rating: number | null;
+  reviews: number | null;
+  stars: number | null;
+  type: string | null;
+  thumbnail: string | null;
+  link: string | null;
+}
+
+export interface HotelQuote {
+  checkin: string;
+  checkout: string;
+  hotels: RealHotel[];
+  /** Precio por noche de referencia para cada estilo (percentiles reales). */
+  tiers: Record<Style, number>;
+}
+
 export interface Meta {
   origins: Origin[];
   interests: Interest[];
   regions: Region[];
+  /** Vuelos reales para explorar y calendarios (Travelpayouts). */
   liveFlights: boolean;
+  /** Cotización exacta de vuelos y hoteles reales (SerpApi / Google). */
+  googleQuotes: boolean;
   agent: boolean;
   usdArsRate: number;
+  usdArsSource: string;
 }

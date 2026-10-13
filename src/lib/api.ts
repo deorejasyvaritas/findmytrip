@@ -3,9 +3,11 @@ import type {
   ExploreRequest,
   ExploreResponse,
   FlightCalendar,
+  FlightQuote,
   Meta,
   MonthPrice,
   Profile,
+  RealHotel,
   StayOption,
   Style,
   TripPackage,
@@ -35,8 +37,10 @@ export const api = {
     request<ExploreResponse>("/api/explore", { method: "POST", body: JSON.stringify(body) }),
   calendar: (p: { origin: string; dest: string; month: string; nights: number }) =>
     request<FlightCalendar>(`/api/flights/calendar?${qs(p)}`),
-  stays: (p: { dest: string; checkin: string; nights: number; travelers: number }) =>
-    request<StayOption[]>(`/api/stays?${qs(p)}`),
+  flightQuote: (p: { origin: string; dest: string; depart: string; nights: number }) =>
+    request<FlightQuote>(`/api/flights/quote?${qs(p)}`),
+  stays: (p: { dest: string; checkin: string; nights: number; travelers: number; real?: 1 }) =>
+    request<{ options: StayOption[]; hotels: RealHotel[]; live: boolean }>(`/api/stays?${qs(p)}`),
   buildPackage: (body: {
     destinationId: string;
     origin: string;

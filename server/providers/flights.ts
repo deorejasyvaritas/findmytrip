@@ -1,40 +1,20 @@
-import type { Destination, FlightCalendar, FlightDay } from "../../shared/types.ts";
+import type { Destination, FlightCalendar, FlightDay, FlightOffer, FlightQuote } from "../../shared/types.ts";
+import { cached, fetchJSON } from "../cache.ts";
 import { addDays, estimatedCalendar } from "../engine.ts";
 
-// Proveedor de precios en vivo: Travelpayouts (Aviasales Data API).
-// Devuelve precios encontrados por usuarios en las últimas 48 hs (cacheados por
-// Aviasales). Si no hay token o la API falla, usamos estimaciones.
+// ---------------------------------------------------------------------------
+// Travelpayouts (Aviasales Data API) — gratis con token.
+// Son precios reales encontrados por usuarios de Aviasales en los últimos días.
+// Ideal para explorar y armar calendarios sin gastar cuota.
+// ---------------------------------------------------------------------------
 
-const TOKEN = process.env.TRAVELPAYOUTS_TOKEN?.trim();
-const BASE = "https://api.travelpayouts.com";
-const TTL_MS = 60 * 60 * 1000;
+const TP = "https://api.travelpayouts.com";
 
-export const liveFlightsEnabled = Boolean(TOKEN);
-
-const cache = new Map<string, { at: number; value: unknown }>();
-
-async function getJSON<T>(path: string, params: Record<string, string>): Promise<T | null> {
-  if (!TOKEN) return null;
-  const qs = new URLSearchParams({ ...params, token: TOKEN }).toString();
-  const key = `${path}?${qs}`;
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.value as T;
-  try {
-    const res = await fetch(`${BASE}${path}?${qs}`, {
-      headers: { "Accept-Encoding": "gzip" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) {
-      console.warn(`[travelpayouts] ${res.status} en ${path}`);
-      return null;
-    }
-    const value = (await res.json()) as T;
-    cache.set(key, { at: Date.now(), value });
-    return value;
-  } catch (err) {
-    console.warn(`[travelpayouts] error en ${path}:`, (err as Error).message);
-    return null;
-  }
+async function tp<T>(token: string, path: string, params: Record<string, string>, ttl: number): Promise<T | null> {
+  const qs = new URLSearchParams(params).toString();
+  return cached<T>(`tp:${path}?${qs}`, ttl, () =>
+    fetchJSON<T>(`${TP}${path}?${qs}`, "travelpayouts", { headers: { "X-Access-Token": token } }),
+  );
 }
 
 interface PricesForDatesItem {
@@ -45,15 +25,18 @@ interface PricesForDatesItem {
   transfers: number;
 }
 
-/** Calendario del mes: precio en vivo donde haya datos, estimado en el resto. */
+/** Calendario del mes: precio real donde hay datos, estimado (marcado) en el resto. */
 export async function flightCalendar(
+  token: string | undefined,
   origin: string,
   dest: Destination,
   month: string,
   nights: number,
 ): Promise<FlightCalendar> {
   const estimated = estimatedCalendar(origin, dest, month, nights);
-  const data = await getJSON<{ success: boolean; data: PricesForDatesItem[] }>(
+  if (!token) return estimated;
+  const data = await tp<{ success: boolean; data: PricesForDatesItem[] }>(
+    token,
     "/aviasales/v3/prices_for_dates",
     {
       origin,
@@ -64,11 +47,11 @@ export async function flightCalendar(
       sorting: "price",
       limit: "1000",
     },
+    3 * 3600,
   );
   if (!data?.success || !data.data?.length) return estimated;
 
-  // Nos quedamos con el más barato por día de salida, preferentemente con una
-  // estadía parecida a la pedida (±3 noches).
+  // El más barato por día de salida, con una estadía parecida a la pedida (±3 noches).
   const byDay = new Map<string, FlightDay>();
   for (const item of data.data) {
     const date = item.departure_at.slice(0, 10);
@@ -90,16 +73,23 @@ export async function flightCalendar(
   if (!byDay.size) return estimated;
 
   const days = estimated.days.map((d) => byDay.get(d.date) ?? d);
-  const cheapest = days.reduce<FlightDay | null>((acc, d) => (!acc || d.priceUSD < acc.priceUSD ? d : acc), null);
+  const cheapest = days.reduce<FlightDay | null>((acc, d) => {
+    // Preferimos precios reales al elegir el día más barato.
+    if (!acc) return d;
+    if (d.source !== acc.source) return d.source === "en vivo" ? d : acc;
+    return d.priceUSD < acc.priceUSD ? d : acc;
+  }, null);
   return { ...estimated, days, cheapest, live: true };
 }
 
-/** Precio más barato del mes desde `origin` hacia cualquier destino (por código IATA). */
-export async function cheapestAnywhere(origin: string, month: string): Promise<Map<string, number>> {
+/** Precio real más barato del mes desde `origin` hacia cualquier destino (por IATA de ciudad). */
+export async function cheapestAnywhere(token: string, origin: string, month: string): Promise<Map<string, number>> {
   const out = new Map<string, number>();
-  const data = await getJSON<{ success: boolean; data: Record<string, Record<string, { price: number }>> }>(
+  const data = await tp<{ success: boolean; data: Record<string, Record<string, { price: number }>> }>(
+    token,
     "/v1/prices/cheap",
     { origin, destination: "-", depart_date: month, return_date: month, currency: "usd" },
+    6 * 3600,
   );
   if (!data?.success || !data.data) return out;
   for (const [iata, offers] of Object.entries(data.data)) {
@@ -107,4 +97,113 @@ export async function cheapestAnywhere(origin: string, month: string): Promise<M
     if (prices.length) out.set(iata, Math.round(Math.min(...prices)));
   }
   return out;
+}
+
+/** Precios reales para varios meses: devuelve un lookup (iata, mes 1-12) → USD. */
+export async function livePriceLookup(
+  token: string | undefined,
+  origin: string,
+  months: { month: number; year: number }[],
+): Promise<((iata: string, month: number) => number | undefined) | undefined> {
+  if (!token) return undefined;
+  const maps = await Promise.all(
+    months.map(async ({ month, year }) => {
+      const key = `${year}-${String(month).padStart(2, "0")}`;
+      return [month, await cheapestAnywhere(token, origin, key)] as const;
+    }),
+  );
+  const byMonth = new Map(maps);
+  return (iata, month) => byMonth.get(month)?.get(iata);
+}
+
+// ---------------------------------------------------------------------------
+// SerpApi (Google Flights) — 250 búsquedas/mes gratis. Se usa solo a pedido
+// ("confirmar precio") y con caché de 12 h para cuidar la cuota.
+// ---------------------------------------------------------------------------
+
+// Google Flights trabaja con aeropuertos, no con códigos de ciudad.
+const CITY_AIRPORTS: Record<string, string> = {
+  BUE: "EZE,AEP",
+  RIO: "GIG,SDU",
+  NYC: "JFK,EWR,LGA",
+  PAR: "CDG,ORY",
+  ROM: "FCO,CIA",
+  TYO: "HND,NRT",
+  MIL: "MXP,LIN",
+  LON: "LHR,LGW",
+  SAO: "GRU,CGH",
+};
+export const airportsFor = (code: string) => CITY_AIRPORTS[code] ?? code;
+
+interface GoogleFlight {
+  price?: number;
+  total_duration?: number;
+  layovers?: unknown[];
+  flights?: { airline?: string; departure_airport?: { time?: string } }[];
+}
+interface GoogleFlightsResponse {
+  best_flights?: GoogleFlight[];
+  other_flights?: GoogleFlight[];
+  price_insights?: { lowest_price?: number; price_level?: string; typical_price_range?: number[] };
+  search_metadata?: { google_flights_url?: string };
+  error?: string;
+}
+
+export async function googleFlights(
+  apiKey: string,
+  origin: string,
+  dest: Destination,
+  depart: string,
+  ret: string,
+): Promise<FlightQuote | null> {
+  const params = new URLSearchParams({
+    engine: "google_flights",
+    departure_id: airportsFor(origin),
+    arrival_id: airportsFor(dest.iata),
+    outbound_date: depart,
+    return_date: ret,
+    type: "1",
+    adults: "1", // precio por persona
+    currency: "USD",
+    hl: "es",
+    gl: "ar",
+    api_key: apiKey,
+  });
+  const data = await cached<GoogleFlightsResponse>(
+    `gf:${origin}-${dest.iata}-${depart}-${ret}`,
+    12 * 3600,
+    async () => {
+      const r = await fetchJSON<GoogleFlightsResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-flights");
+      return r && !r.error ? r : null;
+    },
+  );
+  if (!data) return null;
+
+  const toOffer = (f: GoogleFlight): FlightOffer | null =>
+    f.price
+      ? {
+          priceUSD: Math.round(f.price),
+          airlines: [...new Set((f.flights ?? []).map((s) => s.airline).filter(Boolean) as string[])],
+          stops: f.layovers?.length ?? Math.max(0, (f.flights?.length ?? 1) - 1),
+          durationMin: f.total_duration ?? null,
+          departTime: f.flights?.[0]?.departure_airport?.time ?? null,
+        }
+      : null;
+  const offers = [...(data.best_flights ?? []), ...(data.other_flights ?? [])]
+    .map(toOffer)
+    .filter((o): o is FlightOffer => o != null)
+    .sort((a, b) => a.priceUSD - b.priceUSD)
+    .slice(0, 6);
+  if (!offers.length) return null;
+
+  const range = data.price_insights?.typical_price_range;
+  return {
+    depart,
+    returnDate: ret,
+    offers,
+    lowestUSD: offers[0].priceUSD,
+    typicalRangeUSD: range?.length === 2 ? [Math.round(range[0]), Math.round(range[1])] : null,
+    priceLevel: data.price_insights?.price_level ?? null,
+    url: data.search_metadata?.google_flights_url ?? null,
+  };
 }
