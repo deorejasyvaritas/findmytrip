@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+import { LEGAL_LINKS } from "../pages/Legal.tsx";
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../lib/api.ts";
 import { BrandMark } from "./Icon.tsx";
@@ -134,6 +136,13 @@ function AuthScreen({ firstAccount, canRegister, onDone }: { firstAccount: boole
           </button>
         )}
       </form>
+      <nav className="auth-legal" aria-label="Información legal">
+        {LEGAL_LINKS.map((l) => (
+          <Link key={l.to} to={l.to}>
+            {l.label}
+          </Link>
+        ))}
+      </nav>
     </main>
   );
 }

@@ -175,7 +175,7 @@ export default function Home() {
 
         <div className="search-tabs" role="tablist" aria-label="Tipo de búsqueda">
           <button role="tab" aria-selected={tab === "budget"} className={tab === "budget" ? "on" : ""} onClick={() => setTab("budget")}>
-            Presupuesto y fechas
+            Presupuesto<span className="hide-sm"> y fechas</span>
           </button>
           <button role="tab" aria-selected={tab === "destination"} className={tab === "destination" ? "on" : ""} onClick={() => setTab("destination")}>
             Ya sé a dónde

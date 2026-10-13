@@ -678,6 +678,9 @@ export default function DestinationPage() {
                 ))}
               </div>
             )}
+            {!loading.hotels && stayStart && (
+              <p className="small muted">FindMyTrip no realiza reservas de alojamiento: la contratación se hace con el proveedor.</p>
+            )}
 
             {!loading.hotels && realHotels.length === 0 && (
               <div className="grid-3">

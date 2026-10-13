@@ -24,7 +24,15 @@ function partnerHead(): Plugin {
 export default defineConfig({
   // Fecha de compilación, visible en Perfil: sirve para confirmar que el deploy tomó.
   define: { __BUILD__: JSON.stringify(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC") },
-  plugins: [react(), cloudflare({ remoteBindings: process.env.CF_REMOTE === "1" }), partnerHead()],
+  plugins: [
+    react(),
+    cloudflare({
+      remoteBindings: process.env.CF_REMOTE === "1",
+      // Datos locales en otra carpeta (para probar con una cuenta de prueba aparte).
+      persistState: process.env.FMT_STATE_DIR ? { path: process.env.FMT_STATE_DIR } : true,
+    }),
+    partnerHead(),
+  ],
   environments: {
     client: {
       build: {

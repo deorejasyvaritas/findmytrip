@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import { LegalFooter } from "./pages/Legal.tsx";
 import Icon, { BrandMark } from "./components/Icon.tsx";
 import { useApp } from "./lib/app-context.tsx";
 import { TABS } from "./lib/icons.ts";
@@ -51,7 +52,7 @@ export default function App() {
           <Route path="/perfil" element={<ProfilePage />} />
         </Routes>
       </main>
-      <footer className="footer">Precios en USD. Confirmá siempre el precio final en el sitio de reserva.</footer>
+      <LegalFooter />
       <nav className="tabbar" aria-label="Principal">
         {TABS.map((t) => (
           <TabLink key={t.to} tab={t} badge={badgeFor(t.to)} withIcon />
