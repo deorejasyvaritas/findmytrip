@@ -1,29 +1,46 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import Icon, { BrandMark } from "./components/Icon.tsx";
 import { useApp } from "./lib/app-context.tsx";
+import { TABS } from "./lib/icons.ts";
 import Home from "./pages/Home.tsx";
 import DestinationPage from "./pages/Destination.tsx";
 import Trips from "./pages/Trips.tsx";
 import Agent from "./pages/Agent.tsx";
 import ProfilePage from "./pages/Profile.tsx";
 
+function TabLink({ tab, badge, withIcon }: { tab: (typeof TABS)[number]; badge?: number; withIcon: boolean }) {
+  const content = (
+    <>
+      {withIcon && <Icon name={tab.icon} size={24} />}
+      <span>{tab.label}</span>
+      {badge ? <span className="badge-count">{badge}</span> : null}
+    </>
+  );
+  // "Vuelos" es una página aparte (carga completa) para el buscador en vivo.
+  if (tab.external) return <a href={tab.to}>{content}</a>;
+  return (
+    <NavLink to={tab.to} end={tab.to === "/"}>
+      {content}
+    </NavLink>
+  );
+}
+
 export default function App() {
   const { packages } = useApp();
+  const badgeFor = (to: string) => (to === "/viajes" ? packages.length : 0);
   return (
     <div className="app">
       <header className="topbar">
-        <NavLink to="/" className="brand">
-          <span className="brand-mark" aria-hidden>✈</span> FindMyTrip
-        </NavLink>
-        <nav className="nav">
-          <NavLink to="/" end>Explorar</NavLink>
-          {/* Página aparte (carga completa) para el buscador en vivo de Aviasales. */}
-          <a href="/vuelos.html">Vuelos</a>
-          <NavLink to="/agente">Agente</NavLink>
-          <NavLink to="/viajes">
-            Mis viajes{packages.length > 0 && <span className="badge">{packages.length}</span>}
+        <div className="topbar-inner">
+          <NavLink to="/" className="brand" aria-label="FindMyTrip, inicio">
+            <BrandMark /> FindMyTrip
           </NavLink>
-          <NavLink to="/perfil">Perfil</NavLink>
-        </nav>
+          <nav className="nav" aria-label="Principal">
+            {TABS.map((t) => (
+              <TabLink key={t.to} tab={t} badge={badgeFor(t.to)} withIcon={false} />
+            ))}
+          </nav>
+        </div>
       </header>
       <main className="main">
         <Routes>
@@ -34,9 +51,12 @@ export default function App() {
           <Route path="/perfil" element={<ProfilePage />} />
         </Routes>
       </main>
-      <footer className="footer">
-        Precios estimados en USD como referencia. Confirmá siempre en el sitio de reserva antes de comprar.
-      </footer>
+      <footer className="footer">Precios en USD. Confirmá siempre el precio final en el sitio de reserva.</footer>
+      <nav className="tabbar" aria-label="Principal">
+        {TABS.map((t) => (
+          <TabLink key={t.to} tab={t} badge={badgeFor(t.to)} withIcon />
+        ))}
+      </nav>
     </div>
   );
 }

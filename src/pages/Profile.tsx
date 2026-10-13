@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { Profile } from "../../shared/types.ts";
+import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import Segmented from "../components/Segmented.tsx";
 import { useApp } from "../lib/app-context.tsx";
@@ -9,6 +10,11 @@ export default function ProfilePage() {
   const [form, setForm] = useState<Profile>(profile);
   const [saved, setSaved] = useState(false);
 
+  const update = (patch: Partial<Profile>) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setSaved(false);
+  };
+
   function submit(e: FormEvent) {
     e.preventDefault();
     setProfile(form);
@@ -16,47 +22,48 @@ export default function ProfilePage() {
   }
 
   const toggleVisited = (id: string) =>
-    setForm({ ...form, visited: form.visited.includes(id) ? form.visited.filter((x) => x !== id) : [...form.visited, id] });
+    update({ visited: form.visited.includes(id) ? form.visited.filter((x) => x !== id) : [...form.visited, id] });
 
   return (
-    <form className="stack-lg profile" onSubmit={submit} onChange={() => setSaved(false)}>
+    <form className="stack-lg profile" style={{ maxWidth: 720 }} onSubmit={submit}>
       <div>
-        <h1>Tu perfil de viajero</h1>
-        <p className="muted">Con esto personalizo las búsquedas y las sugerencias del agente. Se guarda solo en este navegador.</p>
+        <h1>Perfil</h1>
+        <p className="muted" style={{ marginTop: 8 }}>
+          Con esto personalizo las búsquedas y las sugerencias. Se guarda solo en este navegador.
+        </p>
       </div>
 
-      <section className="card stack">
-        <div className="grid-4">
-          <label>
-            Nombre
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+      <section>
+        <p className="grouped-title">Sobre vos</p>
+        <div className="grouped">
+          <label className="list-row">
+            <span className="grow">Nombre</span>
+            <input value={form.name} placeholder="Opcional" onChange={(e) => update({ name: e.target.value })} />
           </label>
-          <label>
-            Salgo desde
-            <select value={form.origin} onChange={(e) => setForm({ ...form, origin: e.target.value })}>
+          <label className="list-row">
+            <span className="grow">Salgo desde</span>
+            <select value={form.origin} onChange={(e) => update({ origin: e.target.value })}>
               {meta?.origins.map((o) => (
                 <option key={o.code} value={o.code}>
-                  {o.name} ({o.code})
+                  {o.name}
                 </option>
               ))}
             </select>
           </label>
-          <label>
-            Viajamos
+          <label className="list-row">
+            <span className="grow">Viajamos</span>
             <input
               type="number"
               min={1}
               max={12}
+              style={{ minWidth: 80 }}
               value={form.travelers}
-              onChange={(e) => setForm({ ...form, travelers: Number(e.target.value) || 1 })}
+              onChange={(e) => update({ travelers: Number(e.target.value) || 1 })}
             />
           </label>
-          <label>
-            Máx. horas de vuelo
-            <select
-              value={form.maxFlightHours ?? 0}
-              onChange={(e) => setForm({ ...form, maxFlightHours: Number(e.target.value) || null })}
-            >
+          <label className="list-row">
+            <span className="grow">Horas de vuelo como máximo</span>
+            <select value={form.maxFlightHours ?? 0} onChange={(e) => update({ maxFlightHours: Number(e.target.value) || null })}>
               <option value={0}>Sin límite</option>
               <option value={4}>Hasta 4 h</option>
               <option value={9}>Hasta 9 h</option>
@@ -64,13 +71,17 @@ export default function ProfilePage() {
             </select>
           </label>
         </div>
-        <div className="row wrap gap">
-          <div className="stack-sm">
-            <span className="label">Estilo de viaje</span>
+      </section>
+
+      <section>
+        <p className="grouped-title">Preferencias</p>
+        <div className="grouped">
+          <div className="list-row">
+            <span className="grow">Estilo de viaje</span>
             <Segmented
               label="Estilo de viaje"
               value={form.style}
-              onChange={(style) => setForm({ ...form, style })}
+              onChange={(style) => update({ style })}
               options={[
                 { value: "low", label: "Económico" },
                 { value: "mid", label: "Confort" },
@@ -78,50 +89,66 @@ export default function ProfilePage() {
               ]}
             />
           </div>
-          <div className="stack-sm">
-            <span className="label">Ver precios en</span>
+          <div className="list-row">
+            <span className="grow">Ver precios en</span>
             <Segmented
               label="Moneda"
               value={form.currency}
-              onChange={(currency) => setForm({ ...form, currency })}
+              onChange={(currency) => update({ currency })}
               options={[
                 { value: "USD", label: "Dólares" },
-                { value: "ARS", label: `Pesos (1 USD = $${meta?.usdArsRate ?? "…"})` },
+                { value: "ARS", label: "Pesos" },
               ]}
             />
-            {meta && <span className="muted small">{meta.usdArsSource}</span>}
+          </div>
+        </div>
+        {meta && (
+          <p className="grouped-note">
+            1 USD = ${meta.usdArsRate.toLocaleString("es-AR")} · {meta.usdArsSource}
+          </p>
+        )}
+      </section>
+
+      <section>
+        <p className="grouped-title">Qué te gusta</p>
+        <div className="grouped">
+          <div className="list-row list-row-block">
+            {meta && <InterestPicker options={meta.interests} value={form.interests} onChange={(interests) => update({ interests })} />}
           </div>
         </div>
       </section>
 
-      <section className="card stack">
-        <h2>¿Qué te gusta?</h2>
-        {meta && (
-          <InterestPicker options={meta.interests} value={form.interests} onChange={(interests) => setForm({ ...form, interests })} />
-        )}
-      </section>
-
-      <section className="card stack">
-        <h2>¿Dónde ya estuviste?</h2>
-        <p className="muted small">Los dejo fuera de las sugerencias para mostrarte cosas nuevas.</p>
-        <div className="chips">
-          {destinations.map((d) => (
-            <button
-              type="button"
-              key={d.id}
-              className={`chip ${form.visited.includes(d.id) ? "on" : ""}`}
-              aria-pressed={form.visited.includes(d.id)}
-              onClick={() => toggleVisited(d.id)}
-            >
-              {d.name}
-            </button>
-          ))}
+      <section>
+        <p className="grouped-title">Dónde ya estuviste</p>
+        <div className="grouped">
+          <div className="list-row list-row-block">
+            <div className="chips">
+              {destinations.map((d) => (
+                <button
+                  type="button"
+                  key={d.id}
+                  className={`chip ${form.visited.includes(d.id) ? "on" : ""}`}
+                  aria-pressed={form.visited.includes(d.id)}
+                  onClick={() => toggleVisited(d.id)}
+                >
+                  {form.visited.includes(d.id) && <Icon name="check" size={14} />}
+                  {d.name}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+        <p className="grouped-note">Los dejo fuera de las sugerencias para mostrarte lugares nuevos.</p>
       </section>
 
       <div className="row gap">
         <button className="primary">Guardar perfil</button>
-        {saved && <span className="success">✓ Guardado</span>}
+        {saved && (
+          <span className="success row gap-sm" role="status">
+            <Icon name="check" size={16} />
+            Perfil guardado
+          </span>
+        )}
       </div>
     </form>
   );

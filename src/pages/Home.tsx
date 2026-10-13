@@ -3,10 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import type { ExploreResponse, Interest, Region, Style, WatchItem } from "../../shared/types.ts";
 import InterestPicker from "../components/InterestPicker.tsx";
 import Segmented from "../components/Segmented.tsx";
-import SuggestionCard from "../components/SuggestionCard.tsx";
+import SuggestionCard, { SuggestionSkeleton } from "../components/SuggestionCard.tsx";
+import Icon from "../components/Icon.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { capitalize, formatDate, monthName } from "../lib/format.ts";
+import { capitalize, formatDate, formatRange, monthName } from "../lib/format.ts";
 import { useStored } from "../lib/storage.ts";
 
 interface Search {
@@ -100,38 +101,37 @@ export default function Home() {
   );
   const originName = meta?.origins.find((o) => o.code === profile.origin)?.name ?? profile.origin;
 
+  const nightsShown = (lastSearch ?? defaults).nights;
+
   return (
     <div className="stack-lg">
-      <section className="hero">
-        <h1>{profile.name ? `Hola ${profile.name}, ¿a dónde vamos?` : "¿A dónde vamos?"}</h1>
-        <p className="muted">
-          Saliendo desde <strong>{originName}</strong>.{" "}
-          {!app.profileSaved && (
-            <>
-              <Link to="/perfil">Completá tu perfil</Link> para recomendaciones más precisas.
-            </>
-          )}
-        </p>
+      <section className="search-panel" aria-labelledby="search-title">
+        <div>
+          <h1 id="search-title">{profile.name ? `Hola ${profile.name}, ¿a dónde vamos?` : "¿A dónde vamos?"}</h1>
+          <p className="lead">
+            Saliendo desde {originName}.{" "}
+            {!app.profileSaved && (
+              <>
+                <Link to="/perfil">Completá tu perfil</Link> para recomendaciones a tu medida.
+              </>
+            )}
+          </p>
+        </div>
 
-        <div className="tabs" role="tablist">
+        <div className="search-tabs" role="tablist" aria-label="Tipo de búsqueda">
           <button role="tab" aria-selected={tab === "budget"} className={tab === "budget" ? "on" : ""} onClick={() => setTab("budget")}>
             Presupuesto y fechas
           </button>
-          <button
-            role="tab"
-            aria-selected={tab === "destination"}
-            className={tab === "destination" ? "on" : ""}
-            onClick={() => setTab("destination")}
-          >
+          <button role="tab" aria-selected={tab === "destination"} className={tab === "destination" ? "on" : ""} onClick={() => setTab("destination")}>
             Ya sé a dónde
           </button>
         </div>
 
         {tab === "budget" ? (
-          <form className="card search" onSubmit={submit}>
-            <div className="grid-4">
-              <label>
-                Presupuesto ({profile.currency})
+          <form className="stack" style={{ gap: 16 }} onSubmit={submit}>
+            <div className="search-grid">
+              <label className="tile">
+                <span>Presupuesto total ({profile.currency})</span>
                 <input
                   inputMode="numeric"
                   value={budgetInput}
@@ -139,13 +139,10 @@ export default function Home() {
                   required
                 />
               </label>
-              <label>
-                Cuándo
-                <select
-                  value={form.month ?? 0}
-                  onChange={(e) => setForm({ ...form, month: Number(e.target.value) || null })}
-                >
-                  <option value={0}>Flexible (el mejor mes)</option>
+              <label className="tile">
+                <span>Cuándo</span>
+                <select value={form.month ?? 0} onChange={(e) => setForm({ ...form, month: Number(e.target.value) || null })}>
+                  <option value={0}>Flexible, el mejor mes</option>
                   {upcoming.map((m) => (
                     <option key={m.month} value={m.month}>
                       {capitalize(monthName(m.month))} {m.year}
@@ -153,30 +150,18 @@ export default function Home() {
                   ))}
                 </select>
               </label>
-              <label>
-                Noches
-                <input
-                  type="number"
-                  min={1}
-                  max={60}
-                  value={form.nights}
-                  onChange={(e) => setForm({ ...form, nights: Number(e.target.value) })}
-                />
+              <label className="tile">
+                <span>Noches</span>
+                <input type="number" min={1} max={60} value={form.nights} onChange={(e) => setForm({ ...form, nights: Number(e.target.value) })} />
               </label>
-              <label>
-                Viajeros
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
-                  value={form.travelers}
-                  onChange={(e) => setForm({ ...form, travelers: Number(e.target.value) })}
-                />
+              <label className="tile">
+                <span>Viajeros</span>
+                <input type="number" min={1} max={12} value={form.travelers} onChange={(e) => setForm({ ...form, travelers: Number(e.target.value) })} />
               </label>
             </div>
-            <div className="row wrap gap">
+            <div className="search-row">
               <Segmented
-                label="Estilo"
+                label="Estilo de viaje"
                 value={form.style}
                 onChange={(style) => setForm({ ...form, style })}
                 options={[
@@ -186,6 +171,7 @@ export default function Home() {
                 ]}
               />
               <select
+                className="inline"
                 aria-label="Región"
                 value={form.regions[0] ?? ""}
                 onChange={(e) => setForm({ ...form, regions: e.target.value ? [e.target.value as Region] : [] })}
@@ -196,34 +182,37 @@ export default function Home() {
                 ))}
               </select>
             </div>
-            {meta && (
-              <InterestPicker
-                options={meta.interests}
-                value={form.interests}
-                onChange={(interests) => setForm({ ...form, interests })}
-              />
-            )}
-            <button className="primary" disabled={loading}>
-              {loading ? "Buscando…" : "¿A dónde me alcanza?"}
+            {meta && <InterestPicker options={meta.interests} value={form.interests} onChange={(interests) => setForm({ ...form, interests })} />}
+            <button className="search-cta" disabled={loading}>
+              <Icon name="search" size={18} />
+              {loading ? "Buscando precios…" : "Ver a dónde me alcanza"}
             </button>
           </form>
         ) : (
-          <div className="card search">
-            <input
-              placeholder="Buscá un destino, país o tipo de viaje (ej. playa, nieve)…"
-              value={destQuery}
-              onChange={(e) => setDestQuery(e.target.value)}
-              autoFocus
-            />
+          <div className="stack">
+            <div className="dest-search">
+              <Icon name="search" size={18} />
+              <input
+                aria-label="Buscar destino"
+                placeholder="Destino, país o tipo de viaje"
+                value={destQuery}
+                onChange={(e) => setDestQuery(e.target.value)}
+                autoFocus
+              />
+            </div>
             <div className="dest-list">
               {filteredDest.map((d) => (
                 <button key={d.id} className="dest-item" onClick={() => navigate(`/destino/${d.id}`)}>
-                  <strong>{d.name}</strong>
-                  <span className="muted small">
-                    {d.country} · {d.tags.slice(0, 3).join(", ")}
+                  <span className="stack-sm">
+                    <span>{d.name}</span>
+                    <span className="sub">
+                      {d.country} · {d.tags.slice(0, 3).join(", ")}
+                    </span>
                   </span>
+                  <Icon name="chevronRight" size={18} />
                 </button>
               ))}
+              {filteredDest.length === 0 && <p>No hay destinos que coincidan. Probá con otra palabra, por ejemplo "playa".</p>}
             </div>
           </div>
         )}
@@ -231,8 +220,8 @@ export default function Home() {
 
       {watchlist.length > 0 && (
         <section>
-          <h2>Tus viajes en mente</h2>
-          <div className="watch-list">
+          <p className="grouped-title">Destinos que seguís</p>
+          <div className="grouped">
             {watchlist.map((w) => (
               <WatchRow key={w.id} w={w} />
             ))}
@@ -240,40 +229,65 @@ export default function Home() {
         </section>
       )}
 
-      {error && <p className="error">{error}</p>}
+      {error && (
+        <div className="card empty" role="alert">
+          <Icon name="info" size={28} />
+          <p>No pudimos cargar los precios: {error}</p>
+          <button className="secondary" onClick={() => run(lastSearch ?? defaults)}>
+            Reintentar
+          </button>
+        </div>
+      )}
 
-      {result && (
+      {loading && (
+        <section aria-busy="true" aria-label="Buscando opciones">
+          <div className="section-head">
+            <h2>Buscando las mejores opciones</h2>
+          </div>
+          <div className="grid-cards">
+            {Array.from({ length: 6 }, (_, i) => (
+              <SuggestionSkeleton key={i} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {result && !loading && (
         <>
           <section>
             <div className="section-head">
               <h2>{lastSearch ? "Mejores opciones para vos" : "Ideas para vos"}</h2>
-              <span className="muted small">
-                {result.suggestions.length} de {result.considered} destinos entran en{" "}
-                {app.money((lastSearch ?? defaults).budgetUSD)}
+              <span className="small muted">
+                {result.suggestions.length} de {result.considered} destinos entran en {app.money((lastSearch ?? defaults).budgetUSD)}
               </span>
             </div>
             {result.suggestions.length === 0 ? (
               <div className="card empty">
-                Con ese presupuesto no encontramos opciones. Probá con menos noches, estilo económico o fechas flexibles.
+                <Icon name="search" size={28} />
+                <h3>Con ese presupuesto no hay opciones todavía</h3>
+                <p className="muted">Probá con menos noches, estilo Económico o fechas flexibles: suelen abrir muchas opciones.</p>
               </div>
             ) : (
               <div className="grid-cards">
                 {result.suggestions.map((s) => (
-                  <SuggestionCard key={s.destination.id} s={s} nights={(lastSearch ?? defaults).nights} />
+                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} />
                 ))}
               </div>
             )}
           </section>
 
           {result.alternatives.length > 0 && (
-            <section className="alt-section">
+            <section>
               <div className="section-head">
-                <h2>💡 Lugares que quizás no estabas considerando</h2>
-                <span className="muted small">También entran en tu presupuesto</span>
+                <h2 className="section-title">
+                  <Icon name="sparkles" size={22} />
+                  Quizás no lo estabas considerando
+                </h2>
+                <span className="small muted">También entran en tu presupuesto</span>
               </div>
               <div className="grid-cards">
                 {result.alternatives.map((s) => (
-                  <SuggestionCard key={s.destination.id} s={s} nights={(lastSearch ?? defaults).nights} />
+                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} />
                 ))}
               </div>
             </section>
@@ -282,8 +296,11 @@ export default function Home() {
           {result.extra.length > 0 && (
             <section>
               <div className="section-head">
-                <h2>🌎 Más destinos con precio real de Google</h2>
-                <span className="muted small">Vuelo ida y vuelta por persona, fechas sugeridas por Google</span>
+                <h2 className="section-title">
+                  <Icon name="globe" size={22} />
+                  Más destinos con precio real
+                </h2>
+                <span className="small muted">Vuelo ida y vuelta por persona, fechas sugeridas por Google</span>
               </div>
               <div className="grid-cards">
                 {result.extra.map((e) => (
@@ -291,22 +308,28 @@ export default function Home() {
                     <div className="suggestion-head">
                       <div>
                         <h3>{e.name}</h3>
-                        <p className="muted small">
-                          {e.country} · {formatDate(e.depart)}
-                          {e.ret ? ` → ${formatDate(e.ret)}` : ""}
+                        <p className="small muted">
+                          {e.country} · {e.ret ? formatRange(e.depart, e.ret) : formatDate(e.depart)}
                         </p>
                       </div>
+                      <Icon name="external" size={18} className="muted" />
                     </div>
                     <div className="price-row">
                       <div>
                         <div className="price">{app.money(e.flightPP)}</div>
-                        <div className="muted small">vuelo p/p{e.airline ? ` · ${e.airline}` : ""}</div>
+                        <div className="small muted">Vuelo por persona{e.airline ? ` · ${e.airline}` : ""}</div>
                       </div>
-                      {e.hotelNight && <div className="small muted">🛏 desde {app.money(e.hotelNight)}/noche</div>}
+                      {e.hotelNight && (
+                        <div className="breakdown">
+                          <span>
+                            <Icon name="bed" size={14} /> desde {app.money(e.hotelNight)} por noche
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    <div className="card-foot small muted">
-                      <span>● precio real hoy (Google)</span>
-                      <span>Ver en Google ↗</span>
+                    <div className="card-foot">
+                      <span className="source live">Precio real de hoy</span>
+                      <span>Ver en Google</span>
                     </div>
                   </a>
                 ))}
@@ -338,23 +361,26 @@ function WatchRow({ w }: { w: WatchItem }) {
   if (!dest) return null;
   const ok = current && current.total <= w.targetUSD;
   return (
-    <div className="card watch">
-      <Link to={`/destino/${dest.id}`} className="grow">
-        <strong>{dest.name}</strong>
-        <div className="muted small">
-          Objetivo {money(w.targetUSD)} · {w.nights} noches {w.month ? `en ${monthName(w.month)}` : "· fechas flexibles"}
+    <div className="list-row">
+      <Link to={`/destino/${dest.id}`} className="grow" style={{ color: "inherit" }}>
+        <div className="headline">{dest.name}</div>
+        <div className="small muted">
+          Objetivo {money(w.targetUSD)} · {w.nights} noches · {w.month ? capitalize(monthName(w.month)) : "fechas flexibles"}
         </div>
       </Link>
       {current && (
         <div className={`watch-status ${ok ? "ok" : "over"}`}>
-          {ok ? "✓ Entra" : "Todavía no"}
-          <div className="small">
+          <strong>
+            {ok && <Icon name="check" size={14} />}
+            {ok ? "Entra" : "Todavía no"}
+          </strong>
+          <div>
             {money(current.total)} en {monthName(current.month)}
           </div>
         </div>
       )}
-      <button className="ghost small" onClick={() => removeWatch(w.id)} aria-label={`Dejar de seguir ${dest.name}`}>
-        ✕
+      <button className="icon-btn" onClick={() => removeWatch(w.id)} aria-label={`Dejar de seguir ${dest.name}`}>
+        <Icon name="trash" size={18} />
       </button>
     </div>
   );

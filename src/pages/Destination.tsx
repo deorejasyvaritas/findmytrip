@@ -15,7 +15,9 @@ import { flightLinks } from "../../shared/links.ts";
 import Segmented from "../components/Segmented.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { INTEREST_EMOJI, STYLE_LABEL, capitalize, formatDate, monthName, monthShort } from "../lib/format.ts";
+import { STYLE_LABEL, capitalize, formatDate, formatRange, monthName, monthShort } from "../lib/format.ts";
+import { INTEREST_ICON } from "../lib/icons.ts";
+import Icon from "../components/Icon.tsx";
 
 const WEEKDAYS = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
 const STYLES: Style[] = ["low", "mid", "high"];
@@ -181,7 +183,14 @@ export default function DestinationPage() {
   const tiers = useMemo(() => pickTiers(realHotels), [realHotels]);
 
   if (error && !dest) return <p className="error">{error}</p>;
-  if (!dest) return <p className="muted">Cargando…</p>;
+  if (!dest)
+    return (
+      <div className="skeleton" aria-busy="true" aria-label="Cargando destino">
+        <div className="sk" style={{ width: 120, height: 16 }} />
+        <div className="sk" style={{ width: "40%", height: 36 }} />
+        <div className="sk" style={{ width: "70%", height: 14 }} />
+      </div>
+    );
 
   const rooms = Math.max(1, Math.ceil(travelers / 2));
   const quoteOk = quote && day && quote.depart === day.date && quote.returnDate === day.returnDate;
@@ -218,7 +227,7 @@ export default function DestinationPage() {
       items: [
         {
           kind: "vuelo",
-          label: `Vuelo ${profile.origin} ⇄ ${dest.iata} (${travelers} × USD ${flightPP}, ${flightSource})`,
+          label: `Vuelo ${profile.origin}–${dest.iata} ida y vuelta (${travelers} × USD ${flightPP}, ${flightSource})`,
           amountUSD: flights,
           link: (quoteOk && quote.url) || flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers, meta?.marker)[0].url,
         },
@@ -255,40 +264,57 @@ export default function DestinationPage() {
   const daysInMonth = firstDay ? new Date(firstDay.getFullYear(), firstDay.getMonth() + 1, 0).getDate() : 0;
   const byDate = new Map((calendar?.days ?? []).map((d) => [d.date, d]));
 
+  const stayStart = hotelsCheckin ?? day?.date;
+  const stayEnd = stayStart ? addDays(stayStart, nights) : "";
+
   return (
     <div className="dest-layout">
       <div className="stack-lg">
-        <section>
-          <Link to="/" className="muted small">
-            ← Volver a explorar
+        <section className="dest-head">
+          <Link to="/" className="back">
+            <Icon name="chevronLeft" size={22} />
+            Explorar
           </Link>
           <h1>{dest.name}</h1>
-          <p className="muted">
-            {dest.country} · {dest.flightHours} h de vuelo aprox. desde Buenos Aires · {dest.docs}
-          </p>
-          <p>{dest.blurb}</p>
+          <div className="meta">
+            <span>
+              <Icon name="pin" size={16} />
+              {dest.country}
+            </span>
+            <span>
+              <Icon name="plane" size={16} />
+              {dest.flightHours} h de vuelo desde Buenos Aires
+            </span>
+            <span>
+              <Icon name="info" size={16} />
+              {dest.docs}
+            </span>
+          </div>
+          <p className="subhead">{dest.blurb}</p>
           <div className="chips static">
             {dest.tags.map((t) => (
               <span key={t} className="chip">
-                {INTEREST_EMOJI[t]} {t}
+                <Icon name={INTEREST_ICON[t] ?? "sparkles"} size={16} />
+                {capitalize(t)}
               </span>
             ))}
           </div>
-          <p className="small">
-            <strong>Imperdibles:</strong> {dest.highlights.join(" · ")}
-          </p>
+          <p className="small muted">Imperdibles: {dest.highlights.join(" · ")}</p>
         </section>
 
-        <section className="card">
-          <div className="row wrap gap">
-            <label className="inline">
-              Noches
-              <input type="number" min={1} max={60} value={nights} onChange={(e) => setNights(Number(e.target.value) || 1)} />
-            </label>
-            <label className="inline">
-              Viajeros
-              <input type="number" min={1} max={12} value={travelers} onChange={(e) => setTravelers(Number(e.target.value) || 1)} />
-            </label>
+        <section className="card controls" aria-label="Ajustes del viaje">
+          <label className="field">
+            Noches
+            <input type="number" min={1} max={60} value={nights} onChange={(e) => setNights(Number(e.target.value) || 1)} />
+          </label>
+          <label className="field">
+            Viajeros
+            <input type="number" min={1} max={12} value={travelers} onChange={(e) => setTravelers(Number(e.target.value) || 1)} />
+          </label>
+          <div className="stack-sm">
+            <span className="small muted" style={{ fontWeight: 500 }}>
+              Estilo
+            </span>
             <Segmented
               label="Estilo"
               value={style}
@@ -307,8 +333,10 @@ export default function DestinationPage() {
         </section>
 
         <section>
-          <h2>¿Cuándo conviene ir?</h2>
-          <p className="muted small">Comparación aproximada entre meses. ★ = mejor combinación de precio y clima.</p>
+          <div className="section-head">
+            <h2>Cuándo conviene ir</h2>
+            <span className="small muted">Costo aproximado por persona. Con estrella, la mejor combinación de precio y clima.</span>
+          </div>
           <div className="month-bars" role="list">
             {months.map((m) => (
               <button
@@ -316,13 +344,14 @@ export default function DestinationPage() {
                 role="listitem"
                 className={`month-bar ${month === monthKey(m) ? "on" : ""} ${m.best ? "best" : ""}`}
                 onClick={() => selectMonth(monthKey(m))}
-                title={`${capitalize(monthName(m.month))} ${m.year}: ${money(m.totalPerPersonUSD)} por persona`}
+                aria-pressed={month === monthKey(m)}
+                aria-label={`${capitalize(monthName(m.month))} ${m.year}: ${money(m.totalPerPersonUSD)} por persona${m.best ? ", recomendado" : ""}`}
               >
-                <span className="bar-value small">{money(m.totalPerPersonUSD)}</span>
+                <span className="bar-value">{money(m.totalPerPersonUSD)}</span>
                 <span className="bar" style={{ height: `${Math.max(12, (m.totalPerPersonUSD / maxMonth) * 120)}px` }} />
-                <span className="small">
-                  {monthShort(m.month)}
-                  {m.best && " ★"}
+                <span className="month-label">
+                  {capitalize(monthShort(m.month))}
+                  {m.best && <Icon name="star" size={10} />}
                 </span>
               </button>
             ))}
@@ -333,14 +362,11 @@ export default function DestinationPage() {
           <section>
             <div className="section-head">
               <h2>Vuelos en {monthName(Number(month.slice(5, 7)))}</h2>
-              <span className="muted small">
-                Ida y vuelta por persona, {nights} noches ·{" "}
-                {calendar?.live ? "precios vistos en los últimos días (~ = estimado)" : "estimados"}
-              </span>
+              <span className="small muted">Ida y vuelta por persona, {nights} noches</span>
             </div>
             <div className="calendar">
               {WEEKDAYS.map((w) => (
-                <div key={w} className="cal-head small muted">
+                <div key={w} className="cal-head">
                   {w}
                 </div>
               ))}
@@ -352,7 +378,7 @@ export default function DestinationPage() {
                 const d = byDate.get(date);
                 const selected = day?.date === date;
                 const price = selected && quoteOk ? quote.lowestUSD : d?.priceUSD;
-                const band = !d ? "" : d.priceUSD <= priceBands.low ? "cheap" : d.priceUSD >= priceBands.high ? "pricey" : "midp";
+                const band = !d ? "" : d.priceUSD <= priceBands.low ? "cheap" : d.priceUSD >= priceBands.high ? "pricey" : "";
                 const est = !(selected && quoteOk) && d?.source === "estimado";
                 return (
                   <button
@@ -360,6 +386,8 @@ export default function DestinationPage() {
                     className={`cal-day ${band} ${est ? "est" : ""} ${selected ? "on" : ""}`}
                     disabled={!d}
                     onClick={() => d && setDay(d)}
+                    aria-pressed={selected}
+                    aria-label={d ? `${formatDate(date, { weekday: "long", day: "numeric", month: "long" })}: USD ${price}${est ? " estimado" : ""}` : undefined}
                     title={d?.airline ? `${d.airline} · ${d.stops ?? 0} escala(s)` : undefined}
                   >
                     <span className="small">{i + 1}</span>
@@ -373,70 +401,96 @@ export default function DestinationPage() {
                 );
               })}
             </div>
+            <div className="legend">
+              <span>
+                <i style={{ background: "var(--green-soft)" }} />
+                Más barato
+              </span>
+              <span>
+                <i style={{ background: "var(--orange-soft)" }} />
+                Más caro
+              </span>
+              <span>~ Precio estimado</span>
+              {calendar?.live && <span>Sin "~": visto por usuarios en los últimos días</span>}
+            </div>
 
             {day && (
-              <div className="stack">
-                <div className="row wrap gap small">
+              <>
+                <div className="date-line">
                   <span>
-                    Salida <strong>{formatDate(day.date, { weekday: "short", day: "numeric", month: "short" })}</strong> · vuelta{" "}
+                    Salida <strong>{formatDate(day.date, { weekday: "short", day: "numeric", month: "short" })}</strong>, vuelta{" "}
                     <strong>{formatDate(day.returnDate, { weekday: "short", day: "numeric", month: "short" })}</strong>
                   </span>
+                </div>
+                <div className="date-line">
                   <a
                     className="pill-link live"
                     href={`/vuelos.html?${new URLSearchParams({ from: profile.origin, to: dest.iata, depart: day.date, ret: day.returnDate })}`}
                   >
-                    🔎 Buscar en vivo (sin límite)
+                    <Icon name="search" size={16} />
+                    Buscar en vivo, sin límite
                   </a>
                   {flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers, meta?.marker).map((l) => (
                     <a key={l.label} href={l.url} target="_blank" rel="noreferrer" className="pill-link">
-                      {l.label} ↗
+                      {l.label}
+                      <Icon name="external" size={14} />
                     </a>
                   ))}
                 </div>
-                {loading.quote && <p className="muted small">Buscando el precio de hoy en Google Flights…</p>}
+
+                {loading.quote && (
+                  <div className="card quote skeleton" aria-busy="true" aria-label="Buscando el precio de hoy">
+                    <div className="sk" style={{ width: "45%", height: 16 }} />
+                    <div className="sk" style={{ width: "100%", height: 12 }} />
+                    <div className="sk" style={{ width: "100%", height: 12 }} />
+                  </div>
+                )}
                 {quoteOk && (
                   <div className="card quote">
-                    <div className="section-head">
-                      <strong>Precio real hoy · Google Flights (por persona)</strong>
+                    <div className="section-head" style={{ marginBottom: 0 }}>
+                      <h3>Precio real de hoy en Google Flights</h3>
                       {quote.typicalRangeUSD && (
-                        <span className="muted small">
-                          Habitual: USD {quote.typicalRangeUSD[0]}–{quote.typicalRangeUSD[1]}
-                          {quote.priceLevel && ` · hoy está ${LEVEL[quote.priceLevel] ?? quote.priceLevel}`}
+                        <span className="small muted">
+                          Habitual USD {quote.typicalRangeUSD[0]}–{quote.typicalRangeUSD[1]}
+                          {quote.priceLevel && `, hoy está ${LEVEL[quote.priceLevel] ?? quote.priceLevel}`}
                         </span>
                       )}
                     </div>
                     <ul className="items">
                       {quote.offers.map((o, i) => (
                         <li key={i}>
-                          <span className="grow">
-                            {o.airlines.join(" + ") || "Aerolínea"} · {o.stops === 0 ? "directo" : `${o.stops} escala(s)`}
-                            {o.durationMin ? ` · ${hours(o.durationMin)}` : ""}
+                          <span className="label">
+                            <Icon name="plane" size={16} />
+                            <span>
+                              {o.airlines.join(" + ") || "Aerolínea"} · {o.stops === 0 ? "Directo" : `${o.stops} escala${o.stops > 1 ? "s" : ""}`}
+                              {o.durationMin ? ` · ${hours(o.durationMin)}` : ""}
+                            </span>
                           </span>
                           <strong>{money(o.priceUSD)}</strong>
                         </li>
                       ))}
                     </ul>
                     {quote.url && (
-                      <a href={quote.url} target="_blank" rel="noreferrer" className="small">
-                        Abrir en Google Flights ↗
+                      <a href={quote.url} target="_blank" rel="noreferrer" className="small row gap-sm">
+                        Abrir en Google Flights <Icon name="external" size={14} />
                       </a>
                     )}
                   </div>
                 )}
                 {google && !loading.quote && !quoteOk && (
-                  <p className="muted small">
+                  <p className="small muted" style={{ marginTop: 12 }}>
                     {dayKey === autoKey
-                      ? "Google Flights no devolvió vuelos para estas fechas; se muestra el precio del calendario."
-                      : "Para no gastar cuota, este día muestra el precio del calendario. "}
+                      ? "Google Flights no devolvió vuelos para estas fechas; se muestra el precio del calendario. "
+                      : "Para cuidar la cuota, este día muestra el precio del calendario. "}
                     {dayKey !== autoKey && (
                       <button className="link" onClick={() => fetchQuote(false, day)}>
-                        Ver precio de hoy en Google (usa 1 búsqueda)
+                        Ver precio de hoy (usa 1 búsqueda)
                       </button>
                     )}{" "}
-                    O usá "Buscar en vivo", que no tiene límite.
+                    También podés usar Buscar en vivo, que no tiene límite.
                   </p>
                 )}
-              </div>
+              </>
             )}
           </section>
         )}
@@ -444,15 +498,25 @@ export default function DestinationPage() {
         {day && (
           <section>
             <div className="section-head">
-              <h2>Alojamiento</h2>
-              <span className="muted small">
-                {formatDate(hotelsCheckin ?? day.date)} → {formatDate(addDays(hotelsCheckin ?? day.date, nights))} · {rooms} hab.
-                {realHotels.length ? " · precios reales de Google Hotels" : google ? "" : " · estimado"}
+              <h2>Dónde dormir</h2>
+              <span className="small muted">
+                {formatRange(stayStart ?? day.date, stayEnd)} · {rooms} {rooms === 1 ? "habitación" : "habitaciones"}
+                {realHotels.length ? " · precios reales de Google Hotels" : google ? "" : " · precios estimados"}
               </span>
             </div>
-            {loading.hotels && <p className="muted small">Buscando hoteles en Google Hotels…</p>}
+            {loading.hotels && (
+              <div className="grid-3" aria-busy="true" aria-label="Buscando hoteles">
+                {STYLES.map((s) => (
+                  <div key={s} className="card skeleton">
+                    <div className="sk" style={{ width: "100%", aspectRatio: "16 / 10", height: "auto" }} />
+                    <div className="sk" style={{ width: "70%", height: 14 }} />
+                    <div className="sk" style={{ width: "40%", height: 20 }} />
+                  </div>
+                ))}
+              </div>
+            )}
 
-            {realHotels.length > 0 ? (
+            {!loading.hotels && realHotels.length > 0 && (
               <>
                 <div className="grid-3">
                   {STYLES.map((s) => {
@@ -460,48 +524,50 @@ export default function DestinationPage() {
                     if (!h) return null;
                     const on = !custom && tier === s;
                     return (
-                      <button key={s} className={`card stay ${on ? "on" : ""}`} onClick={() => (setCustom(null), setTier(s))} aria-pressed={on}>
-                        {h.thumbnail && <img className="stay-img" src={h.thumbnail} alt="" loading="lazy" />}
-                        <span className="muted small">{STYLE_LABEL[s]}</span>
+                      <button
+                        key={s}
+                        className={`stay ${on ? "on" : ""}`}
+                        onClick={() => {
+                          setCustom(null);
+                          setTier(s);
+                        }}
+                        aria-pressed={on}
+                      >
+                        {h.thumbnail ? <img className="stay-img" src={h.thumbnail} alt="" loading="lazy" /> : <div className="stay-img" />}
+                        <span className="tier">{STYLE_LABEL[s]}</span>
                         <strong>{h.name}</strong>
-                        <span className="muted small">
-                          {h.stars ? `${h.stars}★ · ` : ""}
-                          {h.rating ? `${h.rating}/5` : ""}
-                          {h.reviews ? ` (${h.reviews.toLocaleString("es-AR")})` : ""}
-                        </span>
+                        <Rating stars={h.stars} rating={h.rating} reviews={h.reviews} />
                         <span className="price">{money(h.totalUSD * rooms)}</span>
-                        <span className="muted small">{money(h.nightlyUSD)}/noche</span>
+                        <span className="small muted">{money(h.nightlyUSD)} por noche</span>
                         {h.link && (
-                          <a href={h.link} target="_blank" rel="noreferrer" className="small" onClick={(e) => e.stopPropagation()}>
-                            Ver hotel ↗
+                          <a href={h.link} target="_blank" rel="noreferrer" className="small row gap-sm" onClick={(e) => e.stopPropagation()}>
+                            Ver hotel <Icon name="external" size={14} />
                           </a>
                         )}
                       </button>
                     );
                   })}
                 </div>
-                <button className="ghost small" onClick={() => setShowAll((v) => !v)}>
-                  {showAll ? "Ocultar" : `Ver los ${realHotels.length} hoteles`}
+                <button className="plain" style={{ marginTop: 8 }} onClick={() => setShowAll((v) => !v)} aria-expanded={showAll}>
+                  {showAll ? "Ocultar la lista" : `Ver los ${realHotels.length} hoteles`}
+                  <Icon name="chevronDown" size={16} />
                 </button>
                 {showAll && (
                   <div className="hotel-list">
                     {realHotels.map((h) => (
                       <button
                         key={h.name}
-                        className={`card hotel ${custom?.name === h.name ? "on" : ""}`}
+                        className={`hotel ${custom?.name === h.name ? "on" : ""}`}
                         onClick={() => setCustom(custom?.name === h.name ? null : h)}
                         aria-pressed={custom?.name === h.name}
                       >
-                        {h.thumbnail && <img src={h.thumbnail} alt="" loading="lazy" />}
+                        {h.thumbnail ? <img src={h.thumbnail} alt="" loading="lazy" /> : <span className="stay-img" style={{ width: 64, height: 64 }} />}
                         <span className="hotel-body">
                           <strong>{h.name}</strong>
-                          <span className="muted small">
-                            {h.stars ? `${h.stars}★ · ` : ""}
-                            {h.rating ? `${h.rating}/5` : ""}
-                          </span>
-                          <span>
+                          <Rating stars={h.stars} rating={h.rating} />
+                          <span className="small">
                             <strong>{money(h.nightlyUSD)}</strong>
-                            <span className="muted small"> /noche · {money(h.totalUSD * rooms)} total</span>
+                            <span className="muted"> por noche · {money(h.totalUSD * rooms)} total</span>
                           </span>
                         </span>
                       </button>
@@ -509,95 +575,130 @@ export default function DestinationPage() {
                   </div>
                 )}
               </>
-            ) : (
-              !loading.hotels && (
-                <div className="grid-3">
-                  {stays.map((s) => (
-                    <button
-                      key={s.tier}
-                      className={`card stay ${tier === s.tier ? "on" : ""}`}
-                      onClick={() => setTier(s.tier)}
-                      aria-pressed={tier === s.tier}
-                    >
-                      <strong>{s.label}</strong>
-                      <span className="muted small">{s.area} · estimado</span>
-                      <span className="price">{money(s.totalUSD)}</span>
-                      <span className="muted small">
-                        {money(s.nightlyUSD)}/noche · {s.rooms} hab.
-                      </span>
-                      <span className="row gap small">
-                        {s.links.map((l) => (
-                          <a key={l.label} href={l.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-                            {l.label} ↗
-                          </a>
-                        ))}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )
+            )}
+
+            {!loading.hotels && realHotels.length === 0 && (
+              <div className="grid-3">
+                {stays.map((s) => (
+                  <button key={s.tier} className={`stay ${tier === s.tier ? "on" : ""}`} onClick={() => setTier(s.tier)} aria-pressed={tier === s.tier}>
+                    <span className="tier">{s.label}</span>
+                    <strong>{s.area}</strong>
+                    <span className="price">{money(s.totalUSD)}</span>
+                    <span className="small muted">
+                      {money(s.nightlyUSD)} por noche · estimado
+                    </span>
+                    <span className="row gap small">
+                      {s.links.map((l) => (
+                        <a key={l.label} href={l.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="row gap-sm">
+                          {l.label} <Icon name="external" size={14} />
+                        </a>
+                      ))}
+                    </span>
+                  </button>
+                ))}
+              </div>
             )}
           </section>
         )}
-        {error && <p className="error">{error}</p>}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
         {quota?.left != null && (
-          <p className="muted small">
+          <p className="small muted">
             Búsquedas de Google disponibles este mes: {quota.left}
-            {quota.total ? ` de ${quota.total}` : ""}. Las búsquedas repetidas no se descuentan (caché de 12-24 h).
+            {quota.total ? ` de ${quota.total}` : ""}. Repetir una búsqueda reciente no descuenta.
           </p>
         )}
       </div>
 
-      <aside className="card summary">
+      <aside className="card summary" aria-label="Tu paquete">
         <h2>Tu paquete</h2>
         {day && (realPick || estStay) ? (
           <>
-            <p className="muted small">
-              {formatDate(day.date)} → {formatDate(day.returnDate)} · {travelers} {travelers === 1 ? "viajero" : "viajeros"}
+            <p className="small muted">
+              {formatRange(day.date, day.returnDate)} · {travelers} {travelers === 1 ? "viajero" : "viajeros"}
             </p>
             <ul className="items">
               <li>
-                <span>
-                  ✈ Vuelos <span className="muted small">({loading.quote ? "actualizando…" : flightSource})</span>
+                <span className="label">
+                  <Icon name="plane" size={16} />
+                  <span className="stack-sm" style={{ gap: 0 }}>
+                    <span>Vuelos</span>
+                    <span className="small muted">{loading.quote ? "Actualizando…" : capitalize(flightSource)}</span>
+                  </span>
                 </span>
                 <span>{money(flights)}</span>
               </li>
               <li>
-                <span>
-                  🛏 {lodgingLabel}
-                  {realPick && <span className="muted small"> (real)</span>}
+                <span className="label">
+                  <Icon name="bed" size={16} />
+                  <span className="stack-sm" style={{ gap: 0 }}>
+                    <span>{realPick ? realPick.name : estStay?.label}</span>
+                    <span className="small muted">{realPick ? "Precio real" : "Estimado"}</span>
+                  </span>
                 </span>
                 <span>{money(lodging)}</span>
               </li>
               <li>
-                <span>
-                  🍽 Gastos diarios <span className="muted small">(estimado)</span>
+                <span className="label">
+                  <Icon name="utensils" size={16} />
+                  <span className="stack-sm" style={{ gap: 0 }}>
+                    <span>Comidas y paseos</span>
+                    <span className="small muted">Estimado</span>
+                  </span>
                 </span>
                 <span>{money(daily)}</span>
               </li>
             </ul>
             <div className="total">
-              <span>Total</span>
+              <span className="headline">Total</span>
               <span className="price">{money(total)}</span>
             </div>
-            <p className="muted small">{money(Math.round(total / travelers))} por persona</p>
-            <button className="primary" onClick={savePackage}>
+            <p className="small muted">{money(Math.round(total / travelers))} por persona</p>
+            <button className="primary full" onClick={savePackage}>
+              <Icon name="bookmark" size={18} />
               Guardar en Mis viajes
             </button>
-            <button className="secondary" onClick={follow}>
-              Seguir este destino
+            <button className="secondary full" onClick={follow}>
+              <Icon name="bell" size={18} />
+              Avisarme si baja
             </button>
             {saved && (
-              <p className="success small">
-                {saved === "watch" ? "Lo vas a ver en Explorar con el precio actualizado." : "Guardado."}{" "}
+              <p className="success small row gap-sm" role="status">
+                <Icon name="check" size={14} />
+                {saved === "watch" ? "Lo vas a ver en Explorar con el precio al día." : "Guardado en Mis viajes."}
                 <Link to={saved === "watch" ? "/" : "/viajes"}>Ver</Link>
               </p>
             )}
           </>
         ) : (
-          <p className="muted">Elegí un mes y un día para armar el paquete.</p>
+          <div className="skeleton" aria-busy="true">
+            <div className="sk" style={{ width: "60%", height: 12 }} />
+            <div className="sk" style={{ width: "100%", height: 12 }} />
+            <div className="sk" style={{ width: "100%", height: 12 }} />
+            <div className="sk" style={{ width: "50%", height: 28 }} />
+          </div>
         )}
       </aside>
     </div>
+  );
+}
+
+function Rating({ stars, rating, reviews }: { stars: number | null; rating: number | null; reviews?: number | null }) {
+  if (!stars && !rating) return null;
+  return (
+    <span className="rating">
+      {stars ? `${stars} estrellas` : ""}
+      {stars && rating ? " · " : ""}
+      {rating ? (
+        <>
+          <Icon name="star" size={12} />
+          {rating.toLocaleString("es-AR")}
+        </>
+      ) : null}
+      {reviews ? ` (${reviews.toLocaleString("es-AR")})` : ""}
+    </span>
   );
 }

@@ -1,6 +1,26 @@
 import "./styles.css";
+import { TABS, iconSvg } from "./lib/icons.ts";
 
 // Página del buscador en vivo (White Label de Travelpayouts / Aviasales).
+// Es una página aparte del resto de la app, así que armamos la navegación acá.
+
+for (const el of document.querySelectorAll<HTMLElement>("[data-icon]")) {
+  el.innerHTML = iconSvg("plane", 18);
+}
+for (const nav of document.querySelectorAll<HTMLElement>("[data-tabs]")) {
+  const withIcons = nav.dataset.tabs === "icons";
+  for (const tab of TABS) {
+    const a = document.createElement("a");
+    a.href = tab.to;
+    if (tab.to === "/vuelos.html") {
+      a.className = "active";
+      a.setAttribute("aria-current", "page");
+    }
+    a.innerHTML = `${withIcons ? iconSvg(tab.icon, 24) : ""}<span>${tab.label}</span>`;
+    nav.append(a);
+  }
+}
+
 // Si venimos desde un destino, mostramos qué búsqueda conviene hacer.
 const params = new URLSearchParams(location.search);
 const from = params.get("from");
@@ -11,7 +31,7 @@ const prefill = document.getElementById("prefill");
 if (prefill && from && to && depart) {
   const fmt = (iso: string) =>
     new Date(`${iso}T12:00:00`).toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" });
-  prefill.textContent = `Búsqueda sugerida: ${from} → ${to}, ida ${fmt(depart)}${ret ? `, vuelta ${fmt(ret)}` : ""}.`;
+  prefill.textContent = `Búsqueda sugerida: ${from} a ${to}, ida ${fmt(depart)}${ret ? `, vuelta ${fmt(ret)}` : ""}.`;
   prefill.hidden = false;
 }
 

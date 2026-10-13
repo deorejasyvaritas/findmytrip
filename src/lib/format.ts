@@ -21,16 +21,5 @@ export function formatDate(iso: string, opts: Intl.DateTimeFormatOptions = { day
 
 export const STYLE_LABEL = { low: "Económico", mid: "Confort", high: "Premium" } as const;
 
-export const INTEREST_EMOJI: Record<string, string> = {
-  playa: "🏖️",
-  "montaña": "🏔️",
-  ciudad: "🏙️",
-  "gastronomía": "🍷",
-  aventura: "🧗",
-  nieve: "🎿",
-  cultura: "🏛️",
-  naturaleza: "🌿",
-  relax: "🧘",
-  noche: "🌙",
-  compras: "🛍️",
-};
+/** "7 jun – 14 jun" */
+export const formatRange = (a: string, b: string) => `${formatDate(a)} – ${formatDate(b)}`;

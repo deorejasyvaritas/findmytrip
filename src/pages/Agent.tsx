@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import type { TripPackage } from "../../shared/types.ts";
+import Icon from "../components/Icon.tsx";
 import PackageCard from "../components/PackageCard.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
@@ -13,7 +14,7 @@ interface ChatMessage {
 }
 
 const STARTERS = [
-  "Tengo USD 2.500 para 2 personas, 10 días en marzo. ¿Qué me recomendás?",
+  "Tengo USD 2.500 para dos, 10 días en marzo. ¿Qué me recomendás?",
   "Quiero playa en julio sin gastar una fortuna",
   "¿Cuál es el mes más barato para ir a Japón 15 días?",
   "Sorprendeme: un lugar que no se me ocurriría, con USD 1.500 por persona",
@@ -57,13 +58,18 @@ export default function Agent() {
 
   if (meta && !meta.agent) {
     return (
-      <div className="card empty stack">
-        <h1>Agente de viajes</h1>
-        <p>El agente conversacional necesita una clave de la API de Claude (es lo único de la app que tiene costo por uso).</p>
-        <p className="muted small">
-          Agregá <code>ANTHROPIC_API_KEY</code> en el archivo <code>.env</code> y reiniciá el servidor. Mientras tanto, podés usar{" "}
-          <Link to="/">Explorar</Link>, que funciona sin IA.
-        </p>
+      <div className="stack-lg">
+        <h1>Agente</h1>
+        <div className="card empty">
+          <Icon name="message" size={32} />
+          <h3>El agente está apagado</h3>
+          <p className="muted">
+            Para conversar con el agente hace falta una clave de la API de Claude, que tiene costo por uso. Todo lo demás funciona sin ella.
+          </p>
+          <Link to="/" className="button primary">
+            Explorar destinos
+          </Link>
+        </div>
       </div>
     );
   }
@@ -72,21 +78,19 @@ export default function Agent() {
 
   return (
     <div className="chat">
-      <div className="section-head">
-        <h1>Tu agente de viajes</h1>
+      <div className="section-head" style={{ marginBottom: 0 }}>
+        <h1>Agente</h1>
         {messages.length > 0 && (
-          <button className="ghost small" onClick={() => setMessages([])}>
+          <button className="plain" onClick={() => setMessages([])}>
             Nueva conversación
           </button>
         )}
       </div>
 
-      <div className="chat-log">
+      <div className="chat-log" aria-live="polite">
         {messages.length === 0 && (
           <div className="stack">
-            <p className="muted">
-              Contame qué tenés en mente: presupuesto, fechas, con quién viajás o qué te gusta. Uso tu perfil para personalizar.
-            </p>
+            <p className="muted">Contame qué tenés en mente: presupuesto, fechas, con quién viajás o qué te gusta. Uso tu perfil para personalizar.</p>
             <div className="starters">
               {STARTERS.map((s) => (
                 <button key={s} className="starter" onClick={() => send(s)}>
@@ -105,10 +109,14 @@ export default function Agent() {
                 pkg={p}
                 actions={
                   savedIds.has(p.id) ? (
-                    <span className="success small">✓ Guardado en Mis viajes</span>
+                    <span className="success small row gap-sm">
+                      <Icon name="check" size={14} />
+                      Guardado en Mis viajes
+                    </span>
                   ) : (
                     <button className="primary" onClick={() => savePackage(p)}>
-                      Guardar paquete
+                      <Icon name="bookmark" size={18} />
+                      Guardar viaje
                     </button>
                   )
                 }
@@ -118,17 +126,26 @@ export default function Agent() {
         ))}
         {loading && (
           <div className="msg assistant">
-            <div className="bubble muted">Buscando opciones…</div>
+            <div className="bubble typing" aria-label="El agente está escribiendo">
+              <i />
+              <i />
+              <i />
+            </div>
           </div>
         )}
-        {error && <p className="error">{error}</p>}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
         <div ref={endRef} />
       </div>
 
       <form className="chat-input" onSubmit={submit}>
         <textarea
-          rows={2}
-          placeholder="Ej: quiero ir a algún lugar con montaña en abril, somos 2 y tenemos USD 3.000"
+          rows={1}
+          aria-label="Mensaje para el agente"
+          placeholder="Escribí tu idea de viaje"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -138,8 +155,8 @@ export default function Agent() {
             }
           }}
         />
-        <button className="primary" disabled={loading || !input.trim()}>
-          Enviar
+        <button className="primary" disabled={loading || !input.trim()} aria-label="Enviar">
+          <Icon name="send" size={18} />
         </button>
       </form>
     </div>

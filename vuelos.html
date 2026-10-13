@@ -2,7 +2,7 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Buscador de vuelos en tiempo real, sin límite de búsquedas." />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Vuelos · FindMyTrip</title>
@@ -10,31 +10,27 @@
   <body>
     <div class="app">
       <header class="topbar">
-        <a href="/" class="brand"><span class="brand-mark" aria-hidden="true">✈</span> FindMyTrip</a>
-        <nav class="nav">
-          <a href="/">Explorar</a>
-          <a href="/vuelos.html" class="active">Vuelos</a>
-          <a href="/agente">Agente</a>
-          <a href="/viajes">Mis viajes</a>
-          <a href="/perfil">Perfil</a>
-        </nav>
+        <div class="topbar-inner">
+          <a href="/" class="brand" aria-label="FindMyTrip, inicio"><span class="brand-mark" style="width: 32px; height: 32px" data-icon="plane"></span> FindMyTrip</a>
+          <nav class="nav" aria-label="Principal" data-tabs="text"></nav>
+        </div>
       </header>
       <main class="main stack-lg">
         <section>
-          <h1>Buscador de vuelos en vivo</h1>
-          <p class="muted">
-            Precios en tiempo real de aerolíneas y agencias (Aviasales). Sin límite de búsquedas y sin rastreo de tus
-            búsquedas anteriores: lo que ves es el precio del momento.
+          <h1>Vuelos en vivo</h1>
+          <p class="muted" style="margin-top: 8px">
+            Precios del momento de aerolíneas y agencias. Sin límite de búsquedas y sin que tus búsquedas anteriores cambien el precio.
           </p>
-          <p id="prefill" class="muted small" hidden></p>
+          <p id="prefill" class="card small" style="margin-top: 16px" hidden></p>
         </section>
         <div class="wl-panel"><div id="tpwl-search"></div></div>
         <div id="tpwl-tickets"></div>
-        <p id="wl-missing" class="card empty" hidden>
-          El buscador todavía no está activado: falta pegar el código del White Label de Travelpayouts en
-          <code>partner-head.html</code> y volver a publicar.
-        </p>
+        <div id="wl-missing" class="card empty" hidden>
+          <h3>El buscador todavía no está activado</h3>
+          <p class="muted">Falta pegar el código del White Label de Travelpayouts en <code>partner-head.html</code> y volver a publicar.</p>
+        </div>
       </main>
+      <nav class="tabbar" aria-label="Principal" data-tabs="icons"></nav>
     </div>
     <script type="module" src="/src/vuelos.ts"></script>
   </body>

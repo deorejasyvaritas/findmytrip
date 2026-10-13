@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import type { TripPackage } from "../../shared/types.ts";
+import Icon from "../components/Icon.tsx";
 import PackageCard from "../components/PackageCard.tsx";
+import Segmented from "../components/Segmented.tsx";
 import { useApp } from "../lib/app-context.tsx";
 
 const STATUS: { value: TripPackage["status"]; label: string }[] = [
@@ -11,34 +13,43 @@ const STATUS: { value: TripPackage["status"]; label: string }[] = [
 
 export default function Trips() {
   const { packages, updatePackage, removePackage, money } = useApp();
-  const total = packages.filter((p) => p.status !== "reservado").reduce((s, p) => s + p.totalUSD, 0);
+  const pending = packages.filter((p) => p.status !== "reservado").reduce((s, p) => s + p.totalUSD, 0);
 
   if (packages.length === 0) {
     return (
-      <div className="card empty stack">
+      <div className="stack-lg">
         <h1>Mis viajes</h1>
-        <p>Todavía no guardaste ningún paquete.</p>
-        <p className="muted">
-          <Link to="/">Explorá destinos</Link> según tu presupuesto o pedile ideas al <Link to="/agente">agente</Link>.
-        </p>
+        <div className="card empty">
+          <Icon name="bookmark" size={32} />
+          <h3>Todavía no guardaste ningún viaje</h3>
+          <p className="muted">
+            Cuando un destino te guste, armá el paquete y tocá Guardar. Acá vas a tener todo junto: vuelo, alojamiento y gastos.
+          </p>
+          <Link to="/" className="button primary">
+            Explorar destinos
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="stack-lg">
-      <div className="section-head">
+      <div>
         <h1>Mis viajes</h1>
-        <span className="muted small">
-          {packages.length} paquetes · {money(total)} en planes sin reservar
-        </span>
+        <p className="muted" style={{ marginTop: 8 }}>
+          {packages.length} {packages.length === 1 ? "viaje" : "viajes"} · {money(pending)} en planes sin reservar
+        </p>
       </div>
       {STATUS.map(({ value, label }) => {
         const list = packages.filter((p) => p.status === value);
         if (!list.length) return null;
         return (
           <section key={value}>
-            <h2>{label}</h2>
+            <div className="section-head">
+              <h2>{label}</h2>
+              <span className="small muted">{list.length}</span>
+            </div>
             <div className="grid-cards">
               {list.map((p) => (
                 <PackageCard
@@ -46,22 +57,22 @@ export default function Trips() {
                   pkg={p}
                   actions={
                     <>
-                      <select
-                        aria-label="Estado"
+                      <Segmented
+                        label={`Estado de ${p.destinationName}`}
                         value={p.status}
-                        onChange={(e) => updatePackage(p.id, { status: e.target.value as TripPackage["status"] })}
-                      >
-                        {STATUS.map((s) => (
-                          <option key={s.value} value={s.value}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </select>
-                      <Link className="secondary button" to={`/destino/${p.destinationId}?month=${p.departDate.slice(0, 7)}`}>
+                        onChange={(status) => updatePackage(p.id, { status })}
+                        options={STATUS}
+                      />
+                      <span className="grow" />
+                      <Link className="button plain" to={`/destino/${p.destinationId}?month=${p.departDate.slice(0, 7)}`}>
                         Ajustar
                       </Link>
-                      <button className="ghost" onClick={() => confirm("¿Borrar este paquete?") && removePackage(p.id)}>
-                        Borrar
+                      <button
+                        className="icon-btn destructive"
+                        aria-label={`Borrar el viaje a ${p.destinationName}`}
+                        onClick={() => confirm(`¿Borrar el viaje a ${p.destinationName}? No se puede deshacer.`) && removePackage(p.id)}
+                      >
+                        <Icon name="trash" size={18} />
                       </button>
                     </>
                   }
