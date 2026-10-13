@@ -589,6 +589,6 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   width: min(400px, 100%); background: var(--surface); border-radius: 24px; padding: 32px 24px;
   display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow-md); text-align: left;
 }
-.auth-card .brand-mark { align-self: center; }
+.auth-brand { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 22px; font-weight: 700; letter-spacing: -0.016em; margin-bottom: 8px; }
 .auth-card h1 { text-align: center; font-size: 28px; }
 .auth-card > p { text-align: center; margin-top: -8px; }

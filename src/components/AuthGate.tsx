@@ -71,8 +71,11 @@ function AuthScreen({ firstAccount, canRegister, onDone }: { firstAccount: boole
   return (
     <main className="auth-screen">
       <form className="auth-card" onSubmit={submit} noValidate>
-        <BrandMark size={56} />
-        <h1>{registering ? "Creá tu cuenta" : "FindMyTrip"}</h1>
+        <div className="auth-brand">
+          <BrandMark size={44} />
+          <span>FindMyTrip</span>
+        </div>
+        <h1>{registering ? "Creá tu cuenta" : "Ingresá"}</h1>
         <p className="muted">
           {firstAccount
             ? "Es la primera vez que se usa este sitio: esta cuenta va a ser la dueña."
