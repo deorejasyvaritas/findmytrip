@@ -3,10 +3,11 @@ import { z } from "zod";
 import type { Meta } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
-import { baseFlightFrom, explore, monthOverview, stayOptions, upcomingMonths, yearFor } from "./engine.ts";
+import { baseFlightFrom, explore, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
 import { fetchJSON, useCacheStore } from "./cache.ts";
 import { config, has, type Env } from "./env.ts";
 import { realPrices } from "./providers/explore.ts";
+import { destinationPhotos } from "./providers/photos.ts";
 import { flightCalendar, googleFlights } from "./providers/flights.ts";
 import { usdArsRate } from "./providers/fx.ts";
 import { googleHotels } from "./providers/hotels.ts";
@@ -60,6 +61,21 @@ const exploreSchema = z.object({
   exclude: z.array(z.string()).optional(),
   known: z.array(z.string()).optional(),
   maxFlightHours: z.number().nullable().optional(),
+  party: z
+    .object({
+      adults: z.number().int().min(1).max(12),
+      childAges: z.array(z.number().int().min(0).max(17)).max(10),
+      bags: z.enum(["personal", "cabin", "checked1", "checked2"]),
+    })
+    .optional(),
+  when: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("flexible") }),
+      z.object({ kind: z.literal("months"), months: z.array(z.object({ month: z.number().int().min(1).max(12), year: z.number().int() })).max(12) }),
+      z.object({ kind: z.literal("window"), from: isoDate, to: isoDate }),
+      z.object({ kind: z.literal("exact"), depart: isoDate, ret: isoDate }),
+    ])
+    .optional(),
 });
 
 const notFound = { error: "Destino no encontrado" };
@@ -73,7 +89,8 @@ app.get("/meta", async (c) => {
     regions: [...REGIONS],
     liveFlights: has(env(c).TRAVELPAYOUTS_TOKEN),
     googleQuotes: has(env(c).SERPAPI_KEY),
-    agent: has(env(c).ANTHROPIC_API_KEY),
+    agent: has(env(c).ANTHROPIC_API_KEY) || Boolean(c.env.AI),
+    agentProvider: has(env(c).ANTHROPIC_API_KEY) ? "claude" : c.env.AI ? "workers-ai" : null,
     usdArsRate: fx.rate,
     usdArsSource: fx.source,
     marker: env(c).TRAVELPAYOUTS_MARKER ?? null,
@@ -82,6 +99,9 @@ app.get("/meta", async (c) => {
 });
 
 app.get("/destinations", (c) => c.json(DESTINATIONS));
+
+// Fotos ilustrativas de cada destino (Wikipedia/Wikimedia, gratis, cacheadas 30 días).
+app.get("/photos", async (c) => c.json(await destinationPhotos()));
 
 app.get("/destinations/:id", (c) => {
   const dest = getDestination(c.req.param("id"));
@@ -98,13 +118,13 @@ app.get("/destinations/:id", (c) => {
 
 app.post("/explore", async (c) => {
   const body = exploreSchema.parse(await c.req.json());
-  const months = body.month != null ? [{ month: body.month, year: body.year ?? yearFor(body.month) }] : upcomingMonths();
+  const { months } = resolveWhen(body);
   const keys = env(c);
   const real = await realPrices(
     { serpapi: keys.SERPAPI_KEY, travelpayouts: keys.TRAVELPAYOUTS_TOKEN },
     body.origin,
     months,
-    body.month,
+    months.length === 1 ? months[0].month : null,
   );
   return c.json(explore(body, real));
 });
@@ -186,8 +206,8 @@ app.post("/packages/build", async (c) => {
 });
 
 app.post("/agent", async (c) => {
-  if (!has(env(c).ANTHROPIC_API_KEY)) {
-    return c.json({ error: "El agente no está configurado. Agregá ANTHROPIC_API_KEY y reiniciá." }, 503);
+  if (!has(env(c).ANTHROPIC_API_KEY) && !c.env.AI) {
+    return c.json({ error: "El agente no está configurado." }, 503);
   }
   const body = z
     .object({
@@ -201,7 +221,20 @@ app.post("/agent", async (c) => {
   if (body.messages[0].role !== "user" || body.messages.at(-1)!.role !== "user") {
     return c.json({ error: "La conversación debe empezar y terminar con un mensaje del usuario." }, 400);
   }
-  return c.json(await runAgent(env(c), body.messages, body.profile));
+  try {
+    return c.json(await runAgent(env(c), body.messages, body.profile));
+  } catch (err) {
+    console.error("[agente]", err);
+    const free = !has(env(c).ANTHROPIC_API_KEY);
+    return c.json(
+      {
+        error: free
+          ? "La IA gratuita no respondió. Puede que se haya agotado la cuota del día: probá de nuevo más tarde."
+          : "El agente no pudo responder. Probá de nuevo en un momento.",
+      },
+      502,
+    );
+  }
 });
 
 app.notFound((c) => c.json({ error: "No encontrado" }, 404));

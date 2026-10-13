@@ -64,7 +64,8 @@ export default function Agent() {
           <Icon name="message" size={32} />
           <h3>El agente está apagado</h3>
           <p className="muted">
-            Para conversar con el agente hace falta una clave de la API de Claude, que tiene costo por uso. Todo lo demás funciona sin ella.
+            Para usar el agente gratis, publicá el sitio en Cloudflare: usa la IA gratuita de Cloudflare (Workers AI). Con una clave de Claude
+            la calidad es mejor, pero tiene costo por uso.
           </p>
           <Link to="/" className="button primary">
             Explorar destinos
@@ -91,6 +92,9 @@ export default function Agent() {
         {messages.length === 0 && (
           <div className="stack">
             <p className="muted">Contame qué tenés en mente: presupuesto, fechas, con quién viajás o qué te gusta. Uso tu perfil para personalizar.</p>
+            {meta?.agentProvider === "workers-ai" && (
+              <p className="small muted">Versión gratuita (IA abierta de Cloudflare, con un límite diario de uso). Las respuestas pueden ser más simples.</p>
+            )}
             <div className="starters">
               {STARTERS.map((s) => (
                 <button key={s} className="starter" onClick={() => send(s)}>

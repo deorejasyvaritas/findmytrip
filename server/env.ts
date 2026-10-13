@@ -1,8 +1,11 @@
 // Configuración del Worker. En local se lee de `.dev.vars`; en Cloudflare,
 // de los "secrets" del proyecto (wrangler secret put ...).
+import type { WorkersAI } from "./agent.ts";
 import type { KVStore } from "./cache.ts";
 
 export interface Env {
+  /** Workers AI de Cloudflare: agente gratis (cuota diaria) si no hay clave de Claude. */
+  AI?: WorkersAI;
   /** KV de Cloudflare para cachear búsquedas (se crea solo en el primer deploy). */
   CACHE?: KVStore;
   /** Tu ID de afiliado de Travelpayouts (para ganar comisión con los links de Aviasales). */
@@ -29,5 +32,6 @@ export function config(env: Env): Env {
     USD_ARS_RATE: clean(env.USD_ARS_RATE),
     TRAVELPAYOUTS_MARKER: clean(env.TRAVELPAYOUTS_MARKER),
     CACHE: env.CACHE,
+    AI: env.AI,
   };
 }

@@ -19,8 +19,10 @@ function partnerHead(): Plugin {
 }
 
 // `npm run dev` levanta la web y el Worker (API) juntos en http://localhost:5173.
+// El agente gratuito (Workers AI) solo existe en Cloudflare: para probarlo en
+// local usá `npm run dev:ai` (requiere `npx wrangler login`).
 export default defineConfig({
-  plugins: [react(), cloudflare(), partnerHead()],
+  plugins: [react(), cloudflare({ remoteBindings: process.env.CF_REMOTE === "1" }), partnerHead()],
   environments: {
     client: {
       build: {

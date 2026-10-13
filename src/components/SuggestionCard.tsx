@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import type { PriceSource, Suggestion } from "../../shared/types.ts";
+import type { Party, PriceSource, Suggestion } from "../../shared/types.ts";
+import { partyToParams } from "../../shared/pricing.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { capitalize, formatRange, monthName } from "../lib/format.ts";
 import Icon from "./Icon.tsx";
@@ -15,14 +16,19 @@ export const SOURCE_LABEL: Record<PriceSource, string> = {
   estimado: "Precio estimado",
 };
 
-export default function SuggestionCard({ s, nights }: { s: Suggestion; nights: number }) {
-  const { money } = useApp();
+export default function SuggestionCard({ s, nights, party }: { s: Suggestion; nights: number; party?: Party }) {
+  const { money, photos } = useApp();
   const d = s.destination;
-  const q = new URLSearchParams({ month: `${s.year}-${String(s.month).padStart(2, "0")}`, nights: String(nights) });
+  const q = new URLSearchParams({
+    month: `${s.year}-${String(s.month).padStart(2, "0")}`,
+    nights: String(nights),
+    ...(party ? partyToParams(party) : {}),
+  });
   if (s.depart) q.set("depart", s.depart);
   const when = s.depart && s.ret ? formatRange(s.depart, s.ret) : `${capitalize(monthName(s.month))} ${s.year}`;
   return (
     <Link to={`/destino/${d.id}?${q}`} className="card suggestion">
+      <Photo src={photos[d.id]} name={d.name} />
       <div className="suggestion-head">
         <div>
           <h3>{d.name}</h3>
@@ -45,6 +51,11 @@ export default function SuggestionCard({ s, nights }: { s: Suggestion; nights: n
           <span className={s.lodgingSource !== "estimado" ? "real" : ""}>
             <Icon name="bed" size={14} /> {money(s.cost.lodging)}
           </span>
+          {s.cost.bags > 0 && (
+            <span>
+              <Icon name="luggage" size={14} /> {money(s.cost.bags)}
+            </span>
+          )}
           <span>
             <Icon name="utensils" size={14} /> {money(s.cost.daily)}
           </span>
@@ -71,10 +82,20 @@ export default function SuggestionCard({ s, nights }: { s: Suggestion; nights: n
   );
 }
 
+/** Foto ilustrativa arriba de la tarjeta; si no hay, un fondo de marca. */
+export function Photo({ src, name }: { src?: string | null; name: string }) {
+  return (
+    <div className="photo" aria-hidden="true">
+      {src ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span>{name}</span>}
+    </div>
+  );
+}
+
 /** Tarjeta vacía con la forma de una sugerencia, mientras se busca. */
 export function SuggestionSkeleton() {
   return (
     <div className="card skeleton" aria-hidden="true">
+      <div className="sk photo" />
       <div className="sk" style={{ width: "55%", height: 20 }} />
       <div className="sk" style={{ width: "35%", height: 12 }} />
       <div className="sk" style={{ width: "100%", height: 12 }} />

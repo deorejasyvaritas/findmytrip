@@ -12,7 +12,8 @@ for (const nav of document.querySelectorAll<HTMLElement>("[data-tabs]")) {
   for (const tab of TABS) {
     const a = document.createElement("a");
     a.href = tab.to;
-    if (tab.to === "/vuelos.html") {
+    if (tab.to === "/") {
+      // Vuelos es una pestaña del buscador, que vive en Explorar.
       a.className = "active";
       a.setAttribute("aria-current", "page");
     }

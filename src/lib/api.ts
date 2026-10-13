@@ -29,6 +29,7 @@ const qs = (params: Record<string, string | number>) =>
 export const api = {
   meta: () => request<Meta>("/api/meta"),
   destinations: () => request<Destination[]>("/api/destinations"),
+  photos: () => request<Record<string, string>>("/api/photos"),
   destination: (id: string, p: { origin: string; nights: number; travelers: number; style: Style }) =>
     request<{ destination: Destination; baseFlightUSD: number; months: MonthPrice[] }>(
       `/api/destinations/${id}?${qs(p)}`,

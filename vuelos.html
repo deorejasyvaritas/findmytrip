@@ -16,14 +16,19 @@
         </div>
       </header>
       <main class="main stack-lg">
-        <section>
-          <h1>Vuelos en vivo</h1>
-          <p class="muted" style="margin-top: 8px">
-            Precios del momento de aerolíneas y agencias. Sin límite de búsquedas y sin que tus búsquedas anteriores cambien el precio.
-          </p>
-          <p id="prefill" class="card small" style="margin-top: 16px" hidden></p>
+        <section class="search-panel" aria-labelledby="search-title">
+          <div>
+            <h1 id="search-title">¿A dónde vamos?</h1>
+            <p class="lead">Vuelos en vivo de aerolíneas y agencias, sin límite de búsquedas.</p>
+          </div>
+          <div class="search-tabs" role="tablist" aria-label="Tipo de búsqueda">
+            <a role="tab" aria-selected="false" class="search-tab-link" href="/?tab=budget">Presupuesto y fechas</a>
+            <a role="tab" aria-selected="false" class="search-tab-link" href="/?tab=destination">Ya sé a dónde</a>
+            <a role="tab" aria-selected="true" class="search-tab-link on" href="/vuelos.html">Vuelos</a>
+          </div>
+          <p id="prefill" class="form-error" style="color: #1c1c1e" hidden></p>
+          <div id="tpwl-search"></div>
         </section>
-        <div class="wl-panel"><div id="tpwl-search"></div></div>
         <div id="tpwl-tickets"></div>
         <div id="wl-missing" class="card empty" hidden>
           <h3>El buscador todavía no está activado</h3>

@@ -11,6 +11,8 @@
   },
   // Caché de búsquedas (gratis). Wrangler crea el KV solo en el primer deploy.
   "kv_namespaces": [{ "binding": "CACHE" }],
+  // Workers AI: el agente funciona gratis (cuota diaria) si no hay clave de Claude.
+  "ai": { "binding": "AI" },
   // Tu ID de afiliado de Travelpayouts (no es secreto: viaja en los links).
   "vars": { "TRAVELPAYOUTS_MARKER": "789588" },
   "observability": { "enabled": true }

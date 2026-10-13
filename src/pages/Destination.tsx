@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import type {
+  Bags,
   Destination,
+  Party,
   FlightCalendar,
   FlightDay,
   FlightQuote,
@@ -13,6 +15,17 @@ import type {
 } from "../../shared/types.ts";
 import { flightLinks } from "../../shared/links.ts";
 import Segmented from "../components/Segmented.tsx";
+import { PartyPicker } from "../components/TripPickers.tsx";
+import {
+  BAGS_LABEL,
+  bagsCost,
+  dailyUnits,
+  describeParty,
+  fareUnits,
+  headcount,
+  partyFromParams,
+  roomsForParty,
+} from "../../shared/pricing.ts";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { STYLE_LABEL, capitalize, formatDate, formatRange, monthName, monthShort } from "../lib/format.ts";
@@ -54,11 +67,16 @@ export default function DestinationPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const app = useApp();
-  const { profile, money, meta } = app;
+  const { profile, money, meta, photos } = app;
   const google = Boolean(meta?.googleQuotes);
 
   const [nights, setNights] = useState(Number(params.get("nights")) || 7);
-  const [travelers, setTravelers] = useState(profile.travelers);
+  const [party, setParty] = useState<Party>(() =>
+    partyFromParams(params, { adults: profile.travelers, childAges: profile.childAges ?? [], bags: profile.bags ?? "cabin" }),
+  );
+  const [editParty, setEditParty] = useState(false);
+  // Para las APIs alcanza con la cantidad de personas; el detalle (edades, equipaje) se calcula acá.
+  const travelers = headcount(party);
   const [style, setStyle] = useState<Style>(profile.style);
   const [dest, setDest] = useState<Destination | null>(null);
   const [months, setMonths] = useState<MonthPrice[]>([]);
@@ -192,18 +210,19 @@ export default function DestinationPage() {
       </div>
     );
 
-  const rooms = Math.max(1, Math.ceil(travelers / 2));
+  const rooms = roomsForParty(party);
   const quoteOk = quote && day && quote.depart === day.date && quote.returnDate === day.returnDate;
   const flightPP = quoteOk ? quote.lowestUSD : (day?.priceUSD ?? 0);
   const flightSource = quoteOk ? "Google Flights, hoy" : day?.source === "en vivo" ? "visto en los últimos días" : "estimado";
-  const flights = flightPP * travelers;
+  const flights = Math.round(flightPP * fareUnits(party));
+  const bags = bagsCost(party, dest.region);
 
   const realPick = custom ?? tiers[tier];
   const estStay = stays.find((s) => s.tier === tier);
   const lodging = realPick ? realPick.totalUSD * rooms : (estStay?.totalUSD ?? 0);
   const lodgingLabel = realPick ? realPick.name : estStay ? `${estStay.label} (estimado)` : "";
-  const daily = dest.dailyUSD[style] * (nights + 1) * travelers;
-  const total = flights + lodging + daily;
+  const daily = Math.round(dest.dailyUSD[style] * (nights + 1) * dailyUnits(party));
+  const total = flights + bags + lodging + daily;
   const maxMonth = Math.max(...months.map((m) => m.totalPerPersonUSD), 1);
 
   function selectMonth(key: string) {
@@ -227,10 +246,13 @@ export default function DestinationPage() {
       items: [
         {
           kind: "vuelo",
-          label: `Vuelo ${profile.origin}–${dest.iata} ida y vuelta (${travelers} × USD ${flightPP}, ${flightSource})`,
+          label: `Vuelo ${profile.origin}–${dest.iata} ida y vuelta (${describeParty(party)}, USD ${flightPP} por adulto, ${flightSource})`,
           amountUSD: flights,
           link: (quoteOk && quote.url) || flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers, meta?.marker)[0].url,
         },
+        ...(bags > 0
+          ? [{ kind: "extra" as const, label: `Equipaje: ${BAGS_LABEL[party.bags].toLowerCase()} por persona, ida y vuelta (estimado)`, amountUSD: bags }]
+          : []),
         {
           kind: "alojamiento",
           label: `${lodgingLabel} · ${nights} noches${rooms > 1 ? ` · ${rooms} hab.` : ""}${realPick ? " (precio real)" : ""}`,
@@ -276,6 +298,11 @@ export default function DestinationPage() {
             Explorar
           </Link>
           <h1>{dest.name}</h1>
+          {photos[dest.id] && (
+            <div className="dest-hero">
+              <img src={photos[dest.id]} alt={`Foto ilustrativa de ${dest.name}`} referrerPolicy="no-referrer" />
+            </div>
+          )}
           <div className="meta">
             <span>
               <Icon name="pin" size={16} />
@@ -307,9 +334,22 @@ export default function DestinationPage() {
             Noches
             <input type="number" min={1} max={60} value={nights} onChange={(e) => setNights(Number(e.target.value) || 1)} />
           </label>
+          <div className="field">
+            <span>Pasajeros</span>
+            <button type="button" className="secondary" aria-expanded={editParty} onClick={() => setEditParty((v) => !v)}>
+              <Icon name="users" size={16} />
+              {describeParty(party)}
+            </button>
+          </div>
           <label className="field">
-            Viajeros
-            <input type="number" min={1} max={12} value={travelers} onChange={(e) => setTravelers(Number(e.target.value) || 1)} />
+            Equipaje por persona
+            <select value={party.bags} onChange={(e) => setParty({ ...party, bags: e.target.value as Bags })}>
+              {(Object.keys(BAGS_LABEL) as Bags[]).map((b) => (
+                <option key={b} value={b}>
+                  {BAGS_LABEL[b]}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="stack-sm">
             <span className="small muted" style={{ fontWeight: 500 }}>
@@ -331,6 +371,18 @@ export default function DestinationPage() {
             />
           </div>
         </section>
+
+        {editParty && (
+          <section className="card">
+            <div className="sheet-head">
+              <h3>¿Quiénes viajan?</h3>
+              <button type="button" className="plain" onClick={() => setEditParty(false)}>
+                Listo
+              </button>
+            </div>
+            <PartyPicker value={party} onChange={setParty} />
+          </section>
+        )}
 
         <section>
           <div className="section-head">
@@ -618,7 +670,7 @@ export default function DestinationPage() {
         {day && (realPick || estStay) ? (
           <>
             <p className="small muted">
-              {formatRange(day.date, day.returnDate)} · {travelers} {travelers === 1 ? "viajero" : "viajeros"}
+              {formatRange(day.date, day.returnDate)} · {describeParty(party)}
             </p>
             <ul className="items">
               <li>
@@ -631,6 +683,18 @@ export default function DestinationPage() {
                 </span>
                 <span>{money(flights)}</span>
               </li>
+              {bags > 0 && (
+                <li>
+                  <span className="label">
+                    <Icon name="luggage" size={16} />
+                    <span className="stack-sm" style={{ gap: 0 }}>
+                      <span>Equipaje</span>
+                      <span className="small muted">{BAGS_LABEL[party.bags]} · estimado</span>
+                    </span>
+                  </span>
+                  <span>{money(bags)}</span>
+                </li>
+              )}
               <li>
                 <span className="label">
                   <Icon name="bed" size={16} />

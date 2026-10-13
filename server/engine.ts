@@ -7,13 +7,17 @@ import type {
   FlightCalendar,
   FlightDay,
   MonthPrice,
+  Party,
   RealPrice,
   StayOption,
   Style,
   Suggestion,
+  When,
 } from "../shared/types.ts";
 import { flightLinks, stayLinks } from "../shared/links.ts";
 import { DESTINATIONS, ORIGINS, getOrigin } from "./data/destinations.ts";
+import { bagsCost, dailyUnits, fareUnits, headcount, roomsForParty } from "../shared/pricing.ts";
+export { headcount };
 
 // ---------------------------------------------------------------------------
 // Utilidades de fechas (todo en UTC para evitar corrimientos por huso horario)
@@ -110,27 +114,57 @@ export function lodgingNightly(dest: Destination, style: Style, month: number): 
   return Math.round(dest.lodgingUSD[style] * Math.sqrt(dest.season[month - 1]));
 }
 
+/** Acepta un número de adultos (compatibilidad) o el detalle del grupo. */
+export const toParty = (p: Party | number): Party =>
+  typeof p === "number" ? { adults: Math.max(1, p), childAges: [], bags: "cabin" } : p;
+
 export function tripCost(
   originCode: string,
   dest: Destination,
   month: number,
   nights: number,
-  travelers: number,
+  who: Party | number,
   style: Style,
   flightOverride?: number,
   /** Precio real por noche del hotel más accesible (Google). */
   hotelNightOverride?: number,
 ): CostBreakdown {
+  const party = toParty(who);
   const flightPP = flightOverride ?? flightEstimate(originCode, dest, month);
-  const flights = flightPP * travelers;
+  const flights = Math.round(flightPP * fareUnits(party));
+  const bags = bagsCost(party, dest.region);
   // Google da el precio de entrada; para otros estilos escalamos con la relación del catálogo.
   const nightly = hotelNightOverride
     ? Math.round(hotelNightOverride * (dest.lodgingUSD[style] / dest.lodgingUSD.low))
     : lodgingNightly(dest, style, month);
-  const lodging = nightly * nights * roomsFor(travelers);
-  const daily = dest.dailyUSD[style] * (nights + 1) * travelers;
-  const total = Math.round(flights + lodging + daily);
-  return { flights, lodging, daily, total, perPerson: Math.round(total / travelers) };
+  const lodging = nightly * nights * roomsForParty(party);
+  const daily = Math.round(dest.dailyUSD[style] * (nights + 1) * dailyUnits(party));
+  const total = Math.round(flights + bags + lodging + daily);
+  return { flights, bags, lodging, daily, total, perPerson: Math.round(total / headcount(party)) };
+}
+
+/** Meses a considerar y fechas límite según lo que eligió el usuario. */
+export function resolveWhen(
+  req: { when?: When; month?: number | null; year?: number; nights: number },
+  today = new Date(),
+): { months: { month: number; year: number }[]; from?: string; to?: string; nights: number } {
+  const when: When =
+    req.when ?? (req.month ? { kind: "months", months: [{ month: req.month, year: req.year ?? yearFor(req.month, today) }] } : { kind: "flexible" });
+  const nights = Math.max(1, req.nights);
+  if (when.kind === "months" && when.months.length) return { months: when.months, nights };
+  if (when.kind === "window" || when.kind === "exact") {
+    const from = when.kind === "window" ? when.from : when.depart;
+    const to = when.kind === "window" ? when.to : when.depart;
+    const n = when.kind === "exact" ? Math.max(1, Math.round((Date.parse(when.ret) - Date.parse(when.depart)) / 86400000)) : nights;
+    const months: { month: number; year: number }[] = [];
+    const d = new Date(`${from.slice(0, 7)}-01T00:00:00Z`);
+    while (toISO(d).slice(0, 7) <= to.slice(0, 7) && months.length < 12) {
+      months.push({ month: d.getUTCMonth() + 1, year: d.getUTCFullYear() });
+      d.setUTCMonth(d.getUTCMonth() + 1);
+    }
+    return { months, from, to, nights: n };
+  }
+  return { months: upcomingMonths(today), nights };
 }
 
 // ---------------------------------------------------------------------------
@@ -149,17 +183,16 @@ export function explore(
   real?: { forDest: (dest: Destination) => RealPrice[]; extra?: ExtraDestination[] },
   today = new Date(),
 ): ExploreResponse {
-  const travelers = Math.max(1, req.travelers);
-  const nights = Math.max(1, req.nights);
+  const party = req.party ?? toParty(req.travelers);
+  const window = resolveWhen(req, today);
+  const nights = window.nights;
   const budget = Math.max(1, req.budgetUSD);
   const exclude = new Set(req.exclude ?? []);
   const known = new Set(req.known ?? []);
   const knownRegions = new Set(
     DESTINATIONS.filter((d) => known.has(d.id)).map((d) => d.region),
   );
-  const months = req.month
-    ? [{ month: req.month, year: req.year ?? yearFor(req.month, today) }]
-    : upcomingMonths(today);
+  const months = window.months;
 
   const candidates = DESTINATIONS.filter(
     (d) =>
@@ -175,7 +208,11 @@ export function explore(
     // Si hay precios reales para este destino, solo consideramos esos meses.
     const realKnown = real?.forDest(dest) ?? [];
     const google = realKnown.filter((p) => p.source === "google");
-    const realList = google.length ? google : realKnown;
+    // Con ventana o fechas exactas, solo sirven precios reales dentro del rango.
+    const inRange = (p: RealPrice) =>
+      !window.from || !p.depart || (p.depart >= window.from && p.depart <= (window.to ?? window.from));
+    const googleOk = google.filter(inRange);
+    const realList = googleOk.length ? googleOk : realKnown.filter((p) => p.source !== "google");
     const options = realList.length
       ? realList.flatMap((p) => {
           const m = months.find((x) => x.month === p.month);
@@ -183,7 +220,7 @@ export function explore(
         })
       : months.map((m) => ({ ...m, live: undefined as RealPrice | undefined }));
     for (const { month, year, live } of options) {
-      const cost = tripCost(req.origin, dest, month, nights, travelers, req.style, live?.flightPP, live?.hotelNight);
+      const cost = tripCost(req.origin, dest, month, nights, party, req.style, live?.flightPP, live?.hotelNight);
       const ratio = cost.total / budget;
       if (ratio > 1.15) continue;
 
@@ -239,8 +276,8 @@ export function explore(
         isAlternative,
         flightSource: live?.source ?? "estimado",
         lodgingSource: live?.hotelNight ? "google" : "estimado",
-        depart: live?.depart,
-        ret: live?.ret,
+        depart: live?.depart ?? (req.when?.kind === "exact" ? req.when.depart : undefined),
+        ret: live?.ret ?? (req.when?.kind === "exact" ? req.when.ret : undefined),
         airline: live?.airline,
         link: live?.link,
       };
@@ -262,7 +299,8 @@ export function explore(
   const suggestions = scored.filter((s) => !altIds.has(s.destination.id)).slice(0, 12);
 
   const extra = (real?.extra ?? [])
-    .filter((e) => e.flightPP * travelers <= budget)
+    .filter((e) => e.flightPP * fareUnits(party) <= budget)
+    .filter((e) => !window.from || (e.depart >= window.from && e.depart <= (window.to ?? window.from)))
     .slice(0, 8);
   return { suggestions, alternatives, extra, considered: candidates.length };
 }

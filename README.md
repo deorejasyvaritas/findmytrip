@@ -22,7 +22,9 @@ pero sin ruido, todo personalizado y pensado para **llegar al mejor viaje posibl
 | Hoteles reales (botón) | Google Hotels vía SerpApi | Comparte las mismas 250/mes | `SERPAPI_KEY` |
 | Dólar tarjeta para ver precios en pesos | dolarapi.com | Gratis, sin clave | — |
 | Gastos diarios (comida, transporte) | Estimación curada por destino | — | — (no hay API gratuita) |
-| Chat del agente | API de Claude | **Pago por uso** (opcional) | `ANTHROPIC_API_KEY` |
+| Chat del agente | Workers AI de Cloudflare (Llama 3.3) | **Gratis** con cuota diaria | — (viene con Cloudflare) |
+| Chat del agente, mejor calidad | API de Claude | Pago por uso (opcional) | `ANTHROPIC_API_KEY` |
+| Fotos de destinos | Wikipedia / Wikimedia | Gratis, sin clave | — |
 
 Para que la cuota de SerpApi rinda: cada búsqueda queda guardada en Cloudflare KV (gratis) por 12-24 h, los hoteles
 se buscan una vez por mes de viaje, y el precio de Google se trae solo para el primer día que se abre (los demás días
@@ -97,6 +99,7 @@ tiempo real, sin límite de búsquedas y con comisión para vos.
 | Comando | Qué hace |
 |---|---|
 | `npm run dev` | Web + API en http://localhost:5173 (usa `.dev.vars`) |
+| `npm run dev:ai` | Igual, pero con el agente gratuito de Cloudflare (requiere `npx wrangler login`) |
 | `npm test` | Tests del motor y de los proveedores de precios |
 | `npm run typecheck` | Chequeo de tipos |
 | `npm run deploy` | Build y publicación en Cloudflare |

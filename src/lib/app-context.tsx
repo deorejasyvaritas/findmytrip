@@ -8,6 +8,8 @@ export const DEFAULT_PROFILE: Profile = {
   name: "",
   origin: "BUE",
   travelers: 2,
+  childAges: [],
+  bags: "cabin",
   style: "mid",
   interests: [],
   currency: "USD",
@@ -18,6 +20,8 @@ export const DEFAULT_PROFILE: Profile = {
 interface AppState {
   meta: Meta | null;
   destinations: Destination[];
+  /** Foto ilustrativa por id de destino. */
+  photos: Record<string, string>;
   profile: Profile;
   profileSaved: boolean;
   setProfile: (p: Profile) => void;
@@ -39,6 +43,7 @@ const Ctx = createContext<AppState | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [photos, setPhotos] = useState<Record<string, string>>({});
   const [storedProfile, setStoredProfile] = useStored<Profile | null>("fmt.profile", null);
   const [packages, setPackages] = useStored<TripPackage[]>("fmt.packages", []);
   const [watchlist, setWatchlist] = useStored<WatchItem[]>("fmt.watchlist", []);
@@ -46,6 +51,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     api.meta().then(setMeta).catch(console.error);
     api.destinations().then(setDestinations).catch(console.error);
+    api.photos().then(setPhotos).catch(() => setPhotos({}));
   }, []);
 
   const profile = { ...DEFAULT_PROFILE, ...storedProfile };
@@ -55,6 +61,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       meta,
       destinations,
+      photos,
       profile,
       profileSaved: storedProfile != null,
       setProfile: (p) => setStoredProfile(p),
@@ -74,7 +81,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fromUSD: (usd) => (profile.currency === "ARS" ? Math.round(usd * rate) : Math.round(usd)),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [meta, destinations, storedProfile, packages, watchlist, rate],
+    [meta, destinations, photos, storedProfile, packages, watchlist, rate],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

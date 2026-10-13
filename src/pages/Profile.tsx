@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
-import type { Profile } from "../../shared/types.ts";
+import type { Bags, Profile } from "../../shared/types.ts";
+import { BAGS_LABEL } from "../../shared/pricing.ts";
+import { PartyPicker } from "../components/TripPickers.tsx";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import Segmented from "../components/Segmented.tsx";
@@ -51,17 +53,6 @@ export default function ProfilePage() {
             </select>
           </label>
           <label className="list-row">
-            <span className="grow">Viajamos</span>
-            <input
-              type="number"
-              min={1}
-              max={12}
-              style={{ minWidth: 80 }}
-              value={form.travelers}
-              onChange={(e) => update({ travelers: Number(e.target.value) || 1 })}
-            />
-          </label>
-          <label className="list-row">
             <span className="grow">Horas de vuelo como máximo</span>
             <select value={form.maxFlightHours ?? 0} onChange={(e) => update({ maxFlightHours: Number(e.target.value) || null })}>
               <option value={0}>Sin límite</option>
@@ -71,6 +62,29 @@ export default function ProfilePage() {
             </select>
           </label>
         </div>
+      </section>
+
+      <section>
+        <p className="grouped-title">Con quién viajás</p>
+        <div className="grouped">
+          <div className="list-row list-row-block">
+            <PartyPicker
+              value={{ adults: form.travelers, childAges: form.childAges ?? [], bags: form.bags ?? "cabin" }}
+              onChange={(p) => update({ travelers: p.adults, childAges: p.childAges })}
+            />
+          </div>
+          <label className="list-row">
+            <span className="grow">Equipaje habitual</span>
+            <select value={form.bags ?? "cabin"} onChange={(e) => update({ bags: e.target.value as Bags })}>
+              {(Object.keys(BAGS_LABEL) as Bags[]).map((b) => (
+                <option key={b} value={b}>
+                  {BAGS_LABEL[b]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="grouped-note">Se usa como punto de partida en cada búsqueda; después lo podés cambiar.</p>
       </section>
 
       <section>

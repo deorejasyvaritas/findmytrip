@@ -61,10 +61,31 @@ export interface Destination {
   areas: string[];
 }
 
+export type Bags = "personal" | "cabin" | "checked1" | "checked2";
+
+/** Quiénes viajan y con qué equipaje. */
+export interface Party {
+  adults: number;
+  /** Edad de cada menor (0-17). Menos de 2 = bebé en brazos. */
+  childAges: number[];
+  /** Equipaje por persona. */
+  bags: Bags;
+}
+
+/** Cuándo viajar: flexible, uno o varios meses, una ventana de fechas o fechas exactas. */
+export type When =
+  | { kind: "flexible" }
+  | { kind: "months"; months: { month: number; year: number }[] }
+  | { kind: "window"; from: string; to: string }
+  | { kind: "exact"; depart: string; ret: string };
+
 export interface Profile {
   name: string;
   origin: string;
+  /** Adultos que viajan habitualmente. */
   travelers: number;
+  childAges?: number[];
+  bags?: Bags;
   style: Style;
   interests: Interest[];
   currency: "USD" | "ARS";
@@ -87,10 +108,16 @@ export interface ExploreRequest {
   maxFlightHours?: number | null;
   /** Ids que el usuario ya tiene en mente: se usan para destacar alternativas. */
   known?: string[];
+  /** Detalle del grupo (si falta, `travelers` adultos con carry-on). */
+  party?: Party;
+  /** Fechas (si falta, se usa `month`). */
+  when?: When;
 }
 
 export interface CostBreakdown {
   flights: number;
+  /** Equipaje extra (valijas / carry-on) ida y vuelta, ya incluido en el total. */
+  bags: number;
   lodging: number;
   daily: number;
   total: number;
@@ -272,6 +299,8 @@ export interface Meta {
   /** Cotización exacta de vuelos y hoteles reales (SerpApi / Google). */
   googleQuotes: boolean;
   agent: boolean;
+  /** Qué IA usa el agente: Claude (pago) o Workers AI de Cloudflare (gratis). */
+  agentProvider: "claude" | "workers-ai" | null;
   usdArsRate: number;
   usdArsSource: string;
   /** ID de afiliado de Travelpayouts para los links de Aviasales. */

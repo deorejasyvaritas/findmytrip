@@ -33,6 +33,8 @@ export const ICONS = {
   send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
   sliders:
     '<path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>',
+  minus: '<path d="M5 12h14"/>',
+  luggage: '<rect x="6" y="6" width="12" height="15" rx="2"/><path d="M9 6V3h6v3"/><path d="M10 10v7"/><path d="M14 10v7"/><path d="M8 21v1"/><path d="M16 21v1"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   // Intereses
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
@@ -75,7 +77,6 @@ export const INTEREST_ICON: Record<string, IconName> = {
 /** Pestañas principales (barra superior en escritorio, barra inferior en celular). */
 export const TABS: { to: string; label: string; icon: IconName; external?: boolean }[] = [
   { to: "/", label: "Explorar", icon: "compass" },
-  { to: "/vuelos.html", label: "Vuelos", icon: "plane", external: true },
   { to: "/agente", label: "Agente", icon: "message" },
   { to: "/viajes", label: "Mis viajes", icon: "bookmark" },
   { to: "/perfil", label: "Perfil", icon: "user" },

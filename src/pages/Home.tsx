@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import type { ExploreResponse, Interest, Region, Style, WatchItem } from "../../shared/types.ts";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import type { Bags, ExploreResponse, Interest, Party, Region, Style, WatchItem, When } from "../../shared/types.ts";
+import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
+import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import Segmented from "../components/Segmented.tsx";
-import SuggestionCard, { SuggestionSkeleton } from "../components/SuggestionCard.tsx";
-import Icon from "../components/Icon.tsx";
+import SuggestionCard, { Photo, SuggestionSkeleton } from "../components/SuggestionCard.tsx";
+import { PartyPicker, WhenPicker, describeWhen, validateWhen } from "../components/TripPickers.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { capitalize, formatDate, formatRange, monthName } from "../lib/format.ts";
@@ -13,31 +15,50 @@ import { useStored } from "../lib/storage.ts";
 interface Search {
   budgetUSD: number;
   nights: number;
-  travelers: number;
-  month: number | null;
+  when: When;
+  party: Party;
   style: Style;
   interests: Interest[];
   regions: Region[];
 }
 
+type Sheet = "when" | "party" | null;
+
+/** Búsquedas guardadas con el formato anterior (mes + viajeros) se adaptan al nuevo. */
+function migrate(s: (Partial<Search> & { month?: number | null; travelers?: number }) | null, fallback: Search): Search | null {
+  if (!s) return null;
+  return {
+    ...fallback,
+    ...s,
+    when: s.when ?? (s.month ? { kind: "months", months: [{ month: s.month, year: new Date().getFullYear() + (s.month < new Date().getMonth() + 1 ? 1 : 0) }] } : { kind: "flexible" }),
+    party: s.party ?? { adults: s.travelers ?? fallback.party.adults, childAges: [], bags: "cabin" },
+  } as Search;
+}
+
+const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 86400000));
+
 export default function Home() {
   const app = useApp();
-  const { profile, meta, destinations, packages, watchlist } = app;
+  const { profile, meta, destinations, packages, watchlist, photos } = app;
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"budget" | "destination">("budget");
-  const [lastSearch, setLastSearch] = useStored<Search | null>("fmt.lastSearch", null);
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<"budget" | "destination">(params.get("tab") === "destination" ? "destination" : "budget");
+  const [rawLast, setLastSearch] = useStored<Search | null>("fmt.lastSearch", null);
 
   const defaults: Search = {
     budgetUSD: 1500 * profile.travelers,
     nights: 7,
-    travelers: profile.travelers,
-    month: null,
+    when: { kind: "flexible" },
+    party: { adults: profile.travelers, childAges: profile.childAges ?? [], bags: profile.bags ?? "cabin" },
     style: profile.style,
     interests: profile.interests,
     regions: [],
   };
+  const lastSearch = migrate(rawLast, defaults);
   const [form, setForm] = useState<Search>(lastSearch ?? defaults);
   const [budgetInput, setBudgetInput] = useState(String(app.fromUSD(form.budgetUSD)));
+  const [sheet, setSheet] = useState<Sheet>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [result, setResult] = useState<ExploreResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,12 +74,15 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
+      const nights = s.when.kind === "exact" ? nightsBetween(s.when.depart, s.when.ret) : s.nights;
       const res = await api.explore({
         origin: profile.origin,
         budgetUSD: s.budgetUSD,
-        travelers: s.travelers,
-        nights: s.nights,
-        month: s.month,
+        travelers: s.party.adults,
+        party: s.party,
+        nights,
+        month: null,
+        when: s.when,
         style: s.style,
         interests: s.interests,
         regions: s.regions.length ? s.regions : undefined,
@@ -82,26 +106,27 @@ export default function Home() {
 
   function submit(e: FormEvent) {
     e.preventDefault();
+    const problem = validateWhen(form.when);
+    if (problem) {
+      setFormError(problem);
+      setSheet("when");
+      return;
+    }
+    setFormError(null);
+    setSheet(null);
     const s = { ...form, budgetUSD: Math.round(app.toUSD(Number(budgetInput) || 0)) };
     setForm(s);
     setLastSearch(s);
     run(s);
   }
 
-  const upcoming = useMemo(() => {
-    const now = new Date();
-    return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      return { month: d.getMonth() + 1, year: d.getFullYear() };
-    });
-  }, []);
-
   const filteredDest = destinations.filter((d) =>
     `${d.name} ${d.country} ${d.tags.join(" ")}`.toLowerCase().includes(destQuery.toLowerCase()),
   );
   const originName = meta?.origins.find((o) => o.code === profile.origin)?.name ?? profile.origin;
-
-  const nightsShown = (lastSearch ?? defaults).nights;
+  const shown = lastSearch ?? defaults;
+  const nightsShown = shown.when.kind === "exact" ? nightsBetween(shown.when.depart, shown.when.ret) : shown.nights;
+  const exact = form.when.kind === "exact";
 
   return (
     <div className="stack-lg">
@@ -125,40 +150,83 @@ export default function Home() {
           <button role="tab" aria-selected={tab === "destination"} className={tab === "destination" ? "on" : ""} onClick={() => setTab("destination")}>
             Ya sé a dónde
           </button>
+          {/* El buscador de vuelos en vivo necesita una carga de página propia. */}
+          <a role="tab" aria-selected={false} href="/vuelos.html" className="search-tab-link">
+            Vuelos
+          </a>
         </div>
 
         {tab === "budget" ? (
-          <form className="stack" style={{ gap: 16 }} onSubmit={submit}>
-            <div className="search-grid">
+          <form className="stack" style={{ gap: 16 }} onSubmit={submit} noValidate>
+            <div className="search-grid five">
               <label className="tile">
                 <span>Presupuesto total ({profile.currency})</span>
+                <input inputMode="numeric" value={budgetInput} onChange={(e) => setBudgetInput(e.target.value.replace(/[^\d]/g, ""))} required />
+              </label>
+              <button
+                type="button"
+                className="tile tile-button"
+                aria-expanded={sheet === "when"}
+                aria-controls="sheet"
+                onClick={() => setSheet(sheet === "when" ? null : "when")}
+              >
+                <span>Cuándo</span>
+                <strong>{describeWhen(form.when)}</strong>
+              </button>
+              <label className="tile">
+                <span>Noches</span>
                 <input
-                  inputMode="numeric"
-                  value={budgetInput}
-                  onChange={(e) => setBudgetInput(e.target.value.replace(/[^\d]/g, ""))}
-                  required
+                  type="number"
+                  min={1}
+                  max={60}
+                  disabled={exact}
+                  value={form.when.kind === "exact" && form.when.depart && form.when.ret ? nightsBetween(form.when.depart, form.when.ret) : form.nights}
+                  onChange={(e) => setForm({ ...form, nights: Number(e.target.value) })}
                 />
               </label>
+              <button
+                type="button"
+                className="tile tile-button"
+                aria-expanded={sheet === "party"}
+                aria-controls="sheet"
+                onClick={() => setSheet(sheet === "party" ? null : "party")}
+              >
+                <span>Pasajeros</span>
+                <strong>{describeParty(form.party)}</strong>
+              </button>
               <label className="tile">
-                <span>Cuándo</span>
-                <select value={form.month ?? 0} onChange={(e) => setForm({ ...form, month: Number(e.target.value) || null })}>
-                  <option value={0}>Flexible, el mejor mes</option>
-                  {upcoming.map((m) => (
-                    <option key={m.month} value={m.month}>
-                      {capitalize(monthName(m.month))} {m.year}
+                <span>Equipaje por persona</span>
+                <select value={form.party.bags} onChange={(e) => setForm({ ...form, party: { ...form.party, bags: e.target.value as Bags } })}>
+                  {(Object.keys(BAGS_LABEL) as Bags[]).map((b) => (
+                    <option key={b} value={b}>
+                      {BAGS_LABEL[b]}
                     </option>
                   ))}
                 </select>
               </label>
-              <label className="tile">
-                <span>Noches</span>
-                <input type="number" min={1} max={60} value={form.nights} onChange={(e) => setForm({ ...form, nights: Number(e.target.value) })} />
-              </label>
-              <label className="tile">
-                <span>Viajeros</span>
-                <input type="number" min={1} max={12} value={form.travelers} onChange={(e) => setForm({ ...form, travelers: Number(e.target.value) })} />
-              </label>
             </div>
+
+            {sheet && (
+              <div className="sheet" id="sheet">
+                <div className="sheet-head">
+                  <h3>{sheet === "when" ? "¿Cuándo querés viajar?" : "¿Quiénes viajan?"}</h3>
+                  <button type="button" className="plain" onClick={() => setSheet(null)}>
+                    Listo
+                  </button>
+                </div>
+                {sheet === "when" ? (
+                  <WhenPicker value={form.when} onChange={(when) => (setForm({ ...form, when }), setFormError(null))} />
+                ) : (
+                  <PartyPicker value={form.party} onChange={(party) => setForm({ ...form, party })} />
+                )}
+              </div>
+            )}
+            {formError && (
+              <p className="form-error" role="alert">
+                {formError}
+              </p>
+            )}
+
             <div className="search-row">
               <Segmented
                 label="Estilo de viaje"
@@ -203,7 +271,8 @@ export default function Home() {
             <div className="dest-list">
               {filteredDest.map((d) => (
                 <button key={d.id} className="dest-item" onClick={() => navigate(`/destino/${d.id}`)}>
-                  <span className="stack-sm">
+                  {photos[d.id] && <img className="dest-thumb" src={photos[d.id]} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+                  <span className="stack-sm grow">
                     <span>{d.name}</span>
                     <span className="sub">
                       {d.country} · {d.tags.slice(0, 3).join(", ")}
@@ -258,7 +327,7 @@ export default function Home() {
             <div className="section-head">
               <h2>{lastSearch ? "Mejores opciones para vos" : "Ideas para vos"}</h2>
               <span className="small muted">
-                {result.suggestions.length} de {result.considered} destinos entran en {app.money((lastSearch ?? defaults).budgetUSD)}
+                {result.suggestions.length} de {result.considered} destinos entran en {app.money(shown.budgetUSD)} · {describeParty(shown.party)}
               </span>
             </div>
             {result.suggestions.length === 0 ? (
@@ -270,7 +339,7 @@ export default function Home() {
             ) : (
               <div className="grid-cards">
                 {result.suggestions.map((s) => (
-                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} />
+                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} />
                 ))}
               </div>
             )}
@@ -287,7 +356,7 @@ export default function Home() {
               </div>
               <div className="grid-cards">
                 {result.alternatives.map((s) => (
-                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} />
+                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} />
                 ))}
               </div>
             </section>
@@ -305,6 +374,7 @@ export default function Home() {
               <div className="grid-cards">
                 {result.extra.map((e) => (
                   <a key={`${e.name}-${e.airport}`} className="card suggestion" href={e.link ?? "#"} target="_blank" rel="noreferrer">
+                    <Photo src={e.thumbnail} name={e.name} />
                     <div className="suggestion-head">
                       <div>
                         <h3>{e.name}</h3>
