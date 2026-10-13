@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { evaluateAlerts, saveSettings, upsertSub } from "../server/alerts.ts";
+import { connectTelegram, evaluateAlerts, saveSettings, telegramLink, upsertSub } from "../server/alerts.ts";
 import { useCacheStore } from "../server/cache.ts";
 import { runRadar } from "../server/radar.ts";
 
@@ -64,8 +64,8 @@ describe("radar", () => {
 
 describe("alertas", () => {
   it("avisa por Telegram cuando un destino seguido entra en el presupuesto, una sola vez por precio", async () => {
-    await saveSettings({ radarDeals: false, minDiscount: 25, telegramChatId: "42" });
-    await upsertSub({
+    await saveSettings("javier", { radarDeals: false, minDiscount: 25, telegramChatId: "42" });
+    await upsertSub("javier", {
       id: "maceio",
       destinationId: "maceio",
       origin: "MDZ",
@@ -79,26 +79,47 @@ describe("alertas", () => {
     const sent: string[] = [];
     mockAPIs({ MCZ: 300 }, sent);
     const snap = await runRadar("tok", "MDZ", new Date("2026-10-13T12:00:00Z"));
-    expect((await evaluateAlerts(snap, { token: "bot", siteUrl: "https://x.dev" })).sent).toBe(1);
+    expect((await evaluateAlerts("javier", snap, { token: "bot", siteUrl: "https://x.dev" })).sent).toBe(1);
     expect(sent[0]).toContain("Maceió entró en tu presupuesto");
     expect(sent[0]).toContain("https://x.dev/destino/maceio");
     // Mismo precio en el siguiente barrido: no repite.
-    expect((await evaluateAlerts(snap, { token: "bot" })).sent).toBe(0);
+    expect((await evaluateAlerts("javier", snap, { token: "bot" })).sent).toBe(0);
   });
 
   it("avisa ofertas del radar por encima del descuento mínimo", async () => {
-    await saveSettings({ radarDeals: true, minDiscount: 30, telegramChatId: "42" });
+    await saveSettings("javier", { radarDeals: true, minDiscount: 30, telegramChatId: "42", origin: "TUC" });
     const sent: string[] = [];
     mockAPIs({ FLN: 90 }, sent);
     const snap = await runRadar("tok", "TUC", new Date("2026-10-13T12:00:00Z"));
-    await evaluateAlerts(snap, { token: "bot" });
+    await evaluateAlerts("javier", snap, { token: "bot" });
     expect(sent.some((m) => m.startsWith("Oferta del radar: Florianópolis"))).toBe(true);
   });
 
   it("sin Telegram conectado no manda nada", async () => {
-    await saveSettings({ radarDeals: true, minDiscount: 5 });
+    await saveSettings("ana", { radarDeals: true, minDiscount: 5, origin: "SLA" });
     mockAPIs({ FLN: 90 });
     const snap = await runRadar("tok", "SLA", new Date("2026-10-13T12:00:00Z"));
-    expect((await evaluateAlerts(snap, { token: "bot" })).sent).toBe(0);
+    expect((await evaluateAlerts("ana", snap, { token: "bot" })).sent).toBe(0);
+  });
+
+  it("conecta Telegram solo con el código de la cuenta", async () => {
+    let updates: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/getMe")) return Response.json({ ok: true, result: { username: "findmytrip_bot" } });
+        if (url.includes("/getUpdates")) return Response.json({ ok: true, result: updates });
+        return Response.json({ ok: true });
+      }),
+    );
+    const link = await telegramLink("bot", "pedro");
+    expect(link.url).toMatch(/^https:\/\/t\.me\/findmytrip_bot\?start=\w+$/);
+    const code = link.url!.split("start=")[1];
+    expect((await connectTelegram("bot", "pedro")).error).toContain("Todavía no llegó ningún mensaje a @findmytrip_bot");
+    updates = [{ message: { text: "/start", chat: { id: 7, first_name: "Otro" } } }];
+    expect((await connectTelegram("bot", "pedro")).error).toContain("no el código");
+    updates.push({ message: { text: `/start ${code}`, chat: { id: 99, first_name: "Pedro" } } });
+    expect(await connectTelegram("bot", "pedro")).toEqual({ ok: true, name: "Pedro" });
   });
 });

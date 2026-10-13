@@ -107,3 +107,19 @@ describe("dolarapi", () => {
     expect(await usdArsRate(1500)).toEqual({ rate: 1877, source: "Dólar Tarjeta (dolarapi.com)" });
   });
 });
+
+describe("fotos", () => {
+  it("usa anchos estándar de Wikimedia y el original si es chico", async () => {
+    const { pickImage } = await import("../server/providers/photos.ts");
+    expect(
+      pickImage({
+        thumbnail: { source: "https://upload.wikimedia.org/x/thumb/a/ab/Rio.jpg/330px-Rio.jpg" },
+        originalimage: { source: "https://upload.wikimedia.org/x/a/ab/Rio.jpg", width: 4000 },
+      }),
+    ).toBe("https://upload.wikimedia.org/x/thumb/a/ab/Rio.jpg/960px-Rio.jpg");
+    expect(pickImage({ originalimage: { source: "https://upload.wikimedia.org/x/a/ab/Chico.jpg", width: 640 } })).toBe(
+      "https://upload.wikimedia.org/x/a/ab/Chico.jpg",
+    );
+    expect(pickImage(null)).toBeNull();
+  });
+});

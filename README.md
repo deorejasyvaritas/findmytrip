@@ -80,15 +80,11 @@ Te devuelve una URL tipo `https://findmytrip.<tu-usuario>.workers.dev`. Para act
 > Ojo: si publicás la URL, cualquiera que entre usa tu cuota de SerpApi (y tu saldo de Claude si lo activaste).
 > Para uso personal, no la compartas o protegela con Cloudflare Access (gratis hasta 50 usuarios).
 
-## Acceso con usuario y contraseña
+## Cuentas (registro desde el sitio)
 
-```cmd
-npx wrangler secret put APP_USER
-npx wrangler secret put APP_PASSWORD
-```
-
-Con los dos cargados, todo el sitio pide ingresar (la sesión dura 30 días). Tu perfil, viajes guardados y destinos
-seguidos se guardan en tu cuenta y se sincronizan entre dispositivos. 5 intentos fallidos bloquean 15 minutos.
+La primera persona que entra crea su cuenta y queda como dueña del sitio. Después el registro queda cerrado; la dueña
+puede abrirlo desde Perfil, Cuenta. Cada cuenta tiene sus propios viajes, destinos seguidos y alertas, sincronizados
+entre dispositivos. Contraseñas guardadas con PBKDF2 y sal; 5 intentos fallidos bloquean 15 minutos.
 
 ## Radar de ofertas y alertas (gratis)
 
@@ -96,7 +92,8 @@ seguidos se guardan en tu cuenta y se sincronizan entre dispositivos. 5 intentos
   guarda el historial y marca lo que está por debajo de lo habitual ("bajó", "subió", "mínimo"). Ciudades: variable
   `RADAR_ORIGINS` en `wrangler.jsonc` (por defecto `BUE`).
 - **Alertas por Telegram:** con tu propio bot. En Telegram buscá @BotFather, mandale `/newbot` y copiá el token; después
-  `echo TU_TOKEN| npx wrangler secret put TELEGRAM_BOT_TOKEN`. En el sitio: Perfil, Alertas, Conectar.
+  `echo TU_TOKEN| npx wrangler secret put TELEGRAM_BOT_TOKEN`. En el sitio: Perfil, Alertas, "Abrir Telegram",
+  apretá Iniciar en el chat del bot y después "Ya lo envié".
   Te avisa cuando un destino que seguís ("Avisarme si baja") entra en tu presupuesto y de las mejores ofertas del radar.
 
 ## Códigos de Travelpayouts (Drive y buscador en vivo)

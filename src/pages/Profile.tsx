@@ -2,11 +2,11 @@ import { useState, type FormEvent } from "react";
 import type { Bags, Profile } from "../../shared/types.ts";
 import { BAGS_LABEL } from "../../shared/pricing.ts";
 import { PartyPicker } from "../components/TripPickers.tsx";
+import AccountSettings from "../components/AccountSettings.tsx";
 import AlertsSettings from "../components/AlertsSettings.tsx";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import Segmented from "../components/Segmented.tsx";
-import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 
 export default function ProfilePage() {
@@ -159,6 +159,8 @@ export default function ProfilePage() {
 
       <AlertsSettings />
 
+      <AccountSettings />
+
       <div className="row gap wrap">
         <button className="primary">Guardar perfil</button>
         {saved && (
@@ -167,17 +169,6 @@ export default function ProfilePage() {
             Perfil guardado
           </span>
         )}
-        <span className="grow" />
-        <button
-          type="button"
-          className="ghost"
-          onClick={async () => {
-            await api.logout().catch(() => {});
-            location.href = "/";
-          }}
-        >
-          Cerrar sesión
-        </button>
       </div>
       <p className="small muted">Versión del {__BUILD__}</p>
     </form>

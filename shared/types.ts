@@ -364,4 +364,8 @@ export interface AlertSettings {
   radarDeals: boolean;
   /** Descuento mínimo (0-100) para avisar una oferta del radar. */
   minDiscount: number;
+  /** Código para vincular el chat de Telegram (se usa una sola vez). */
+  pendingCode?: string;
+  /** Ciudad desde la que se avisan las ofertas del radar. */
+  origin?: string;
 }

@@ -32,7 +32,18 @@ const qs = (params: Record<string, string | number>) =>
   new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
 
 export const api = {
-  session: () => request<{ required: boolean; authenticated: boolean; user: string | null }>("/api/session"),
+  session: () =>
+    request<{ authenticated: boolean; user: string | null; role: "owner" | "member" | null; firstAccount: boolean; canRegister: boolean }>(
+      "/api/session",
+    ),
+  register: (user: string, password: string) =>
+    request<{ ok: boolean; user: string }>("/api/register", { method: "POST", body: JSON.stringify({ user, password }) }),
+  changePassword: (current: string, password: string) =>
+    request<{ ok: boolean }>("/api/account/password", { method: "POST", body: JSON.stringify({ current, password }) }),
+  accountSettings: () => request<{ openSignup: boolean }>("/api/account/settings"),
+  saveAccountSettings: (s: { openSignup: boolean }) =>
+    request<{ openSignup: boolean }>("/api/account/settings", { method: "PUT", body: JSON.stringify(s) }),
+  telegramLink: () => request<{ ok: boolean; url?: string; bot?: string; error?: string }>("/api/alerts/telegram/link", { method: "POST" }),
   login: (user: string, password: string) =>
     request<{ ok: boolean; user?: string }>("/api/login", { method: "POST", body: JSON.stringify({ user, password }) }),
   logout: () => request<{ ok: boolean }>("/api/logout", { method: "POST" }),
@@ -56,7 +67,7 @@ export const api = {
   saveAlert: (sub: Omit<AlertSub, "id" | "createdAt" | "lastNotifiedUSD" | "lastNotifiedAt">) =>
     request<{ subs: AlertSub[] }>("/api/alerts/subs", { method: "POST", body: JSON.stringify(sub) }),
   deleteAlert: (id: string) => request<{ subs: AlertSub[] }>(`/api/alerts/subs/${id}`, { method: "DELETE" }),
-  alertSettings: (s: Pick<AlertSettings, "radarDeals" | "minDiscount">) =>
+  alertSettings: (s: Pick<AlertSettings, "radarDeals" | "minDiscount" | "origin">) =>
     request<{ settings: AlertSettings }>("/api/alerts/settings", { method: "PUT", body: JSON.stringify(s) }),
   telegramConnect: () => request<{ ok: boolean; name?: string; error?: string }>("/api/alerts/telegram/connect", { method: "POST" }),
   telegramTest: () => request<{ ok: boolean; error?: string }>("/api/alerts/telegram/test", { method: "POST" }),

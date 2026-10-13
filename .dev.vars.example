@@ -1,10 +1,8 @@
 # Copiá este archivo como .dev.vars (no se sube a git) y completá las claves.
 # En Cloudflare se cargan con: npx wrangler secret put NOMBRE
 
-# Usuario y contraseña para entrar al sitio (si los dejás vacíos, el sitio queda abierto).
-# En Cloudflare: npx wrangler secret put APP_USER  y  npx wrangler secret put APP_PASSWORD
-APP_USER=
-APP_PASSWORD=
+# GRATIS. Bot de Telegram para las alertas (lo crea @BotFather).
+TELEGRAM_BOT_TOKEN=
 
 # GRATIS. Precios reales de vuelos para explorar y calendarios.
 # https://www.travelpayouts.com → Perfil → API token

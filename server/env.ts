@@ -16,9 +16,6 @@ export interface Env {
   TRAVELPAYOUTS_TOKEN?: string;
   /** Gratis hasta 250 búsquedas/mes: hoteles y vuelos de Google. */
   SERPAPI_KEY?: string;
-  /** Usuario y contraseña para entrar al sitio. Sin ellos, el sitio queda abierto. */
-  APP_USER?: string;
-  APP_PASSWORD?: string;
   /** Gratis: tu bot de Telegram (BotFather) para recibir alertas. */
   TELEGRAM_BOT_TOKEN?: string;
   /** Dirección pública del sitio, para los links de las alertas. */
@@ -41,8 +38,6 @@ export function config(env: Env): Env {
     USD_ARS_RATE: clean(env.USD_ARS_RATE),
     TRAVELPAYOUTS_MARKER: clean(env.TRAVELPAYOUTS_MARKER),
     TELEGRAM_BOT_TOKEN: clean(env.TELEGRAM_BOT_TOKEN),
-    APP_USER: clean(env.APP_USER),
-    APP_PASSWORD: clean(env.APP_PASSWORD),
     SITE_URL: clean(env.SITE_URL),
     RADAR_ORIGINS: clean(env.RADAR_ORIGINS),
     CACHE: env.CACHE,

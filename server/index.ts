@@ -6,17 +6,25 @@ import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
 import { baseFlightFrom, explore, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
 import { fetchJSON, loadJSON, saveJSON, useCacheStore } from "./cache.ts";
 import {
-  authRequired,
-  checkCredentials,
+  changePassword,
   clearCookie,
   clearFails,
   cookieToken,
+  createAccount,
   createSession,
+  getAccount,
+  getAuthSettings,
+  listUsers,
   loginLocked,
+  normalizeUser,
   readSession,
   registerFail,
   requireAuth,
+  saveAuthSettings,
   sessionCookie,
+  signupOpen,
+  validUser,
+  verifyPassword,
 } from "./auth.ts";
 import { config, has, type Env } from "./env.ts";
 import { realPrices } from "./providers/explore.ts";
@@ -29,6 +37,7 @@ import {
   removeSub,
   saveSettings,
   sendTelegram,
+  telegramLink,
   upsertSub,
 } from "./alerts.ts";
 import { destinationPhotos } from "./providers/photos.ts";
@@ -47,41 +56,79 @@ app.use(async (c, next) => {
   await next();
 });
 
-// Todo lo que está en /api pide sesión (si hay usuario y contraseña configurados).
-app.use(requireAuth((c) => config(c.env)));
+const userId = (c: { get: (k: never) => unknown }) => c.get("user" as never) as string;
+
+// Todo lo que está en /api pide sesión (salvo ingreso y registro).
+app.use(requireAuth);
 
 // ---------------------------------------------------------------------------
-// Sesión
+// Cuentas y sesión
 // ---------------------------------------------------------------------------
 
 const isHttps = (url: string) => new URL(url).protocol === "https:";
+const credentials = z.object({ user: z.string().max(80), password: z.string().max(200) });
 
 app.get("/session", async (c) => {
-  const e = config(c.env);
-  const required = authRequired(e);
-  const user = required ? await readSession(e, cookieToken(c.req.header("Cookie"))) : null;
-  return c.json({ required, authenticated: !required || Boolean(user), user });
+  const account = await readSession(cookieToken(c.req.header("Cookie")));
+  const users = await listUsers();
+  return c.json({
+    authenticated: Boolean(account),
+    user: account?.user ?? null,
+    role: account?.role ?? null,
+    firstAccount: users.length === 0,
+    canRegister: await signupOpen(),
+  });
+});
+
+app.post("/register", async (c) => {
+  if (!(await signupOpen())) return c.json({ error: "El registro está cerrado. Pedile acceso a quien administra el sitio." }, 403);
+  const body = credentials.parse(await c.req.json());
+  const user = normalizeUser(body.user);
+  if (!validUser(user)) return c.json({ error: "El usuario tiene que tener de 3 a 30 caracteres: letras, números, punto o guion." }, 400);
+  if (body.password.length < 8) return c.json({ error: "La contraseña tiene que tener al menos 8 caracteres." }, 400);
+  if (await getAccount(user)) return c.json({ error: "Ese usuario ya existe. Probá con otro o iniciá sesión." }, 409);
+  const account = await createAccount(user, body.password);
+  c.header("Set-Cookie", sessionCookie(await createSession(account), isHttps(c.req.url)));
+  return c.json({ ok: true, user: account.user, role: account.role });
 });
 
 app.post("/login", async (c) => {
-  const e = config(c.env);
-  if (!authRequired(e)) return c.json({ ok: true });
   const ip = c.req.header("CF-Connecting-IP") ?? "local";
   const locked = await loginLocked(ip);
   if (locked) return c.json({ error: `Demasiados intentos. Probá de nuevo en ${locked} min.` }, 429);
-  const body = z.object({ user: z.string().max(80), password: z.string().max(200) }).parse(await c.req.json());
-  if (!(await checkCredentials(e, body.user, body.password))) {
+  const body = credentials.parse(await c.req.json());
+  const account = await verifyPassword(body.user, body.password);
+  if (!account) {
     await registerFail(ip);
     return c.json({ error: "Usuario o contraseña incorrectos." }, 401);
   }
   await clearFails(ip);
-  c.header("Set-Cookie", sessionCookie(await createSession(e, body.user), isHttps(c.req.url)));
-  return c.json({ ok: true, user: body.user.trim().toLowerCase() });
+  c.header("Set-Cookie", sessionCookie(await createSession(account), isHttps(c.req.url)));
+  return c.json({ ok: true, user: account.user, role: account.role });
 });
 
 app.post("/logout", (c) => {
   c.header("Set-Cookie", clearCookie(isHttps(c.req.url)));
   return c.json({ ok: true });
+});
+
+app.post("/account/password", async (c) => {
+  const body = z.object({ current: z.string().max(200), password: z.string().min(8).max(200) }).parse(await c.req.json());
+  const user = userId(c);
+  if (!(await verifyPassword(user, body.current))) return c.json({ error: "La contraseña actual no es correcta." }, 400);
+  await changePassword(user, body.password);
+  const account = (await getAccount(user))!;
+  c.header("Set-Cookie", sessionCookie(await createSession(account), isHttps(c.req.url)));
+  return c.json({ ok: true });
+});
+
+app.get("/account/settings", async (c) => c.json(await getAuthSettings()));
+
+app.put("/account/settings", async (c) => {
+  if (c.get("role" as never) !== "owner") return c.json({ error: "Solo la cuenta dueña puede cambiar esto." }, 403);
+  const body = z.object({ openSignup: z.boolean() }).parse(await c.req.json());
+  await saveAuthSettings(body);
+  return c.json(body);
 });
 
 // ---------------------------------------------------------------------------
@@ -90,7 +137,7 @@ app.post("/logout", (c) => {
 // ---------------------------------------------------------------------------
 
 const USER_KEYS = ["profile", "packages", "watchlist"] as const;
-const userId = (c: { get: (k: never) => unknown }) => (c.get("user" as never) as string | undefined) ?? "local";
+
 
 app.get("/me/data", async (c) => {
   const u = userId(c);
@@ -341,7 +388,7 @@ app.post("/radar/run", async (c) => {
   if (prev && Date.now() - Date.parse(prev.updatedAt) < 20 * 60000) return c.json(prev);
   const snap = await runRadar(token, origin);
   const e = env(c);
-  await evaluateAlerts(snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL ?? new URL(c.req.url).origin });
+  await evaluateAlerts(userId(c), snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL ?? new URL(c.req.url).origin });
   return c.json(snap);
 });
 
@@ -356,8 +403,10 @@ const partySchema = z.object({
 });
 
 app.get("/alerts", async (c) => {
-  const [subs, settings] = await Promise.all([listSubs(), getSettings()]);
-  return c.json({ subs, settings, telegram: has(env(c).TELEGRAM_BOT_TOKEN) });
+  const user = userId(c);
+  const [subs, settings] = await Promise.all([listSubs(user), getSettings(user)]);
+  const { pendingCode: _code, ...visible } = settings;
+  return c.json({ subs, settings: visible, telegram: has(env(c).TELEGRAM_BOT_TOKEN) });
 });
 
 app.post("/alerts/subs", async (c) => {
@@ -373,29 +422,39 @@ app.post("/alerts/subs", async (c) => {
     })
     .parse(await c.req.json());
   if (!getDestination(body.destinationId)) return c.json(notFound, 404);
-  const subs = await upsertSub({ ...body, id: body.destinationId, createdAt: new Date().toISOString() });
+  const subs = await upsertSub(userId(c), { ...body, id: body.destinationId, createdAt: new Date().toISOString() });
   return c.json({ subs });
 });
 
-app.delete("/alerts/subs/:id", async (c) => c.json({ subs: await removeSub(c.req.param("id")) }));
+app.delete("/alerts/subs/:id", async (c) => c.json({ subs: await removeSub(userId(c), c.req.param("id")) }));
 
 app.put("/alerts/settings", async (c) => {
-  const body = z.object({ radarDeals: z.boolean(), minDiscount: z.number().int().min(5).max(80) }).parse(await c.req.json());
-  const settings = { ...(await getSettings()), ...body };
-  await saveSettings(settings);
+  const body = z
+    .object({ radarDeals: z.boolean(), minDiscount: z.number().int().min(5).max(80), origin: originCode.optional() })
+    .parse(await c.req.json());
+  const user = userId(c);
+  const settings = { ...(await getSettings(user)), ...body };
+  await saveSettings(user, settings);
   return c.json({ settings });
+});
+
+app.post("/alerts/telegram/link", async (c) => {
+  const token = env(c).TELEGRAM_BOT_TOKEN;
+  if (!token) return c.json({ ok: false, error: "Falta cargar TELEGRAM_BOT_TOKEN en Cloudflare." }, 503);
+  const res = await telegramLink(token, userId(c));
+  return c.json(res, res.ok ? 200 : 400);
 });
 
 app.post("/alerts/telegram/connect", async (c) => {
   const token = env(c).TELEGRAM_BOT_TOKEN;
   if (!token) return c.json({ ok: false, error: "Falta cargar TELEGRAM_BOT_TOKEN en Cloudflare." }, 503);
-  const res = await connectTelegram(token);
+  const res = await connectTelegram(token, userId(c));
   return c.json(res, res.ok ? 200 : 400);
 });
 
 app.post("/alerts/telegram/test", async (c) => {
   const token = env(c).TELEGRAM_BOT_TOKEN;
-  const settings = await getSettings();
+  const settings = await getSettings(userId(c));
   if (!token || !settings.telegramChatId) return c.json({ ok: false, error: "Primero conectá Telegram." }, 400);
   const ok = await sendTelegram(token, settings.telegramChatId, "Prueba de FindMyTrip: las alertas llegan bien.");
   return c.json({ ok });
@@ -415,9 +474,10 @@ async function scheduledRadar(raw: Env): Promise<void> {
   const e = config(raw);
   if (!e.TRAVELPAYOUTS_TOKEN) return;
   const origins = (e.RADAR_ORIGINS ?? "BUE").split(",").map((o) => o.trim().toUpperCase()).filter(Boolean);
+  const users = await listUsers();
   for (const origin of origins.slice(0, 3)) {
     const snap = await runRadar(e.TRAVELPAYOUTS_TOKEN, origin);
-    await evaluateAlerts(snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL });
+    for (const user of users) await evaluateAlerts(user, snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL });
   }
 }
 

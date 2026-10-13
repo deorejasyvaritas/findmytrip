@@ -8,10 +8,11 @@ import Icon from "./Icon.tsx";
 
 /** Alertas por Telegram: conexión del bot, ofertas del radar y destinos seguidos. */
 export default function AlertsSettings() {
-  const { destinations, money, removeWatch, watchlist } = useApp();
+  const { destinations, money, removeWatch, watchlist, profile } = useApp();
   const [data, setData] = useState<{ subs: AlertSub[]; settings: AlertSettings; telegram: boolean } | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [linkOpened, setLinkOpened] = useState(false);
 
   useEffect(() => {
     api.alerts().then(setData).catch(() => setData(null));
@@ -21,12 +22,31 @@ export default function AlertsSettings() {
   const { settings } = data;
   const connected = Boolean(settings.telegramChatId);
 
+  // Paso 1: abre el bot con un código único; paso 2: confirmamos que llegó.
+  async function openTelegram() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const res = await api.telegramLink();
+      if (res.ok && res.url) {
+        setLinkOpened(true);
+        window.open(res.url, "_blank", "noopener");
+        setStatus({ ok: true, text: `Se abrió @${res.bot}. Apretá "Iniciar" (o "Start") en ese chat y volvé acá.` });
+      } else setStatus({ ok: false, text: res.error ?? "No se pudo generar el link." });
+    } catch (e) {
+      setStatus({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function connect() {
     setBusy(true);
     setStatus(null);
     try {
       const res = await api.telegramConnect();
       setStatus({ ok: res.ok, text: res.ok ? `Conectado. Te mandé un mensaje de bienvenida, ${res.name}.` : (res.error ?? "No se pudo conectar.") });
+      if (res.ok) setLinkOpened(false);
       setData(await api.alerts());
     } catch (e) {
       setStatus({ ok: false, text: (e as Error).message });
@@ -48,7 +68,7 @@ export default function AlertsSettings() {
   }
 
   async function update(patch: Partial<Pick<AlertSettings, "radarDeals" | "minDiscount">>) {
-    const next = { radarDeals: settings.radarDeals, minDiscount: settings.minDiscount, ...patch };
+    const next = { radarDeals: settings.radarDeals, minDiscount: settings.minDiscount, origin: profile.origin, ...patch };
     setData({ ...data!, settings: { ...settings, ...next } });
     await api.alertSettings(next).catch(() => {});
   }
@@ -75,14 +95,26 @@ export default function AlertsSettings() {
                 {connected
                   ? `Conectado${settings.telegramName ? ` con ${settings.telegramName}` : ""}. Te avisamos ahí cuando baja un precio.`
                   : data.telegram
-                    ? "Abrí tu bot en Telegram, mandale /start y tocá Conectar."
+                    ? "Tocá Abrir Telegram, apretá Iniciar en el chat del bot y después Ya lo envié."
                     : "Falta crear tu bot (gratis, 2 minutos). Seguí los pasos de abajo."}
               </div>
             </div>
-            {data.telegram && (
-              <button type="button" className={connected ? "plain" : "primary"} onClick={connected ? test : connect} disabled={busy}>
-                {busy ? "Un momento…" : connected ? "Enviar prueba" : "Conectar"}
+            {data.telegram && connected && (
+              <button type="button" className="plain" onClick={test} disabled={busy}>
+                {busy ? "Un momento…" : "Enviar prueba"}
               </button>
+            )}
+            {data.telegram && !connected && (
+              <div className="row gap-sm wrap">
+                <button type="button" className={linkOpened ? "secondary" : "primary"} onClick={openTelegram} disabled={busy}>
+                  Abrir Telegram
+                </button>
+                {linkOpened && (
+                  <button type="button" className="primary" onClick={connect} disabled={busy}>
+                    {busy ? "Un momento…" : "Ya lo envié"}
+                  </button>
+                )}
+              </div>
             )}
           </div>
           {!data.telegram && (
@@ -93,7 +125,7 @@ export default function AlertsSettings() {
               <li>
                 En CMD, dentro de la carpeta del proyecto: <code>echo TU_TOKEN| npx wrangler secret put TELEGRAM_BOT_TOKEN</code>
               </li>
-              <li>Recargá esta página y tocá Conectar.</li>
+              <li>Recargá esta página y tocá Abrir Telegram.</li>
             </ol>
           )}
           {status && (

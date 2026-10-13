@@ -4,31 +4,34 @@ import { fetchJSON, loadJSON, saveJSON } from "./cache.ts";
 import { getDestination } from "./data/destinations.ts";
 import { tripCost } from "./engine.ts";
 
-// Alertas: destinos que seguís (aviso cuando el viaje entra en tu
-// presupuesto) y ofertas del radar. Se envían por Telegram con tu propio bot
-// (gratis). Es una app personal: hay un solo usuario y no hay login.
+// Alertas de cada cuenta: destinos que sigue (aviso cuando el viaje entra en
+// su presupuesto) y ofertas del radar. Se envían por Telegram con el bot del
+// sitio (gratis); cada cuenta conecta su propio chat.
 
-const SUBS_KEY = "alerts:subs";
-const SETTINGS_KEY = "alerts:settings";
-const SENT_DEALS_KEY = "alerts:sent-deals";
+const subsKey = (user: string) => `alerts:subs:${user}`;
+const settingsKey = (user: string) => `alerts:settings:${user}`;
+const sentKey = (user: string) => `alerts:sent:${user}`;
 
 export const DEFAULT_SETTINGS: AlertSettings = { radarDeals: true, minDiscount: 25 };
 
-export const listSubs = async () => (await loadJSON<AlertSub[]>(SUBS_KEY)) ?? [];
-export const saveSubs = (subs: AlertSub[]) => saveJSON(SUBS_KEY, subs);
-export const getSettings = async () => ({ ...DEFAULT_SETTINGS, ...((await loadJSON<AlertSettings>(SETTINGS_KEY)) ?? {}) });
-export const saveSettings = (s: AlertSettings) => saveJSON(SETTINGS_KEY, s);
+export const listSubs = async (user: string) => (await loadJSON<AlertSub[]>(subsKey(user))) ?? [];
+export const saveSubs = (user: string, subs: AlertSub[]) => saveJSON(subsKey(user), subs);
+export const getSettings = async (user: string): Promise<AlertSettings> => ({
+  ...DEFAULT_SETTINGS,
+  ...((await loadJSON<AlertSettings>(settingsKey(user))) ?? {}),
+});
+export const saveSettings = (user: string, s: AlertSettings) => saveJSON(settingsKey(user), s);
 
-export async function upsertSub(sub: AlertSub): Promise<AlertSub[]> {
-  const subs = (await listSubs()).filter((s) => s.id !== sub.id);
+export async function upsertSub(user: string, sub: AlertSub): Promise<AlertSub[]> {
+  const subs = (await listSubs(user)).filter((s) => s.id !== sub.id);
   subs.unshift(sub);
-  await saveSubs(subs);
+  await saveSubs(user, subs);
   return subs;
 }
 
-export async function removeSub(id: string): Promise<AlertSub[]> {
-  const subs = (await listSubs()).filter((s) => s.id !== id);
-  await saveSubs(subs);
+export async function removeSub(user: string, id: string): Promise<AlertSub[]> {
+  const subs = (await listSubs(user)).filter((s) => s.id !== id);
+  await saveSubs(user, subs);
   return subs;
 }
 
@@ -45,19 +48,46 @@ export async function sendTelegram(token: string, chatId: string, text: string):
   return Boolean(res?.ok);
 }
 
-/** Busca el último chat que le escribió al bot y lo guarda como destino de las alertas. */
-export async function connectTelegram(token: string): Promise<{ ok: boolean; name?: string; error?: string }> {
+async function botUsername(token: string): Promise<string | null> {
+  const me = await fetchJSON<{ ok: boolean; result?: { username?: string } }>(`https://api.telegram.org/bot${token}/getMe`, "telegram");
+  return me?.ok ? (me.result?.username ?? null) : null;
+}
+
+/** Paso 1: genera un link al bot con un código único para esta cuenta. */
+export async function telegramLink(token: string, user: string): Promise<{ ok: boolean; url?: string; bot?: string; error?: string }> {
+  const bot = await botUsername(token);
+  if (!bot) return { ok: false, error: "El token del bot no es válido. Revisá TELEGRAM_BOT_TOKEN (lo da @BotFather)." };
+  const code = crypto.getRandomValues(new Uint32Array(2)).reduce((s, n) => s + n.toString(36), "").slice(0, 12);
+  await saveSettings(user, { ...(await getSettings(user)), pendingCode: code });
+  return { ok: true, bot, url: `https://t.me/${bot}?start=${code}` };
+}
+
+/** Paso 2: busca el mensaje "/start CÓDIGO" y guarda ese chat para las alertas. */
+export async function connectTelegram(token: string, user: string): Promise<{ ok: boolean; name?: string; error?: string }> {
+  const settings = await getSettings(user);
+  const bot = await botUsername(token);
+  if (!bot) return { ok: false, error: "El token del bot no es válido. Revisá TELEGRAM_BOT_TOKEN (lo da @BotFather)." };
+  if (!settings.pendingCode) return { ok: false, error: "Tocá primero \"Abrir Telegram\"." };
   const res = await fetchJSON<{
     ok: boolean;
-    result: { message?: { chat: { id: number; first_name?: string; username?: string } } }[];
-  }>(`https://api.telegram.org/bot${token}/getUpdates?limit=20`, "telegram");
-  if (!res?.ok) return { ok: false, error: "No pude hablar con Telegram. Revisá que el token del bot sea correcto." };
-  const chat = [...res.result].reverse().find((u) => u.message?.chat)?.message?.chat;
-  if (!chat) return { ok: false, error: "Todavía no veo tu mensaje. Abrí tu bot en Telegram, mandale /start y volvé a tocar Conectar." };
-  const settings = await getSettings();
-  const name = chat.first_name ?? chat.username ?? "vos";
-  await saveSettings({ ...settings, telegramChatId: String(chat.id), telegramName: name });
-  await sendTelegram(token, String(chat.id), `Listo, ${name}. FindMyTrip te va a avisar acá cuando baje un precio que te interesa.`);
+    description?: string;
+    result: { message?: { text?: string; chat: { id: number; first_name?: string; username?: string } } }[];
+  }>(`https://api.telegram.org/bot${token}/getUpdates?limit=100&allowed_updates=${encodeURIComponent('["message"]')}`, "telegram");
+  if (!res?.ok) {
+    return { ok: false, error: "Telegram no respondió. Si el bot tiene un webhook configurado, hay que quitarlo (deleteWebhook)." };
+  }
+  const match = [...res.result].reverse().find((u) => u.message?.text?.trim() === `/start ${settings.pendingCode}`)?.message;
+  if (!match) {
+    return {
+      ok: false,
+      error: res.result.length
+        ? `@${bot} recibió mensajes, pero no el código de esta cuenta. Tocá "Abrir Telegram" y apretá Iniciar en el chat que se abre.`
+        : `Todavía no llegó ningún mensaje a @${bot}. Tocá "Abrir Telegram", apretá Iniciar y volvé a tocar "Ya lo envié".`,
+    };
+  }
+  const name = match.chat.first_name ?? match.chat.username ?? "vos";
+  await saveSettings(user, { ...settings, pendingCode: undefined, telegramChatId: String(match.chat.id), telegramName: name });
+  await sendTelegram(token, String(match.chat.id), `Listo, ${name}. FindMyTrip te va a avisar acá cuando baje un precio que te interesa.`);
   return { ok: true, name };
 }
 
@@ -70,17 +100,18 @@ const shortDate = (iso?: string) =>
   iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-AR", { day: "numeric", month: "short", timeZone: "UTC" }) : "";
 
 export async function evaluateAlerts(
+  user: string,
   snap: RadarSnapshot,
   telegram: { token?: string; siteUrl?: string },
 ): Promise<{ sent: number }> {
-  const settings = await getSettings();
+  const settings = await getSettings(user);
   if (!telegram.token || !settings.telegramChatId || !snap.live) return { sent: 0 };
   const chatId = settings.telegramChatId;
   const site = telegram.siteUrl?.replace(/\/$/, "") ?? "";
   const messages: string[] = [];
 
   // 1) Destinos que seguís: aviso cuando el total estimado entra en tu presupuesto.
-  const subs = await listSubs();
+  const subs = await listSubs(user);
   let changed = false;
   for (const sub of subs) {
     if (sub.origin !== snap.origin) continue;
@@ -109,11 +140,11 @@ export async function evaluateAlerts(
       changed = true;
     }
   }
-  if (changed) await saveSubs(subs);
+  if (changed) await saveSubs(user, subs);
 
   // 2) Ofertas del radar (como mucho 3 por barrido, sin repetir el mismo precio).
-  if (settings.radarDeals) {
-    const sent = (await loadJSON<Record<string, number>>(SENT_DEALS_KEY)) ?? {};
+  if (settings.radarDeals && (settings.origin ?? "BUE") === snap.origin) {
+    const sent = (await loadJSON<Record<string, number>>(sentKey(user))) ?? {};
     const deals = snap.items.filter((i) => i.isDeal && i.discountPct >= settings.minDiscount && !(sent[i.destinationId] <= i.priceUSD * 1.03));
     for (const d of deals.slice(0, 3)) {
       messages.push(
@@ -128,7 +159,7 @@ export async function evaluateAlerts(
       );
       sent[d.destinationId] = d.priceUSD;
     }
-    if (deals.length) await saveJSON(SENT_DEALS_KEY, sent);
+    if (deals.length) await saveJSON(sentKey(user), sent);
   }
 
   let count = 0;

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Party, PriceSource, Suggestion } from "../../shared/types.ts";
 import { partyToParams } from "../../shared/pricing.ts";
@@ -84,9 +85,14 @@ export default function SuggestionCard({ s, nights, party }: { s: Suggestion; ni
 
 /** Foto ilustrativa arriba de la tarjeta; si no hay, un fondo de marca. */
 export function Photo({ src, name }: { src?: string | null; name: string }) {
+  const [failed, setFailed] = useState(false);
   return (
     <div className="photo" aria-hidden="true">
-      {src ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span>{name}</span>}
+      {src && !failed ? (
+        <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+      ) : (
+        <span>{name}</span>
+      )}
     </div>
   );
 }

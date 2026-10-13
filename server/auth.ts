@@ -1,31 +1,58 @@
 import type { Context, Next } from "hono";
 import { loadJSON, saveJSON } from "./cache.ts";
-import type { Env } from "./env.ts";
 
-// Acceso con usuario y contraseña (una cuenta, definida con secrets de
-// Cloudflare: APP_USER y APP_PASSWORD). La sesión es una cookie firmada con
-// HMAC; si cambiás la contraseña, se cierran todas las sesiones.
+// Cuentas con usuario y contraseña, creadas desde el sitio.
+// - La primera cuenta que se registra es la dueña del sitio.
+// - Después, el registro queda cerrado salvo que la dueña lo habilite.
+// - Contraseñas guardadas con PBKDF2-SHA256 y sal aleatoria (nunca en texto).
+// - Sesión en una cookie firmada con HMAC (clave aleatoria guardada en KV).
 
 const COOKIE = "fmt_session";
 const SESSION_DAYS = 30;
 const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
+// Iteraciones moderadas: el plan gratuito de Workers limita el CPU por pedido.
+const PBKDF2_ITERATIONS = 10_000;
+
+export interface Account {
+  user: string;
+  hash: string;
+  salt: string;
+  iterations: number;
+  role: "owner" | "member";
+  createdAt: string;
+}
+
+interface AuthSettings {
+  openSignup: boolean;
+}
 
 const enc = new TextEncoder();
-const b64url = (buf: ArrayBuffer | Uint8Array) =>
-  btoa(String.fromCharCode(...new Uint8Array(buf instanceof Uint8Array ? buf : new Uint8Array(buf))))
+const toB64 = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
-const fromB64url = (s: string) => atob(s.replace(/-/g, "+").replace(/_/g, "/"));
+const fromB64 = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const randomB64 = (n: number) => toB64(crypto.getRandomValues(new Uint8Array(n)));
 
-export const authRequired = (env: Env) => Boolean(env.APP_USER?.trim() && env.APP_PASSWORD);
+export const normalizeUser = (u: string) => u.trim().toLowerCase();
+export const validUser = (u: string) => /^[a-z0-9._-]{3,30}$/.test(u);
 
-async function sha256(text: string): Promise<Uint8Array<ArrayBuffer>> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(text)));
+// ---------------------------------------------------------------------------
+// Cuentas
+// ---------------------------------------------------------------------------
+
+export const listUsers = async () => (await loadJSON<string[]>("auth:users")) ?? [];
+export const getAccount = (user: string) => loadJSON<Account>(`auth:user:${normalizeUser(user)}`);
+export const getAuthSettings = async () => (await loadJSON<AuthSettings>("auth:settings")) ?? { openSignup: false };
+export const saveAuthSettings = (s: AuthSettings) => saveJSON("auth:settings", s);
+
+async function derive(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256));
 }
 
-/** Comparación en tiempo constante (sobre hashes del mismo largo). */
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -33,61 +60,97 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
-export async function checkCredentials(env: Env, user: string, password: string): Promise<boolean> {
-  if (!authRequired(env)) return false;
-  const [u1, u2, p1, p2] = await Promise.all([
-    sha256(user.trim().toLowerCase()),
-    sha256(env.APP_USER!.trim().toLowerCase()),
-    sha256(password),
-    sha256(env.APP_PASSWORD!),
-  ]);
-  // Evaluamos ambas comparaciones siempre, para no filtrar cuál falló.
-  const okUser = sameBytes(u1, u2);
-  const okPass = sameBytes(p1, p2);
-  return okUser && okPass;
+/** Puede registrarse alguien nuevo: si no hay cuentas, o si la dueña lo habilitó. */
+export async function signupOpen(): Promise<boolean> {
+  return (await listUsers()).length === 0 || (await getAuthSettings()).openSignup;
 }
 
-async function hmacKey(env: Env): Promise<CryptoKey> {
-  const secret = await sha256(`findmytrip-session:${env.APP_USER}:${env.APP_PASSWORD}`);
-  return crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+export async function createAccount(rawUser: string, password: string): Promise<Account> {
+  const user = normalizeUser(rawUser);
+  const users = await listUsers();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const account: Account = {
+    user,
+    salt: toB64(salt),
+    hash: toB64(await derive(password, salt, PBKDF2_ITERATIONS)),
+    iterations: PBKDF2_ITERATIONS,
+    role: users.length === 0 ? "owner" : "member",
+    createdAt: new Date().toISOString(),
+  };
+  await saveJSON(`auth:user:${user}`, account);
+  await saveJSON("auth:users", [...users, user]);
+  return account;
 }
 
-export async function createSession(env: Env, user: string): Promise<string> {
-  const payload = b64url(enc.encode(JSON.stringify({ u: user.trim().toLowerCase(), exp: Date.now() + SESSION_DAYS * 86400000 })));
-  const sig = b64url(await crypto.subtle.sign("HMAC", await hmacKey(env), enc.encode(payload)));
+export async function verifyPassword(rawUser: string, password: string): Promise<Account | null> {
+  const account = await getAccount(rawUser);
+  // Si el usuario no existe, igual calculamos un hash para no revelar cuáles existen.
+  const salt = account ? fromB64(account.salt) : new Uint8Array(16);
+  const hash = await derive(password, salt, account?.iterations ?? PBKDF2_ITERATIONS);
+  return account && sameBytes(hash, fromB64(account.hash)) ? account : null;
+}
+
+export async function changePassword(user: string, password: string): Promise<void> {
+  const account = await getAccount(user);
+  if (!account) return;
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  await saveJSON(`auth:user:${account.user}`, {
+    ...account,
+    salt: toB64(salt),
+    hash: toB64(await derive(password, salt, PBKDF2_ITERATIONS)),
+    iterations: PBKDF2_ITERATIONS,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sesión (cookie firmada)
+// ---------------------------------------------------------------------------
+
+async function hmacKey(): Promise<CryptoKey> {
+  let secret = await loadJSON<string>("auth:secret");
+  if (!secret) {
+    secret = randomB64(32);
+    await saveJSON("auth:secret", secret);
+  }
+  return crypto.subtle.importKey("raw", fromB64(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+
+export async function createSession(account: Account): Promise<string> {
+  // La firma incluye un pedazo del hash: si cambiás la contraseña, se cierran las sesiones viejas.
+  const payload = toB64(enc.encode(JSON.stringify({ u: account.user, h: account.hash.slice(0, 8), exp: Date.now() + SESSION_DAYS * 86400000 })));
+  const sig = toB64(new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(), enc.encode(payload))));
   return `${payload}.${sig}`;
 }
 
-export async function readSession(env: Env, token: string | undefined): Promise<string | null> {
-  if (!token || !authRequired(env)) return null;
+export async function readSession(token: string | undefined): Promise<Account | null> {
+  if (!token) return null;
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return null;
   try {
-    const sigBytes = Uint8Array.from(fromB64url(sig), (c) => c.charCodeAt(0));
-    const ok = await crypto.subtle.verify("HMAC", await hmacKey(env), sigBytes, enc.encode(payload));
-    if (!ok) return null;
-    const data = JSON.parse(fromB64url(payload)) as { u: string; exp: number };
-    return data.exp > Date.now() ? data.u : null;
+    if (!(await crypto.subtle.verify("HMAC", await hmacKey(), fromB64(sig), enc.encode(payload)))) return null;
+    const data = JSON.parse(new TextDecoder().decode(fromB64(payload))) as { u: string; h: string; exp: number };
+    if (data.exp < Date.now()) return null;
+    const account = await getAccount(data.u);
+    return account && account.hash.slice(0, 8) === data.h ? account : null;
   } catch {
     return null;
   }
 }
 
-export function sessionCookie(token: string, secure: boolean): string {
-  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure ? "; Secure" : ""}`;
-}
-export function clearCookie(secure: boolean): string {
-  return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`;
-}
-export function cookieToken(header: string | undefined): string | undefined {
-  return header
+export const sessionCookie = (token: string, secure: boolean) =>
+  `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure ? "; Secure" : ""}`;
+export const clearCookie = (secure: boolean) => `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`;
+export const cookieToken = (header: string | undefined) =>
+  header
     ?.split(";")
     .map((p) => p.trim())
     .find((p) => p.startsWith(`${COOKIE}=`))
     ?.slice(COOKIE.length + 1);
-}
 
-// Freno contra intentos repetidos: 5 fallos seguidos bloquean 15 minutos por IP.
+// ---------------------------------------------------------------------------
+// Freno contra intentos repetidos: 5 fallos seguidos bloquean 15 min por IP.
+// ---------------------------------------------------------------------------
+
 interface Fails {
   n: number;
   until?: number;
@@ -103,16 +166,17 @@ export async function registerFail(ip: string): Promise<void> {
 }
 export const clearFails = (ip: string) => saveJSON(`auth:fails:${ip}`, { n: 0 });
 
-/** Rutas de la API que no piden sesión. */
-const PUBLIC = new Set(["/api/login", "/api/logout", "/api/session"]);
+// ---------------------------------------------------------------------------
+// Middleware: toda la API pide sesión salvo el ingreso y el registro.
+// ---------------------------------------------------------------------------
 
-export function requireAuth(getEnv: (c: Context) => Env) {
-  return async (c: Context, next: Next) => {
-    const env = getEnv(c);
-    if (!authRequired(env) || PUBLIC.has(new URL(c.req.url).pathname)) return next();
-    const user = await readSession(env, cookieToken(c.req.header("Cookie")));
-    if (!user) return c.json({ error: "Iniciá sesión para continuar.", auth: true }, 401);
-    c.set("user" as never, user as never);
-    return next();
-  };
+const PUBLIC = new Set(["/api/login", "/api/logout", "/api/session", "/api/register"]);
+
+export async function requireAuth(c: Context, next: Next) {
+  if (PUBLIC.has(new URL(c.req.url).pathname)) return next();
+  const account = await readSession(cookieToken(c.req.header("Cookie")));
+  if (!account) return c.json({ error: "Iniciá sesión para continuar.", auth: true }, 401);
+  c.set("user" as never, account.user as never);
+  c.set("role" as never, account.role as never);
+  return next();
 }

@@ -1,4 +1,4 @@
-import { cached, fetchJSON } from "../cache.ts";
+import { cached, fetchJSON, peek } from "../cache.ts";
 import { DESTINATIONS } from "../data/destinations.ts";
 
 // Fotos ilustrativas de cada destino, tomadas de la imagen principal del
@@ -48,32 +48,55 @@ const WIKI_TITLE: Record<string, string> = {
 };
 
 interface WikiSummary {
-  thumbnail?: { source?: string };
-  originalimage?: { source?: string };
+  thumbnail?: { source?: string; width?: number };
+  originalimage?: { source?: string; width?: number };
+}
+
+// Wikimedia exige identificarse y solo sirve miniaturas en anchos estándar.
+const HEADERS = {
+  "User-Agent": "FindMyTrip/1.0 (planificador de viajes personal; contacto via workers.dev)",
+  "Api-User-Agent": "FindMyTrip/1.0 (planificador de viajes personal)",
+};
+const STANDARD_WIDTH = 960;
+
+export function pickImage(data: WikiSummary | null): string | null {
+  const original = data?.originalimage;
+  const thumb = data?.thumbnail?.source;
+  // Si el original es chico, se usa tal cual (pedir una miniatura más grande que el original falla).
+  if (original?.source && (original.width ?? 0) <= STANDARD_WIDTH) return original.source;
+  if (thumb && /\/\d+px-/.test(thumb)) return thumb.replace(/\/\d+px-/, `/${STANDARD_WIDTH}px-`);
+  return original?.source ?? thumb ?? null;
 }
 
 async function photoFor(title: string): Promise<string | null> {
-  return cached<string>(`photo:${title}`, 30 * 86400, async () => {
-    const data = await fetchJSON<WikiSummary>(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, "wikipedia", {
-      headers: { "Api-User-Agent": "FindMyTrip/1.0 (planificador de viajes personal)" },
-    });
-    const thumb = data?.thumbnail?.source;
-    // Pedimos una versión de 800 px de ancho (suficiente para las tarjetas).
-    if (thumb && /\/\d+px-/.test(thumb)) return thumb.replace(/\/\d+px-/, "/800px-");
-    return data?.originalimage?.source ?? thumb ?? null;
-  });
+  return cached<string>(`photo:v2:${title}`, 30 * 86400, async () =>
+    pickImage(
+      await fetchJSON<WikiSummary>(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, "wikipedia", {
+        headers: HEADERS,
+      }),
+    ),
+  );
 }
 
 /** { idDestino: urlFoto } para todo el catálogo. */
 export async function destinationPhotos(): Promise<Record<string, string>> {
-  return (
-    (await cached<Record<string, string>>("photos:all:v1", 7 * 86400, async () => {
-      const entries = await Promise.all(
-        DESTINATIONS.map(async (d) => [d.id, WIKI_TITLE[d.id] ? await photoFor(WIKI_TITLE[d.id]) : null] as const),
-      );
-      const map = Object.fromEntries(entries.filter((e): e is readonly [string, string] => Boolean(e[1])));
-      // No guardamos un resultado vacío (por ejemplo si Wikipedia no respondió).
-      return Object.keys(map).length ? map : null;
-    })) ?? {}
-  );
+  const all = await cached<Record<string, string>>("photos:all:v2", 7 * 86400, async () => {
+    const map: Record<string, string> = {};
+    // De a 8 por vez, para no recibir "demasiados pedidos" de Wikipedia.
+    const ids = DESTINATIONS.map((d) => d.id).filter((id) => WIKI_TITLE[id]);
+    for (let i = 0; i < ids.length; i += 8) {
+      const batch = await Promise.all(ids.slice(i, i + 8).map(async (id) => [id, await photoFor(WIKI_TITLE[id])] as const));
+      for (const [id, url] of batch) if (url) map[id] = url;
+    }
+    // Solo guardamos el conjunto si está casi completo; si no, se reintenta la próxima vez
+    // (las fotos individuales que sí llegaron quedan en caché igual).
+    return Object.keys(map).length >= ids.length * 0.8 ? map : null;
+  });
+  if (all) return all;
+  const partial: Record<string, string> = {};
+  for (const d of DESTINATIONS) {
+    const url = WIKI_TITLE[d.id] ? await peek<string>(`photo:v2:${WIKI_TITLE[d.id]}`) : null;
+    if (url) partial[d.id] = url;
+  }
+  return partial;
 }
