@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Destination, Meta, Party, Profile, Style, TripPackage, WatchItem } from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { formatMoney } from "./format.ts";
@@ -47,6 +47,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [storedProfile, setStoredProfile] = useStored<Profile | null>("fmt.profile", null);
   const [packages, setPackages] = useStored<TripPackage[]>("fmt.packages", []);
   const [watchlist, setWatchlist] = useStored<WatchItem[]>("fmt.watchlist", []);
+
+  // Tus datos viven en el servidor (protegidos y sincronizados entre dispositivos).
+  // El navegador guarda una copia para abrir rápido.
+  const [synced, setSynced] = useState(false);
+  useEffect(() => {
+    api
+      .userData()
+      .then((server) => {
+        const sync = <T,>(key: "profile" | "packages" | "watchlist", local: T, set: (v: T) => void, isEmpty: (v: T) => boolean) => {
+          const remote = server[key] as T | null;
+          if (remote != null) set(remote);
+          else if (!isEmpty(local)) api.saveUserData(key, local).catch(() => {});
+        };
+        sync("profile", storedProfile, setStoredProfile, (v) => v == null);
+        sync("packages", packages, setPackages, (v) => !v.length);
+        sync("watchlist", watchlist, setWatchlist, (v) => !v.length);
+      })
+      .catch(() => {})
+      .finally(() => setSynced(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useSave("profile", storedProfile, synced);
+  useSave("packages", packages, synced);
+  useSave("watchlist", watchlist, synced);
 
   useEffect(() => {
     api.meta().then(setMeta).catch(console.error);
@@ -103,6 +127,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** Guarda en el servidor cada cambio (agrupando cambios seguidos). */
+function useSave(key: "profile" | "packages" | "watchlist", value: unknown, enabled: boolean) {
+  const first = useRef(true);
+  useEffect(() => {
+    if (!enabled) return;
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (value == null) return;
+    const t = setTimeout(() => api.saveUserData(key, value).catch(() => {}), 800);
+    return () => clearTimeout(t);
+  }, [key, value, enabled]);
 }
 
 export function useApp(): AppState {

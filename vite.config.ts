@@ -22,6 +22,8 @@ function partnerHead(): Plugin {
 // El agente gratuito (Workers AI) solo existe en Cloudflare: para probarlo en
 // local usá `npm run dev:ai` (requiere `npx wrangler login`).
 export default defineConfig({
+  // Fecha de compilación, visible en Perfil: sirve para confirmar que el deploy tomó.
+  define: { __BUILD__: JSON.stringify(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC") },
   plugins: [react(), cloudflare({ remoteBindings: process.env.CF_REMOTE === "1" }), partnerHead()],
   environments: {
     client: {

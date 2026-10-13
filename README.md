@@ -80,6 +80,16 @@ Te devuelve una URL tipo `https://findmytrip.<tu-usuario>.workers.dev`. Para act
 > Ojo: si publicás la URL, cualquiera que entre usa tu cuota de SerpApi (y tu saldo de Claude si lo activaste).
 > Para uso personal, no la compartas o protegela con Cloudflare Access (gratis hasta 50 usuarios).
 
+## Acceso con usuario y contraseña
+
+```cmd
+npx wrangler secret put APP_USER
+npx wrangler secret put APP_PASSWORD
+```
+
+Con los dos cargados, todo el sitio pide ingresar (la sesión dura 30 días). Tu perfil, viajes guardados y destinos
+seguidos se guardan en tu cuenta y se sincronizan entre dispositivos. 5 intentos fallidos bloquean 15 minutos.
+
 ## Radar de ofertas y alertas (gratis)
 
 - **Radar:** 5 veces por día (cron de Cloudflare) revisa los precios reales desde tu ciudad hacia todos los destinos,

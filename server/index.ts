@@ -4,7 +4,20 @@ import type { Meta } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
 import { baseFlightFrom, explore, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
-import { fetchJSON, useCacheStore } from "./cache.ts";
+import { fetchJSON, loadJSON, saveJSON, useCacheStore } from "./cache.ts";
+import {
+  authRequired,
+  checkCredentials,
+  clearCookie,
+  clearFails,
+  cookieToken,
+  createSession,
+  loginLocked,
+  readSession,
+  registerFail,
+  requireAuth,
+  sessionCookie,
+} from "./auth.ts";
 import { config, has, type Env } from "./env.ts";
 import { realPrices } from "./providers/explore.ts";
 import { getRadar, runRadar } from "./radar.ts";
@@ -32,6 +45,65 @@ const app = new Hono<{ Bindings: Env }>().basePath("/api");
 app.use(async (c, next) => {
   useCacheStore(c.env.CACHE);
   await next();
+});
+
+// Todo lo que está en /api pide sesión (si hay usuario y contraseña configurados).
+app.use(requireAuth((c) => config(c.env)));
+
+// ---------------------------------------------------------------------------
+// Sesión
+// ---------------------------------------------------------------------------
+
+const isHttps = (url: string) => new URL(url).protocol === "https:";
+
+app.get("/session", async (c) => {
+  const e = config(c.env);
+  const required = authRequired(e);
+  const user = required ? await readSession(e, cookieToken(c.req.header("Cookie"))) : null;
+  return c.json({ required, authenticated: !required || Boolean(user), user });
+});
+
+app.post("/login", async (c) => {
+  const e = config(c.env);
+  if (!authRequired(e)) return c.json({ ok: true });
+  const ip = c.req.header("CF-Connecting-IP") ?? "local";
+  const locked = await loginLocked(ip);
+  if (locked) return c.json({ error: `Demasiados intentos. Probá de nuevo en ${locked} min.` }, 429);
+  const body = z.object({ user: z.string().max(80), password: z.string().max(200) }).parse(await c.req.json());
+  if (!(await checkCredentials(e, body.user, body.password))) {
+    await registerFail(ip);
+    return c.json({ error: "Usuario o contraseña incorrectos." }, 401);
+  }
+  await clearFails(ip);
+  c.header("Set-Cookie", sessionCookie(await createSession(e, body.user), isHttps(c.req.url)));
+  return c.json({ ok: true, user: body.user.trim().toLowerCase() });
+});
+
+app.post("/logout", (c) => {
+  c.header("Set-Cookie", clearCookie(isHttps(c.req.url)));
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Datos del usuario (perfil, viajes, destinos seguidos): guardados en el
+// servidor para que estén protegidos y sincronizados entre dispositivos.
+// ---------------------------------------------------------------------------
+
+const USER_KEYS = ["profile", "packages", "watchlist"] as const;
+const userId = (c: { get: (k: never) => unknown }) => (c.get("user" as never) as string | undefined) ?? "local";
+
+app.get("/me/data", async (c) => {
+  const u = userId(c);
+  const entries = await Promise.all(USER_KEYS.map(async (k) => [k, await loadJSON(`user:${u}:${k}`)] as const));
+  return c.json(Object.fromEntries(entries));
+});
+
+app.put("/me/data/:key", async (c) => {
+  const key = z.enum(USER_KEYS).parse(c.req.param("key"));
+  const raw = await c.req.text();
+  if (raw.length > 200_000) return c.json({ error: "Demasiados datos." }, 413);
+  await saveJSON(`user:${userId(c)}:${key}`, JSON.parse(raw));
+  return c.json({ ok: true });
 });
 
 const INTERESTS = [

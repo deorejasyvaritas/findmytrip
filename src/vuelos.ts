@@ -1,6 +1,14 @@
 import "./styles.css";
 import { TABS, iconSvg } from "./lib/icons.ts";
 
+// Si el sitio pide usuario y no hay sesión, volvemos al inicio (que muestra el ingreso).
+fetch("/api/session")
+  .then((r) => r.json())
+  .then((s: { authenticated: boolean }) => {
+    if (!s.authenticated) location.replace("/");
+  })
+  .catch(() => {});
+
 // Página del buscador en vivo (White Label de Travelpayouts / Aviasales).
 // Es una página aparte del resto de la app, así que armamos la navegación acá.
 

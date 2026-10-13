@@ -22,6 +22,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   const data = await res.json().catch(() => ({}));
+  // Sesión vencida o sin iniciar: avisamos a la app para mostrar el ingreso.
+  if (res.status === 401 && (data as { auth?: boolean }).auth) window.dispatchEvent(new Event("fmt:unauthorized"));
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `Error ${res.status}`);
   return data as T;
 }
@@ -30,6 +32,13 @@ const qs = (params: Record<string, string | number>) =>
   new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
 
 export const api = {
+  session: () => request<{ required: boolean; authenticated: boolean; user: string | null }>("/api/session"),
+  login: (user: string, password: string) =>
+    request<{ ok: boolean; user?: string }>("/api/login", { method: "POST", body: JSON.stringify({ user, password }) }),
+  logout: () => request<{ ok: boolean }>("/api/logout", { method: "POST" }),
+  userData: () => request<{ profile: unknown; packages: unknown; watchlist: unknown }>("/api/me/data"),
+  saveUserData: (key: "profile" | "packages" | "watchlist", value: unknown) =>
+    request<{ ok: boolean }>(`/api/me/data/${key}`, { method: "PUT", body: JSON.stringify(value) }),
   meta: () => request<Meta>("/api/meta"),
   destinations: () => request<Destination[]>("/api/destinations"),
   photos: () => request<Record<string, string>>("/api/photos"),

@@ -6,6 +6,7 @@ import AlertsSettings from "../components/AlertsSettings.tsx";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import Segmented from "../components/Segmented.tsx";
+import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 
 export default function ProfilePage() {
@@ -32,7 +33,7 @@ export default function ProfilePage() {
       <div>
         <h1>Perfil</h1>
         <p className="muted" style={{ marginTop: 8 }}>
-          Con esto personalizo las búsquedas y las sugerencias. Se guarda solo en este navegador.
+          Con esto personalizo las búsquedas y las sugerencias. Se guarda en tu cuenta y se sincroniza entre tus dispositivos.
         </p>
       </div>
 
@@ -160,6 +161,17 @@ export default function ProfilePage() {
 
       <div className="row gap">
         <button className="primary">Guardar perfil</button>
+        <span className="grow" />
+        <button
+          type="button"
+          className="ghost"
+          onClick={async () => {
+            await api.logout().catch(() => {});
+            location.href = "/";
+          }}
+        >
+          Cerrar sesión
+        </button>
         {saved && (
           <span className="success row gap-sm" role="status">
             <Icon name="check" size={16} />
