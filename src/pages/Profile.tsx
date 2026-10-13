@@ -159,8 +159,14 @@ export default function ProfilePage() {
 
       <AlertsSettings />
 
-      <div className="row gap">
+      <div className="row gap wrap">
         <button className="primary">Guardar perfil</button>
+        {saved && (
+          <span className="success row gap-sm" role="status">
+            <Icon name="check" size={16} />
+            Perfil guardado
+          </span>
+        )}
         <span className="grow" />
         <button
           type="button"
@@ -172,13 +178,8 @@ export default function ProfilePage() {
         >
           Cerrar sesión
         </button>
-        {saved && (
-          <span className="success row gap-sm" role="status">
-            <Icon name="check" size={16} />
-            Perfil guardado
-          </span>
-        )}
       </div>
+      <p className="small muted">Versión del {__BUILD__}</p>
     </form>
   );
 }
