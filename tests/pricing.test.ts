@@ -26,8 +26,12 @@ describe("pasajeros y equipaje", () => {
     const c = tripCost("BUE", rio, 5, 7, family, "mid", 300);
     expect(c.flights).toBe(Math.round(300 * 3.85));
     expect(c.bags).toBe(360);
-    expect(c.total).toBe(c.flights + c.bags + c.lodging + c.daily);
+    // Comidas y paseos van aparte salvo que se pidan.
+    expect(c.total).toBe(c.flights + c.bags + c.lodging);
+    expect(c.dailyIncluded).toBe(false);
     expect(c.perPerson).toBe(Math.round(c.total / 5));
+    const withDaily = tripCost("BUE", rio, 5, 7, family, "mid", 300, undefined, true);
+    expect(withDaily.total).toBe(c.total + c.daily);
   });
 
   it("lee el grupo desde la URL", () => {

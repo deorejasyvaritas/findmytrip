@@ -128,6 +128,8 @@ export function tripCost(
   flightOverride?: number,
   /** Precio real por noche del hotel más accesible (Google). */
   hotelNightOverride?: number,
+  /** Comidas y paseos son una estimación: por defecto van aparte del total. */
+  includeDaily = false,
 ): CostBreakdown {
   const party = toParty(who);
   const flightPP = flightOverride ?? flightEstimate(originCode, dest, month);
@@ -139,8 +141,8 @@ export function tripCost(
     : lodgingNightly(dest, style, month);
   const lodging = nightly * nights * roomsForParty(party);
   const daily = Math.round(dest.dailyUSD[style] * (nights + 1) * dailyUnits(party));
-  const total = Math.round(flights + bags + lodging + daily);
-  return { flights, bags, lodging, daily, total, perPerson: Math.round(total / headcount(party)) };
+  const total = Math.round(flights + bags + lodging + (includeDaily ? daily : 0));
+  return { flights, bags, lodging, daily, dailyIncluded: includeDaily, total, perPerson: Math.round(total / headcount(party)) };
 }
 
 /** Meses a considerar y fechas límite según lo que eligió el usuario. */
@@ -220,7 +222,7 @@ export function explore(
         })
       : months.map((m) => ({ ...m, live: undefined as RealPrice | undefined }));
     for (const { month, year, live } of options) {
-      const cost = tripCost(req.origin, dest, month, nights, party, req.style, live?.flightPP, live?.hotelNight);
+      const cost = tripCost(req.origin, dest, month, nights, party, req.style, live?.flightPP, live?.hotelNight, req.includeDaily);
       const ratio = cost.total / budget;
       if (ratio > 1.15) continue;
 

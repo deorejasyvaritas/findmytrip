@@ -122,7 +122,16 @@ export default function DestinationPage() {
         // Si venimos de una sugerencia con fecha concreta, arrancamos en esa fecha.
         const depart = params.get("depart");
         const fromParam = depart?.startsWith(month) ? c.days.find((d) => d.date === depart) : undefined;
-        const first = fromParam ?? c.cheapest;
+        // Si la búsqueda tenía una ventana de fechas, arrancamos en el día más barato dentro de ella.
+        const from = params.get("from");
+        const to = params.get("to");
+        const inRange = from && to ? c.days.filter((d) => d.date >= from && d.date <= to) : [];
+        const bestInRange = inRange.reduce<FlightDay | undefined>((acc, d) => {
+          if (!acc) return d;
+          if (d.source !== acc.source) return d.source === "en vivo" ? d : acc;
+          return d.priceUSD < acc.priceUSD ? d : acc;
+        }, undefined);
+        const first = fromParam ?? bestInRange ?? c.cheapest;
         setDay(first);
         setAutoKey(first ? `${first.date}_${first.returnDate}` : null);
         setHotelsCheckin(first?.date ?? null);
@@ -231,7 +240,8 @@ export default function DestinationPage() {
   const lodging = realPick ? realPick.totalUSD * rooms : (estStay?.totalUSD ?? 0);
   const lodgingLabel = realPick ? realPick.name : estStay ? `${estStay.label} (estimado)` : "";
   const daily = Math.round(dest.dailyUSD[style] * (nights + 1) * dailyUnits(party));
-  const total = flights + bags + lodging + daily;
+  const includeDaily = profile.includeDaily ?? false;
+  const total = flights + bags + lodging + (includeDaily ? daily : 0);
   const maxMonth = Math.max(...months.map((m) => m.totalPerPersonUSD), 1);
 
   function selectMonth(key: string) {
@@ -268,11 +278,15 @@ export default function DestinationPage() {
           amountUSD: lodging,
           link: realPick?.link ?? estStay?.links[0].url,
         },
-        {
-          kind: "gastos",
-          label: `Comidas, traslados y actividades (${STYLE_LABEL[style].toLowerCase()}, estimado)`,
-          amountUSD: daily,
-        },
+        ...(includeDaily
+          ? [
+              {
+                kind: "gastos" as const,
+                label: `Comidas, traslados y actividades (${STYLE_LABEL[style].toLowerCase()}, estimado)`,
+                amountUSD: daily,
+              },
+            ]
+          : []),
       ],
       totalUSD: total,
       createdAt: new Date().toISOString(),
@@ -731,17 +745,28 @@ export default function DestinationPage() {
                   <Icon name="utensils" size={16} />
                   <span className="stack-sm" style={{ gap: 0 }}>
                     <span>Comidas y paseos</span>
-                    <span className="small muted">Estimado</span>
+                    <span className="small muted">
+                      {includeDaily ? "Estimado" : `Aparte · aprox. ${money(daily)}`}
+                    </span>
                   </span>
                 </span>
-                <span>{money(daily)}</span>
+                <input
+                  type="checkbox"
+                  className="switch"
+                  aria-label="Sumar comidas y paseos al total"
+                  checked={includeDaily}
+                  onChange={(e) => app.setProfile({ ...profile, includeDaily: e.target.checked })}
+                />
               </li>
             </ul>
             <div className="total">
               <span className="headline">Total</span>
               <span className="price">{money(total)}</span>
             </div>
-            <p className="small muted">{money(Math.round(total / travelers))} por persona</p>
+            <p className="small muted">
+              {money(Math.round(total / travelers))} por persona
+              {includeDaily ? "" : " · sin comidas ni paseos"}
+            </p>
             <button className="primary full" onClick={savePackage}>
               <Icon name="bookmark" size={18} />
               Guardar en Mis viajes

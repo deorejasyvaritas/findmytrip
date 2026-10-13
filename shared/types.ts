@@ -91,6 +91,8 @@ export interface Profile {
   currency: "USD" | "ARS";
   visited: string[]; // ids de destinos ya visitados
   maxFlightHours: number | null;
+  /** Sumar comidas y paseos (estimado) al total. Por defecto, aparte. */
+  includeDaily?: boolean;
 }
 
 export interface ExploreRequest {
@@ -112,6 +114,8 @@ export interface ExploreRequest {
   party?: Party;
   /** Fechas (si falta, se usa `month`). */
   when?: When;
+  /** Sumar comidas y paseos al total (por defecto van aparte). */
+  includeDaily?: boolean;
 }
 
 export interface CostBreakdown {
@@ -119,7 +123,9 @@ export interface CostBreakdown {
   /** Equipaje extra (valijas / carry-on) ida y vuelta, ya incluido en el total. */
   bags: number;
   lodging: number;
+  /** Comidas y paseos estimados: solo se suman al total si se pidió. */
   daily: number;
+  dailyIncluded: boolean;
   total: number;
   perPerson: number;
 }

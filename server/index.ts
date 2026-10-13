@@ -177,6 +177,7 @@ const profileSchema = z.object({
   currency: z.enum(["USD", "ARS"]).default("USD"),
   visited: z.array(z.string()).default([]),
   maxFlightHours: z.number().nullable().default(null),
+  includeDaily: z.boolean().optional(),
 });
 
 const exploreSchema = z.object({
@@ -192,6 +193,7 @@ const exploreSchema = z.object({
   exclude: z.array(z.string()).optional(),
   known: z.array(z.string()).optional(),
   maxFlightHours: z.number().nullable().optional(),
+  includeDaily: z.boolean().optional(),
   party: z
     .object({
       adults: z.number().int().min(1).max(12),

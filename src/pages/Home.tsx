@@ -94,6 +94,7 @@ export default function Home() {
         exclude: profile.visited,
         known,
         maxFlightHours: profile.maxFlightHours,
+        includeDaily: profile.includeDaily ?? false,
       });
       setResult(res);
       if (fromButton) {
@@ -113,7 +114,7 @@ export default function Home() {
   useEffect(() => {
     run(lastSearch ?? defaults);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.origin]);
+  }, [profile.origin, profile.includeDaily]);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -143,6 +144,12 @@ export default function Home() {
   const shown = lastSearch ?? defaults;
   const nightsShown = shown.when.kind === "exact" ? nightsBetween(shown.when.depart, shown.when.ret) : shown.nights;
   const exact = form.when.kind === "exact";
+  const rangeShown =
+    shown.when.kind === "window"
+      ? { from: shown.when.from, to: shown.when.to }
+      : shown.when.kind === "exact"
+        ? { from: shown.when.depart, to: shown.when.depart }
+        : undefined;
 
   return (
     <div className="stack-lg">
@@ -363,7 +370,7 @@ export default function Home() {
             ) : (
               <div className="grid-cards">
                 {result.suggestions.map((s) => (
-                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} />
+                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} range={rangeShown} />
                 ))}
               </div>
             )}
@@ -380,7 +387,7 @@ export default function Home() {
               </div>
               <div className="grid-cards">
                 {result.alternatives.map((s) => (
-                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} />
+                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} range={rangeShown} />
                 ))}
               </div>
             </section>

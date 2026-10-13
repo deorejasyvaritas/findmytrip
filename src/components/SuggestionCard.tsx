@@ -17,7 +17,18 @@ export const SOURCE_LABEL: Record<PriceSource, string> = {
   estimado: "Precio estimado",
 };
 
-export default function SuggestionCard({ s, nights, party }: { s: Suggestion; nights: number; party?: Party }) {
+export default function SuggestionCard({
+  s,
+  nights,
+  party,
+  range,
+}: {
+  s: Suggestion;
+  nights: number;
+  party?: Party;
+  /** Ventana de salida de la búsqueda: la ficha arranca en un día dentro de ella. */
+  range?: { from: string; to: string };
+}) {
   const { money, photos } = useApp();
   const d = s.destination;
   const q = new URLSearchParams({
@@ -26,6 +37,10 @@ export default function SuggestionCard({ s, nights, party }: { s: Suggestion; ni
     ...(party ? partyToParams(party) : {}),
   });
   if (s.depart) q.set("depart", s.depart);
+  if (range) {
+    q.set("from", range.from);
+    q.set("to", range.to);
+  }
   const when = s.depart && s.ret ? formatRange(s.depart, s.ret) : `${capitalize(monthName(s.month))} ${s.year}`;
   return (
     <Link to={`/destino/${d.id}?${q}`} className="card suggestion">
@@ -43,7 +58,9 @@ export default function SuggestionCard({ s, nights, party }: { s: Suggestion; ni
       <div className="price-row">
         <div>
           <div className="price">{money(s.cost.total)}</div>
-          <div className="small muted">Total · {money(s.cost.perPerson)} por persona</div>
+          <div className="small muted">
+            {s.cost.dailyIncluded ? "Total" : "Vuelo y alojamiento"} · {money(s.cost.perPerson)} por persona
+          </div>
         </div>
         <div className="breakdown">
           <span className={s.flightSource !== "estimado" ? "real" : ""}>
@@ -57,8 +74,9 @@ export default function SuggestionCard({ s, nights, party }: { s: Suggestion; ni
               <Icon name="luggage" size={14} /> {money(s.cost.bags)}
             </span>
           )}
-          <span>
-            <Icon name="utensils" size={14} /> {money(s.cost.daily)}
+          <span title={s.cost.dailyIncluded ? "Comidas y paseos (estimado)" : "Comidas y paseos aparte (estimado)"}>
+            <Icon name="utensils" size={14} /> {s.cost.dailyIncluded ? "" : "+"}
+            {money(s.cost.daily)}
           </span>
         </div>
       </div>
