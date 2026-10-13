@@ -20,9 +20,18 @@ describe("extras del viaje", () => {
       return Response.json({ result: { links: [{ url: body.links[0].url, code: "success", partner_url: "https://tp.media/r?x=1" }] } });
     });
     vi.stubGlobal("fetch", fn);
-    const url = "https://www.airalo.com/peru-esim";
+    const url = "https://www.tiqets.com/es/";
     expect(await partnerLinks({ token: "t", marker: "789588" }, [url])).toEqual({ [url]: url });
     expect(fn).not.toHaveBeenCalled();
     expect(await partnerLinks({ token: "t", marker: "789588", trs: "123" }, [url])).toEqual({ [url]: "https://tp.media/r?x=1" });
+  });
+
+  it("arma el link directo para los programas conocidos, sin API", async () => {
+    const fn = vi.fn();
+    vi.stubGlobal("fetch", fn);
+    const url = "https://www.airalo.com/peru-esim";
+    const r = await partnerLinks({ marker: "789588", trs: "585192" }, [url]);
+    expect(r[url]).toBe(`https://tp.media/r?campaign_id=541&marker=789588&p=8310&trs=585192&u=${encodeURIComponent(url)}`);
+    expect(fn).not.toHaveBeenCalled();
   });
 });

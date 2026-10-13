@@ -51,6 +51,10 @@ export function stayLinks(
       url: `https://www.booking.com/searchresults.es.html?ss=${q}&checkin=${checkin}&checkout=${checkout}&group_adults=${adults}&no_rooms=${rooms}&selected_currency=USD`,
     },
     {
+      label: "Expedia",
+      url: `https://www.expedia.com/Hotel-Search?destination=${q}&startDate=${checkin}&endDate=${checkout}&adults=${adults}&rooms=${rooms}`,
+    },
+    {
       label: "Airbnb",
       url: `https://www.airbnb.com.ar/s/${q}/homes?checkin=${checkin}&checkout=${checkout}&adults=${adults}`,
     },

@@ -16,6 +16,8 @@
   // Tu ID de afiliado de Travelpayouts (no es secreto: viaja en los links).
   "vars": {
     "TRAVELPAYOUTS_MARKER": "789588",
+    // ID del proyecto en Travelpayouts: links con comisión para traslados, excursiones, eSIM y seguro.
+    "TRAVELPAYOUTS_TRS": "585192",
     "SITE_URL": "https://findmytrip.deorejasyvaritas.workers.dev",
     "RADAR_ORIGINS": "BUE"
   },

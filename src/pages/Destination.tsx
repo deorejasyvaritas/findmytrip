@@ -13,7 +13,7 @@ import type {
   Style,
   TripPackage,
 } from "../../shared/types.ts";
-import { flightLinks } from "../../shared/links.ts";
+import { flightLinks, stayLinks } from "../../shared/links.ts";
 import Segmented from "../components/Segmented.tsx";
 import { PartyPicker } from "../components/TripPickers.tsx";
 import {
@@ -666,6 +666,17 @@ export default function DestinationPage() {
                   </div>
                 )}
               </>
+            )}
+
+            {!loading.hotels && realHotels.length > 0 && stayStart && (
+              <div className="date-line">
+                <span className="small muted">Compará en:</span>
+                {stayLinks(dest.name, stayStart, stayEnd, travelers, rooms).map((l) => (
+                  <a key={l.label} className="pill-link" href={l.url} target="_blank" rel="noreferrer">
+                    {l.label} <Icon name="external" size={14} />
+                  </a>
+                ))}
+              </div>
             )}
 
             {!loading.hotels && realHotels.length === 0 && (
