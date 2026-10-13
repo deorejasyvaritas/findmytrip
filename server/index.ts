@@ -4,7 +4,7 @@ import type { Meta } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
 import { addDays, baseFlightFrom, explore, monthOverview, stayOptions, upcomingMonths, yearFor } from "./engine.ts";
-import { has, type Env } from "./env.ts";
+import { config, has, type Env } from "./env.ts";
 import { flightCalendar, googleFlights, livePriceLookup } from "./providers/flights.ts";
 import { usdArsRate } from "./providers/fx.ts";
 import { googleHotels } from "./providers/hotels.ts";
@@ -56,16 +56,17 @@ const exploreSchema = z.object({
 });
 
 const notFound = { error: "Destino no encontrado" };
+const env = (c: { env: Env }) => config(c.env);
 
 app.get("/meta", async (c) => {
-  const fx = await usdArsRate(Number(c.env.USD_ARS_RATE) || 1450);
+  const fx = await usdArsRate(Number(env(c).USD_ARS_RATE) || 1450);
   const meta: Meta = {
     origins: ORIGINS,
     interests: [...INTERESTS],
     regions: [...REGIONS],
-    liveFlights: has(c.env.TRAVELPAYOUTS_TOKEN),
-    googleQuotes: has(c.env.SERPAPI_KEY),
-    agent: has(c.env.ANTHROPIC_API_KEY),
+    liveFlights: has(env(c).TRAVELPAYOUTS_TOKEN),
+    googleQuotes: has(env(c).SERPAPI_KEY),
+    agent: has(env(c).ANTHROPIC_API_KEY),
     usdArsRate: fx.rate,
     usdArsSource: fx.source,
   };
@@ -90,7 +91,7 @@ app.get("/destinations/:id", (c) => {
 app.post("/explore", async (c) => {
   const body = exploreSchema.parse(await c.req.json());
   const months = body.month != null ? [{ month: body.month, year: body.year ?? yearFor(body.month) }] : upcomingMonths();
-  const live = await livePriceLookup(c.env.TRAVELPAYOUTS_TOKEN, body.origin, months);
+  const live = await livePriceLookup(env(c).TRAVELPAYOUTS_TOKEN, body.origin, months);
   return c.json(explore(body, live));
 });
 
@@ -100,16 +101,17 @@ app.get("/flights/calendar", async (c) => {
     .parse(c.req.query());
   const dest = getDestination(q.dest);
   if (!dest) return c.json(notFound, 404);
-  return c.json(await flightCalendar(c.env.TRAVELPAYOUTS_TOKEN, q.origin, dest, q.month, q.nights));
+  return c.json(await flightCalendar(env(c).TRAVELPAYOUTS_TOKEN, q.origin, dest, q.month, q.nights));
 });
 
 // Precio exacto de Google Flights para una fecha (consume cuota de SerpApi).
 app.get("/flights/quote", async (c) => {
-  if (!has(c.env.SERPAPI_KEY)) return c.json({ error: "Falta SERPAPI_KEY para cotizar con Google Flights." }, 503);
+  const serpKey = env(c).SERPAPI_KEY;
+  if (!has(serpKey)) return c.json({ error: "Falta SERPAPI_KEY para cotizar con Google Flights." }, 503);
   const q = z.object({ origin: originCode, dest: z.string(), depart: isoDate, nights: nightsQ }).parse(c.req.query());
   const dest = getDestination(q.dest);
   if (!dest) return c.json(notFound, 404);
-  const quote = await googleFlights(c.env.SERPAPI_KEY, q.origin, dest, q.depart, addDays(q.depart, q.nights));
+  const quote = await googleFlights(serpKey, q.origin, dest, q.depart, addDays(q.depart, q.nights));
   if (!quote) return c.json({ error: "Google Flights no devolvió resultados para esa fecha." }, 502);
   return c.json(quote);
 });
@@ -121,12 +123,13 @@ app.get("/stays", async (c) => {
     .parse(c.req.query());
   const dest = getDestination(q.dest);
   if (!dest) return c.json(notFound, 404);
-  if (q.real === "1" && !has(c.env.SERPAPI_KEY)) {
+  const serpKey = env(c).SERPAPI_KEY;
+  if (q.real === "1" && !has(serpKey)) {
     return c.json({ error: "Falta SERPAPI_KEY para ver hoteles reales." }, 503);
   }
   const quote =
-    q.real === "1" && has(c.env.SERPAPI_KEY)
-      ? await googleHotels(c.env.SERPAPI_KEY, dest, q.checkin, q.nights, Math.min(q.travelers, 2))
+    q.real === "1" && has(serpKey)
+      ? await googleHotels(serpKey, dest, q.checkin, q.nights, Math.min(q.travelers, 2))
       : null;
   return c.json({
     options: stayOptions(dest, q.checkin, q.nights, q.travelers, quote?.tiers),
@@ -154,7 +157,7 @@ app.post("/packages/build", async (c) => {
 });
 
 app.post("/agent", async (c) => {
-  if (!has(c.env.ANTHROPIC_API_KEY)) {
+  if (!has(env(c).ANTHROPIC_API_KEY)) {
     return c.json({ error: "El agente no está configurado. Agregá ANTHROPIC_API_KEY y reiniciá." }, 503);
   }
   const body = z
@@ -169,7 +172,7 @@ app.post("/agent", async (c) => {
   if (body.messages[0].role !== "user" || body.messages.at(-1)!.role !== "user") {
     return c.json({ error: "La conversación debe empezar y terminar con un mensaje del usuario." }, 400);
   }
-  return c.json(await runAgent(c.env, body.messages, body.profile));
+  return c.json(await runAgent(env(c), body.messages, body.profile));
 });
 
 app.notFound((c) => c.json({ error: "No encontrado" }, 404));

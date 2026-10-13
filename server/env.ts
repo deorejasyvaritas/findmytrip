@@ -12,3 +12,14 @@ export interface Env {
 }
 
 export const has = (v: string | undefined): v is string => Boolean(v && v.trim());
+
+/** Limpia espacios y saltos de línea que se cuelan al pegar las claves. */
+export function config(env: Env): Env {
+  const clean = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined);
+  return {
+    ANTHROPIC_API_KEY: clean(env.ANTHROPIC_API_KEY),
+    TRAVELPAYOUTS_TOKEN: clean(env.TRAVELPAYOUTS_TOKEN),
+    SERPAPI_KEY: clean(env.SERPAPI_KEY),
+    USD_ARS_RATE: clean(env.USD_ARS_RATE),
+  };
+}
