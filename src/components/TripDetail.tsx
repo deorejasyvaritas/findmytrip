@@ -21,14 +21,16 @@ export default function TripDetail({
 }) {
   return (
     <div className="trip-detail">
-      <DayByDay pkg={pkg} />
+      <DayByDay pkg={pkg} domestic={!abroad} />
       <Checklist list={pkg.checklist ?? defaultChecklist(abroad)} onChange={onChecklist} />
     </div>
   );
 }
 
-function DayByDay({ pkg }: { pkg: TripPackage }) {
-  const { money } = useApp();
+function DayByDay({ pkg, domestic }: { pkg: TripPackage; domestic: boolean }) {
+  const app = useApp();
+  // Mismo cambio que la tarjeta del viaje: dentro de Argentina, pesos al oficial.
+  const money = (usd: number) => app.money(usd, { domestic });
   const [all, setAll] = useState(false);
   const titleId = useId();
   const plan = dayPlan(pkg);

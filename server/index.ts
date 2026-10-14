@@ -55,9 +55,10 @@ import { geocode, nearestCatalog, planTrip, refreshLeg } from "./trip.ts";
 import { canUseGoogle } from "./google-budget.ts";
 import { BY_CODE } from "./radar.ts";
 import { stayLinks } from "../shared/links.ts";
-import { headcount, partyFromParams, roomsForParty } from "../shared/pricing.ts";
+import { partyFromParams, roomsForParty } from "../shared/pricing.ts";
 import { extrasFor } from "../shared/extras.ts";
 import { buildPackage } from "./packages.ts";
+import { recheckItems } from "./recheck.ts";
 import { newShareId, shareKey, sharePath, shareSnapshot, userSharesKey, validShareId, type ShareRecord } from "./share.ts";
 import { climateFor } from "./providers/climate.ts";
 import {
@@ -421,6 +422,35 @@ app.post("/packages/build", async (c) => {
   return c.json(buildPackage({ ...body, dest }));
 });
 
+// "Revisar precios" de un viaje guardado (Mis viajes). Google solo si el usuario lo pidió.
+// Freno por usuario (en memoria): la revisión automática del cliente ya es de una vez por día.
+const recheckHits = new Map<string, number[]>();
+const RECHECK_LIMIT = 30;
+function recheckAllowed(user: string, now = Date.now()): boolean {
+  const recent = (recheckHits.get(user) ?? []).filter((t) => now - t < 3600_000);
+  if (recent.length >= RECHECK_LIMIT) return false;
+  recent.push(now);
+  recheckHits.set(user, recent);
+  if (recheckHits.size > 5000) recheckHits.clear();
+  return true;
+}
+
+app.post("/packages/recheck", async (c) => {
+  const flightItem = z.object({ i: z.number().int().min(0).max(40), type: z.literal("flight"), from: iata, to: iata, depart: isoDate, ret: isoDate.nullable() });
+  const hotelItem = z.object({ i: z.number().int().min(0).max(40), type: z.literal("hotel"), key: z.string().regex(/^[\w-]{1,40}$/), checkin: isoDate, checkout: isoDate });
+  const body = z
+    .object({ items: z.array(z.discriminatedUnion("type", [flightItem, hotelItem])).max(12), google: z.boolean().optional() })
+    .parse(await c.req.json());
+  if (!recheckAllowed(userId(c))) return c.json({ error: "Revisaste muchos precios seguidos. Probá de nuevo en un rato." }, 429);
+  const e = env(c);
+  const results = await recheckItems(
+    { token: e.TRAVELPAYOUTS_TOKEN, marker: e.TRAVELPAYOUTS_MARKER, serpKey: has(e.SERPAPI_KEY) ? e.SERPAPI_KEY : undefined },
+    body.items,
+    Boolean(body.google),
+  );
+  return c.json({ checkedAt: new Date().toISOString(), results });
+});
+
 app.post("/agent", async (c) => {
   if (!has(env(c).ANTHROPIC_API_KEY) && !c.env.AI) {
     return c.json({ error: "El agente no está configurado." }, 503);
@@ -513,7 +543,6 @@ app.get("/search/hotels", async (c) => {
     .parse(c.req.query());
   const nights = Math.max(1, Math.round((Date.parse(q.checkout) - Date.parse(q.checkin)) / 86400000));
   const party = partyQ(c.req.query(), q.travelers);
-  const travelers = headcount(party);
   const rooms = roomsForParty(party);
   const dest = BY_CODE.get(q.place);
   const quote = dest ? await xoteloHotels(dest, q.checkin, nights).catch(() => null) : null;
@@ -524,7 +553,7 @@ app.get("/search/hotels", async (c) => {
     rooms,
     hotels: quote?.hotels ?? [],
     options: dest ? stayOptions(dest, q.checkin, nights, party, quote?.tiers) : [],
-    links: stayLinks(dest?.name ?? q.name ?? q.place, q.checkin, q.checkout, travelers, rooms),
+    links: stayLinks(dest?.name ?? q.name ?? q.place, q.checkin, q.checkout, party, rooms),
   });
 });
 
@@ -578,7 +607,6 @@ app.get("/trip/hotels", async (c) => {
     })
     .parse(c.req.query());
   const party = partyQ(c.req.query(), q.travelers);
-  const travelers = headcount(party);
   const rooms = q.rooms ?? roomsForParty(party);
   const near = nearestCatalog(q.lat, q.lon);
   const inCatalog = near.km < 40 ? near.dest : null;
@@ -599,7 +627,7 @@ app.get("/trip/hotels", async (c) => {
     rooms,
     estimateNight,
     estimateFrom: near.km < 40 ? null : near.dest.name,
-    links: stayLinks(`${q.name}, ${q.country}`, q.checkin, addDays(q.checkin, q.nights), travelers, rooms),
+    links: stayLinks(`${q.name}, ${q.country}`, q.checkin, addDays(q.checkin, q.nights), party, rooms),
   });
 });
 
@@ -643,7 +671,8 @@ app.get("/share/:id", async (c) => {
   const record = validShareId(id) ? await loadJSON<ShareRecord>(shareKey(id)) : null;
   c.header("X-Robots-Tag", "noindex");
   if (!record) return c.json({ error: "Este link ya no está disponible." }, 404);
-  const out: SharedTripResponse = { trip: record.trip, createdAt: record.createdAt, updatedAt: record.updatedAt };
+  const domestic = getDestination(record.trip.destinationId ?? "")?.region === "Argentina";
+  const out: SharedTripResponse = { trip: record.trip, createdAt: record.createdAt, updatedAt: record.updatedAt, domestic };
   return c.json(out);
 });
 

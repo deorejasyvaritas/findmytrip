@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { FlightResult, LegResult, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
+import type { FlightResult, ItemQuote, LegResult, Party, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
+import { aviasalesForParty } from "../../shared/links.ts";
+import { priceLabel } from "../../shared/price-age.ts";
 import { airlineName } from "../../shared/airlines.ts";
-import { DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams, roomsForParty } from "../../shared/pricing.ts";
+import { DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams, partyToParams, roomsForParty } from "../../shared/pricing.ts";
 import { hotelDistanceKm, hotelLinks } from "../../shared/hotel-links.ts";
 import { estimateTrip } from "../../shared/compare.ts";
 import { groundSeats, groundTotal } from "../../shared/ground.ts";
@@ -88,7 +90,7 @@ export default function SearchPage() {
 
       {kind === "vuelos" && from && to && depart && <FlightResults origin={from.code} dest={to.code} depart={depart} ret={ret} />}
       {kind === "paquete" && from && to && depart && ret && <PackageResults />}
-      {kind === "hoteles" && to && depart && ret && <HotelResults place={to.code} name={to.label} checkin={depart} checkout={ret} travelers={headcount(party)} />}
+      {kind === "hoteles" && to && depart && ret && <HotelResults place={to.code} name={to.label} checkin={depart} checkout={ret} party={party} />}
       {kind === "multi" && <MultiResults />}
       {kind === "viaje" && from && depart && tripStops.length > 0 && <TripResults />}
     </div>
@@ -335,7 +337,7 @@ function FlightResults({ origin, dest, depart, ret }: { origin: string; dest: st
           )}
 
           {list.map((r) => (
-            <FlightCard key={`${r.flightNumber}-${r.departAt}-${r.returnAt}`} r={r} units={units} money={money} />
+            <FlightCard key={`${r.flightNumber}-${r.departAt}-${r.returnAt}`} r={r} units={units} party={party} money={money} />
           ))}
 
           {data && list.length > 0 && (
@@ -378,7 +380,7 @@ function FlightWatch({ destinationId, price }: { destinationId: string | null; p
       <span className="grow">
         <strong>¿Querés esperar a que baje?</strong>
         <span className="small muted">
-          Hoy, vuelo desde {money(price)} por adulto. Con alojamiento estimado para {nights} noches, el viaje sale unos {money(trip.total)}.
+          Visto en los últimos días: vuelo desde {money(price)} por adulto. Con alojamiento estimado para {nights} noches, el viaje sale unos {money(trip.total)}.
         </span>
       </span>
       <WatchButton
@@ -411,17 +413,21 @@ function Leg({ label, at, duration, stops }: { label: string; at: string; durati
 export function FlightCard({
   r,
   units,
+  party,
   money,
   selected,
   onSelect,
 }: {
   r: FlightResult;
   units: number;
+  /** Grupo: el link a Aviasales se abre para todos (la Data API lo trae para 1 adulto). */
+  party: Party;
   money: (n: number) => string;
   selected?: boolean;
   onSelect?: () => void;
 }) {
   const name = airlineName(r.airline) ?? "Aerolínea sin dato";
+  const link = aviasalesForParty(r.link, party);
   return (
     <article className={`card flight ${selected ? "on" : ""}`}>
       <div className="flight-airline">
@@ -441,8 +447,8 @@ export function FlightCard({
             {selected ? "Elegido" : "Elegir"}
           </button>
         ) : (
-          r.link && (
-            <a className="button primary" href={r.link} target="_blank" rel="noreferrer sponsored">
+          link && (
+            <a className="button primary" href={link} target="_blank" rel="noreferrer sponsored">
               Ver en Aviasales <Icon name="external" size={14} />
             </a>
           )
@@ -478,27 +484,30 @@ interface HotelData {
   links: { label: string; url: string }[];
 }
 
-function useHotels(place: string, name: string, checkin: string, checkout: string, travelers: number) {
+function useHotels(place: string, name: string, checkin: string, checkout: string, party: Party) {
   const [data, setData] = useState<HotelData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Edades de los chicos: los links a Booking, Expedia y Airbnb se abren para el grupo real.
+  const partyKey = JSON.stringify(partyToParams(party));
   useEffect(() => {
     let alive = true;
     setData(null);
     setError(null);
     api
-      .searchHotels({ place, name: name.split(",")[0].replace(/\s*\([A-Z]{3}\)$/, ""), checkin, checkout, travelers })
+      .searchHotels({ place, name: name.split(",")[0].replace(/\s*\([A-Z]{3}\)$/, ""), checkin, checkout, travelers: headcount(party), ...partyToParams(party) })
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError((e as Error).message));
     return () => {
       alive = false;
     };
-  }, [place, name, checkin, checkout, travelers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [place, name, checkin, checkout, partyKey]);
   return { data, error };
 }
 
-function HotelResults(p: { place: string; name: string; checkin: string; checkout: string; travelers: number }) {
+function HotelResults(p: { place: string; name: string; checkin: string; checkout: string; party: Party }) {
   const { money } = useApp();
-  const { data, error } = useHotels(p.place, p.name, p.checkin, p.checkout, p.travelers);
+  const { data, error } = useHotels(p.place, p.name, p.checkin, p.checkout, p.party);
   const [sort, setSort] = useState<"price" | "rating">("price");
   const [minRating, setMinRating] = useState(0);
   if (error) return <ErrorCard message={error} />;
@@ -626,7 +635,7 @@ function PackageResults() {
   const depart = params.get("depart")!;
   const ret = params.get("ret")!;
   const flights = useFlights(from.code, to.code, depart, ret, params.get("direct") === "1");
-  const hotels = useHotels(to.code, to.label, depart, ret, headcount(party));
+  const hotels = useHotels(to.code, to.label, depart, ret, party);
   const [flightKey, setFlightKey] = useState<string | null>(null);
   const [hotelName, setHotelName] = useState<string | null>(null);
   const units = fareUnits(party);
@@ -642,6 +651,24 @@ function PackageResults() {
 
   function save() {
     if (!flight || !hotel) return;
+    const at = new Date().toISOString();
+    const nights = hotels.data?.nights ?? 1;
+    const flightQuote: ItemQuote = {
+      kind: "exacto",
+      source: "aviasales",
+      at,
+      unitUSD: flight.price,
+      units,
+      flight: { from: from.code, to: to.code, depart, ret },
+    };
+    const hotelQuote: ItemQuote = {
+      kind: "exacto",
+      source: "xotelo",
+      at,
+      unitUSD: hotel.nightlyUSD,
+      units: nights * rooms,
+      ...(hotel.key ? { hotel: { key: hotel.key, checkin: depart, checkout: ret } } : {}),
+    };
     const pkg: TripPackage = {
       id: `pkg_${Date.now().toString(36)}`,
       destinationId: hotels.data?.destinationId ?? to.code,
@@ -652,8 +679,14 @@ function PackageResults() {
       travelers: headcount(party),
       style: profile.style,
       items: [
-        { kind: "vuelo", label: `Vuelo ${from.code}–${to.code} (${airlineName(flight.airline) ?? "aerolínea sin dato"}, ${describeParty(party)})`, amountUSD: flightTotal, link: flight.link ?? undefined },
-        { kind: "alojamiento", label: `${hotel.name} · ${hotels.data?.nights} noches`, amountUSD: hotelTotal, link: hotel.link ?? undefined },
+        {
+          kind: "vuelo",
+          label: `Vuelo ${from.code}–${to.code} (${airlineName(flight.airline) ?? "aerolínea sin dato"}, ${describeParty(party)}, USD ${flight.price} por adulto)`,
+          amountUSD: flightTotal,
+          link: aviasalesForParty(flight.link, party) ?? undefined,
+          quote: flightQuote,
+        },
+        { kind: "alojamiento", label: `${hotel.name} · ${nights} noches`, amountUSD: hotelTotal, link: hotel.link ?? undefined, quote: hotelQuote },
       ],
       totalUSD: flightTotal + hotelTotal,
       createdAt: new Date().toISOString(),
@@ -680,7 +713,7 @@ function PackageResults() {
             </div>
           )}
           {flightList.map((r) => (
-            <FlightCard key={keyOf(r)} r={r} units={units} money={money} selected={flight === r} onSelect={() => setFlightKey(keyOf(r))} />
+            <FlightCard key={keyOf(r)} r={r} units={units} party={party} money={money} selected={flight === r} onSelect={() => setFlightKey(keyOf(r))} />
           ))}
         </section>
         <section className="stack">
@@ -732,13 +765,15 @@ function PackageResults() {
           <span className="headline">Total</span>
           <span className="price">{money(flightTotal + hotelTotal)}</span>
         </div>
-        <p className="small muted">Precios de referencia. Se reservan por separado con cada proveedor.</p>
+        <p className="small muted">
+          Vuelo visto en Aviasales en los últimos días; hotel con la tarifa más baja que vimos entre varios sitios. Se reservan por separado y pueden cambiar.
+        </p>
         <button className="primary full" disabled={!flight || !hotel} onClick={save}>
           <Icon name="bookmark" size={18} />
           Guardar en Mis viajes
         </button>
         {flight?.link && (
-          <a className="button secondary full" href={flight.link} target="_blank" rel="noreferrer sponsored">
+          <a className="button secondary full" href={aviasalesForParty(flight.link, party)!} target="_blank" rel="noreferrer sponsored">
             Ver el vuelo en Aviasales <Icon name="external" size={14} />
           </a>
         )}
@@ -815,7 +850,7 @@ function MultiResults() {
                 </div>
               )}
               {leg?.options.map((r, j) => (
-                <FlightCard key={j} r={r} units={units} money={money} selected={(picked[i] ?? 0) === j} onSelect={() => setPicked((p) => ({ ...p, [i]: j }))} />
+                <FlightCard key={j} r={r} units={units} party={party} money={money} selected={(picked[i] ?? 0) === j} onSelect={() => setPicked((p) => ({ ...p, [i]: j }))} />
               ))}
             </section>
           );
@@ -845,7 +880,7 @@ function MultiResults() {
         {chosen.map(
           (r, i) =>
             r?.link && (
-              <a key={i} className="secondary full" href={r.link} target="_blank" rel="noreferrer sponsored">
+              <a key={i} className="secondary full" href={aviasalesForParty(r.link, party)!} target="_blank" rel="noreferrer sponsored">
                 Comprar tramo {i + 1} en Aviasales <Icon name="external" size={14} />
               </a>
             ),
@@ -864,6 +899,7 @@ interface StayPick {
   total: number;
   real: boolean;
   link?: string;
+  quote?: ItemQuote;
 }
 
 /** Lo que devuelve /api/trip/leg al volver a mirar un tramo. */
@@ -1014,8 +1050,27 @@ function TripResults() {
   function save() {
     if (!plan || !staysReady) return;
     const flightNote = (l: TripLeg) => (l.price == null ? " (sin precio)" : l.priceKind === "manual" ? " (precio que cargaste)" : l.priceKind === "mes" ? " (referencia del mes)" : "");
+    const at = new Date().toISOString();
+    const legQuote = (l: TripLeg): ItemQuote | undefined =>
+      l.price == null || !l.priceKind
+        ? undefined
+        : {
+            kind: l.priceKind,
+            source: l.priceKind === "manual" ? "manual" : (l.priceSource ?? "aviasales"),
+            at: l.priceAt ?? at,
+            unitUSD: l.price,
+            units,
+            priceDate: l.priceDate,
+            flight: { from: l.from, to: l.to, depart: l.date, ret: l.returnDate },
+          };
     const items: TripPackage["items"] = [
-      ...flights.map((l) => ({ kind: "vuelo" as const, label: `${l.label}${flightNote(l)}`, amountUSD: l.price ? Math.round(l.price * units) : 0, link: l.link ?? undefined })),
+      ...flights.map((l) => ({
+        kind: "vuelo" as const,
+        label: `${l.label}${flightNote(l)}`,
+        amountUSD: l.price ? Math.round(l.price * units) : 0,
+        link: aviasalesForParty(l.link, party) ?? undefined,
+        quote: legQuote(l),
+      })),
       ...plan.stops.map((st, i) => {
         const pick = stays[i]!;
         return {
@@ -1023,6 +1078,7 @@ function TripResults() {
           label: `${st.name}: ${pick.label} · ${st.nights} noches${pick.real ? "" : " (estimado)"}`,
           amountUSD: pick.total,
           link: pick.link,
+          quote: pick.quote,
         };
       }),
       ...(withGround
@@ -1058,6 +1114,7 @@ function TripResults() {
     return (
       <LegCard
         leg={leg}
+        party={party}
         units={units}
         money={money}
         seats={groundSeats(party)}
@@ -1101,6 +1158,7 @@ function TripResults() {
                 <StopCard
                   stop={st}
                   index={i}
+                  party={party}
                   travelers={headcount(party)}
                   rooms={rooms}
                   style={profile.style}
@@ -1184,7 +1242,11 @@ function legDetail(leg: TripLeg): string {
     case "manual":
       return " · precio que cargaste";
     case "exacto":
-      return leg.priceSource === "google" ? " · precio de hoy en Google Flights" : ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")}`;
+      return leg.priceSource === "google"
+        ? leg.priceAt
+          ? ` · ${priceLabel({ kind: "exacto", source: "google", at: leg.priceAt }).toLowerCase()} en Google Flights`
+          : " · precio de Google Flights de las últimas horas"
+        : ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")} · visto en los últimos días`;
     case "cercano":
       return ` · precio real saliendo el ${shortDate(leg.priceDate!)}`;
     default:
@@ -1194,6 +1256,7 @@ function legDetail(leg: TripLeg): string {
 
 function LegCard({
   leg,
+  party,
   units,
   money,
   seats,
@@ -1203,6 +1266,8 @@ function LegCard({
   onManual,
 }: {
   leg: TripLeg;
+  /** Los links a Aviasales se abren para todo el grupo. */
+  party: Party;
   units: number;
   money: (n: number) => string;
   seats: number;
@@ -1252,7 +1317,9 @@ function LegCard({
     );
   }
   const google = leg.priceSource === "google" && leg.priceKind === "exacto";
-  const href = (leg.priceKind === "exacto" ? leg.link : leg.liveUrl) ?? leg.liveUrl ?? "#";
+  const live = aviasalesForParty(leg.liveUrl, party);
+  // Google Flights (link de SerpApi) se abre para 1 adulto: el precio es por adulto.
+  const href = (leg.priceKind === "exacto" ? aviasalesForParty(leg.link, party) : live) ?? live ?? "#";
   return (
     <div className="card trip-leg">
       <Icon name="plane" size={18} />
@@ -1285,8 +1352,8 @@ function LegCard({
         <a className="button secondary" href={href} target="_blank" rel="noreferrer sponsored" onClick={google ? undefined : onLive}>
           {google ? "Ver en Google Flights" : "Ver en Aviasales"} <Icon name="external" size={14} />
         </a>
-        {google && leg.liveUrl && (
-          <a className="leg-action" href={leg.liveUrl} target="_blank" rel="noreferrer sponsored" onClick={onLive}>
+        {google && live && (
+          <a className="leg-action" href={live} target="_blank" rel="noreferrer sponsored" onClick={onLive}>
             Comparar en Aviasales
           </a>
         )}
@@ -1374,6 +1441,7 @@ type TripHotels = Awaited<ReturnType<typeof api.tripHotels>>;
 function StopCard({
   stop,
   index,
+  party,
   travelers,
   rooms,
   style,
@@ -1382,6 +1450,7 @@ function StopCard({
 }: {
   stop: TripPlan["stops"][number];
   index: number;
+  party: Party;
   travelers: number;
   rooms: number;
   style: string;
@@ -1399,7 +1468,7 @@ function StopCard({
     setFailed(false);
     onPick(null);
     api
-      .tripHotels({ name: stop.name, country: stop.country, lat: stop.lat, lon: stop.lon, checkin: stop.checkin, nights: stop.nights, travelers, rooms, style })
+      .tripHotels({ name: stop.name, country: stop.country, lat: stop.lat, lon: stop.lon, checkin: stop.checkin, nights: stop.nights, travelers, rooms, style, ...partyToParams(party) })
       .then((d) => alive && setData(d))
       .catch(() => alive && setFailed(true));
     return () => {
@@ -1413,8 +1482,30 @@ function StopCard({
 
   useEffect(() => {
     if (!data) return;
-    if (choice) onPick({ label: choice.name, total: choice.totalUSD * rooms, real: true, link: choice.link ?? choice.tripadvisorUrl ?? undefined });
-    else onPick({ label: "alojamiento", total: data.estimateNight * stop.nights * rooms, real: false });
+    const at = new Date().toISOString();
+    const units = stop.nights * rooms;
+    if (choice)
+      onPick({
+        label: choice.name,
+        total: choice.totalUSD * rooms,
+        real: true,
+        link: choice.link ?? choice.tripadvisorUrl ?? undefined,
+        quote: {
+          kind: "exacto",
+          source: data.source === "google" ? "google" : "xotelo",
+          at,
+          unitUSD: choice.nightlyUSD,
+          units,
+          ...(choice.key ? { hotel: { key: choice.key, checkin: stop.checkin, checkout: stop.checkout } } : {}),
+        },
+      });
+    else
+      onPick({
+        label: "alojamiento",
+        total: data.estimateNight * units,
+        real: false,
+        quote: { kind: "estimado", source: "estimado", at, unitUSD: data.estimateNight, units },
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, choice?.name, rooms]);
 

@@ -562,7 +562,7 @@ export default function Home() {
                       )}
                     </div>
                     <div className="card-foot">
-                      <span className="source live">Precio real de hoy</span>
+                      <span className="source live">Google Flights, últimas 24 h</span>
                       <span>Ver en Google</span>
                     </div>
                   </a>

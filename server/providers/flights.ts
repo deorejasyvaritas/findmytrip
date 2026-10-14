@@ -359,6 +359,7 @@ function toQuote(data: GoogleFlightsResponse, depart: string, ret: string | null
     typicalRangeUSD: range?.length === 2 ? [Math.round(range[0]), Math.round(range[1])] : null,
     priceLevel: data.price_insights?.price_level ?? null,
     url: data.search_metadata?.google_flights_url ?? null,
+    fetchedAt: new Date().toISOString(),
   };
 }
 

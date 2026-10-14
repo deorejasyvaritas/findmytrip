@@ -147,8 +147,10 @@ function TripView({ data }: { data: SharedTripResponse }) {
       </section>
 
       <p className="note">
-        Precios de referencia, consultados el {formatDate(data.updatedAt, { day: "numeric", month: "long", year: "numeric" })}. Pueden
+        {/* La fecha es la del precio más viejo del viaje, no la de cuando se compartió. */}
+        Precios de referencia vistos desde el {formatDate(t.pricedAt ?? data.createdAt, { day: "numeric", month: "long", year: "numeric" })}. Pueden
         cambiar: el precio final es el que muestra cada proveedor antes de pagar.
+        {data.domestic ? " Montos en dólares: dentro de Argentina se suele pagar en pesos al cambio oficial; si pagás en dólares con tarjeta, se suman las percepciones." : ""}
       </p>
 
       <section className="card shared-cta">

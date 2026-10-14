@@ -510,7 +510,6 @@ export function stayOptions(
   realTiers?: Record<Style, number>,
 ): StayOption[] {
   const party = toParty(who);
-  const travelers = headcount(party);
   const month = Number(checkin.slice(5, 7));
   const checkout = addDays(checkin, nights);
   const rooms = roomsForParty(party);
@@ -525,8 +524,8 @@ export function stayOptions(
       totalUSD: nightlyUSD * nights * rooms,
       rooms,
       area,
-      links: stayLinks(`${area}, ${dest.name}`, checkin, checkout, travelers, rooms),
-      source: realTiers ? "en vivo" : "estimado",
+      links: stayLinks(`${area}, ${dest.name}`, checkin, checkout, party, rooms),
+      source: realTiers ? "real" : "estimado",
     };
   });
 }
