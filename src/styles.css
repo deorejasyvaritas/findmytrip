@@ -220,7 +220,7 @@ select {
 .list-row + .list-row::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: 1px solid var(--separator); }
 a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .list-row .chev { color: var(--label-3); }
-.list-row input, .list-row select { width: auto; min-width: 140px; text-align: right; background-color: transparent; }
+.list-row input, .list-row select { width: auto; min-width: min(140px, 40vw); text-align: right; background-color: transparent; }
 .list-row-block { flex-direction: column; align-items: stretch; padding: 12px 16px 16px; }
 
 /* ---------- Explorar: panel de búsqueda ---------- */
@@ -267,7 +267,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .dest-search { position: relative; }
 .dest-search .icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #8e8e93; }
 .dest-search input { padding-left: 44px; background-color: #fefefe; color: #1c1c1e; min-height: 52px; font-size: 17px; }
-.dest-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 360px; overflow-y: auto; }
+.dest-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 8px; max-height: 360px; overflow-y: auto; }
 .dest-item {
   justify-content: space-between; text-align: left; min-height: 56px; padding: 8px 12px;
   background: rgba(254, 254, 254, 0.94); color: #1c1c1e; border-radius: var(--r-md);
@@ -277,7 +277,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .dest-item .icon { color: #8e8e93; }
 
 /* ---------- Tarjetas de sugerencias ---------- */
-.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px; }
 .suggestion { display: flex; flex-direction: column; gap: 16px; color: var(--label); transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
 .suggestion:hover { text-decoration: none; transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .suggestion-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
@@ -384,7 +384,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .stay .tier { font-size: 13px; font-weight: 600; color: var(--tint-ink); }
 .rating { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--label-2); }
 .rating .icon { color: #f5a623; fill: #f5a623; }
-.hotel-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin-top: 12px; }
+.hotel-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 8px; margin-top: 12px; }
 .hotel {
   justify-content: flex-start; align-items: flex-start; text-align: left; gap: 12px; min-height: 0; padding: 8px;
   background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow-sm); font-weight: 400;
@@ -512,7 +512,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .month-chips { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
 .month-chips .chip { justify-content: center; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.kid-ages { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; padding-top: 8px; }
+.kid-ages { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 12px; padding-top: 8px; }
 .stepper { display: inline-flex; align-items: center; gap: 4px; }
 .stepper button { min-height: 36px; width: 36px; padding: 0; border-radius: 50%; background: var(--fill); color: var(--label); }
 .stepper output { min-width: 28px; text-align: center; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -611,7 +611,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .radar-filters select.inline { width: auto; min-width: 0; max-width: 100%; min-height: 36px; border-radius: 999px; font-size: 13px; font-weight: 500; padding-left: 12px; background-color: var(--surface); box-shadow: var(--shadow-sm); }
 
 /* ---------- Fines de semana largos ---------- */
-.lw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.lw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px; }
 .lw-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
 .lw-card header { display: flex; flex-direction: column; gap: 2px; }
 .lw-date { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--brand-ink); }
@@ -661,7 +661,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 }
 
 /* ---------- Extras del viaje ---------- */
-.extras-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.extras-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 12px; }
 .extra { display: flex; gap: 12px; align-items: flex-start; padding: 16px; color: var(--label); font-weight: 400; }
 .extra:hover { text-decoration: none; box-shadow: var(--shadow-md); }
 .extra-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand-ink); flex-shrink: 0; }
