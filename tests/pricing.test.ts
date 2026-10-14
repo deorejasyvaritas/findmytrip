@@ -12,7 +12,7 @@ describe("pasajeros y equipaje", () => {
     expect(fareUnits(family)).toBeCloseTo(2 + 0.1 + 0.75 + 1);
     expect(dailyUnits(family)).toBeCloseTo(2 + 0 + 0.6 + 1);
     expect(roomsForParty(family)).toBe(2); // 2 adultos + 1 de 13 años
-    expect(describeParty(family)).toBe("2 adultos, 2 niños, 1 bebé");
+    expect(describeParty(family)).toBe("2 adultos, 1 adolescente de 13, 1 niño, 1 bebé");
   });
 
   it("valijas: los bebés no llevan y en vuelos largos la primera suele estar incluida", () => {

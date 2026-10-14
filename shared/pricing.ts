@@ -133,9 +133,12 @@ export function bagsCost(p: Party, region: Region): number {
 }
 
 export function describeParty(p: Party): string {
-  const kids = p.childAges.filter((a) => a >= 2).length;
-  const babies = p.childAges.length - kids;
+  const teens = p.childAges.filter((a) => a >= 12);
+  const kids = p.childAges.filter((a) => a >= 2 && a < 12).length;
+  const babies = p.childAges.length - kids - teens.length;
   const parts = [`${p.adults} ${p.adults === 1 ? "adulto" : "adultos"}`];
+  // Con edad: "1 adolescente de 15" se entiende mejor que "1 niño".
+  if (teens.length) parts.push(`${teens.length} ${teens.length === 1 ? "adolescente" : "adolescentes"} de ${[...teens].sort((a, b) => a - b).join(" y ")}`);
   if (kids) parts.push(`${kids} ${kids === 1 ? "niño" : "niños"}`);
   if (babies) parts.push(`${babies} ${babies === 1 ? "bebé" : "bebés"}`);
   return parts.join(", ");
