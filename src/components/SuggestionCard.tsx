@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { Party, PriceSource, Suggestion } from "../../shared/types.ts";
+import type { LongWeekendInfo, Party, PriceSource, Style, Suggestion } from "../../shared/types.ts";
 import { partyToParams } from "../../shared/pricing.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { capitalize, formatRange, monthName } from "../lib/format.ts";
+import { capitalize, formatDate, formatRange, monthName } from "../lib/format.ts";
+import { CompareToggle } from "./Compare.tsx";
 import Icon from "./Icon.tsx";
+import WatchButton from "./WatchButton.tsx";
 
 const FIT = {
   dentro: { label: "Entra holgado", cls: "badge-ok" },
@@ -22,18 +24,23 @@ export default function SuggestionCard({
   nights,
   party,
   range,
+  style,
 }: {
   s: Suggestion;
   nights: number;
   party?: Party;
   /** Ventana de salida de la búsqueda: la ficha arranca en un día dentro de ella. */
   range?: { from: string; to: string };
+  /** Alojamiento de la búsqueda (para la alerta). */
+  style?: Style;
 }) {
   const { money, photos } = useApp();
   const d = s.destination;
+  // Fin de semana largo: las noches son las de esa opción.
+  const optNights = s.nights ?? nights;
   const q = new URLSearchParams({
     month: `${s.year}-${String(s.month).padStart(2, "0")}`,
-    nights: String(nights),
+    nights: String(optNights),
     ...(party ? partyToParams(party) : {}),
   });
   if (s.depart) q.set("depart", s.depart);
@@ -42,15 +49,28 @@ export default function SuggestionCard({
     q.set("to", range.to);
   }
   const when = s.depart && s.ret ? formatRange(s.depart, s.ret) : `${capitalize(monthName(s.month))} ${s.year}`;
+  // Lo que se compara con la alerta: vuelo, equipaje y alojamiento (sin comidas ni paseos).
+  const target = s.cost.total - (s.cost.dailyIncluded ? s.cost.daily : 0);
+  // Toda la tarjeta lleva a la ficha (el link se estira por CSS); los botones de abajo quedan por encima.
   return (
-    <Link to={`/destino/${d.id}?${q}`} className="card suggestion">
+    <article className="card suggestion">
       <Photo src={photos[d.id]} name={d.name} />
       <div className="suggestion-head">
         <div>
-          <h3>{d.name}</h3>
+          <h3>
+            <Link to={`/destino/${d.id}?${q}`} className="suggestion-link">
+              {d.name}
+            </Link>
+          </h3>
           <p className="small muted">
             {d.country} · {when}
           </p>
+          {s.longWeekend && (
+            <p className="long-weekend-tag small">
+              <Icon name="calendar" size={14} />
+              {describeLongWeekend(s.longWeekend)}
+            </p>
+          )}
         </div>
         <span className={`badge ${FIT[s.fit].cls}`}>{FIT[s.fit].label}</span>
       </div>
@@ -98,8 +118,27 @@ export default function SuggestionCard({
         </span>
         <span>{d.docs}</span>
       </div>
-    </Link>
+      <div className="card-actions">
+        <CompareToggle id={d.id} name={d.name} />
+        <WatchButton
+          destinationId={d.id}
+          name={d.name}
+          targetUSD={target}
+          month={s.month}
+          nights={optNights}
+          party={party}
+          style={style}
+        />
+      </div>
+    </article>
   );
+}
+
+/** "Fin de semana largo de Carnaval, 6 al 9 feb" */
+export function describeLongWeekend(w: LongWeekendInfo): string {
+  const sameMonth = w.from.slice(0, 7) === w.to.slice(0, 7);
+  const from = sameMonth ? String(Number(w.from.slice(8, 10))) : formatDate(w.from);
+  return `Fin de semana largo de ${w.reason}, ${from} al ${formatDate(w.to)}`;
 }
 
 /** Foto ilustrativa arriba de la tarjeta; si no hay, un fondo de marca. */

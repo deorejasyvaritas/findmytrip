@@ -3,9 +3,12 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { FlightResult, LegResult, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
 import { airlineName } from "../../shared/airlines.ts";
 import { DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams } from "../../shared/pricing.ts";
+import { estimateTrip } from "../../shared/compare.ts";
+import { groundSeats, groundTotal } from "../../shared/ground.ts";
 import { FlightForm, HotelForm, MultiForm, TripForm, readPlace, readStop, type SearchKind } from "../components/FullSearch.tsx";
 import Icon from "../components/Icon.tsx";
 import Segmented from "../components/Segmented.tsx";
+import WatchButton from "../components/WatchButton.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { capitalize, formatDate } from "../lib/format.ts";
@@ -341,8 +344,46 @@ function FlightResults({ origin, dest, depart, ret }: { origin: string; dest: st
               )}
             </div>
           )}
+          {data && list.length > 0 && <FlightWatch destinationId={data.destinationId} price={Math.min(...list.map((r) => r.price))} />}
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Avisarme si baja" para vuelos de ida y vuelta a un destino del catálogo.
+ * La alerta mira el viaje (vuelo, equipaje y alojamiento estimado), como en la ficha.
+ */
+function FlightWatch({ destinationId, price }: { destinationId: string | null; price: number }) {
+  const [params] = useSearchParams();
+  const { destinations, profile, money } = useApp();
+  const dest = destinationId ? destinations.find((d) => d.id === destinationId) : undefined;
+  const depart = params.get("depart") ?? "";
+  const ret = params.get("ret");
+  if (!dest || !depart || !ret) return null;
+  const party = partyFromParams(params, DEFAULT_PARTY);
+  const nights = Math.max(1, Math.round((Date.parse(ret) - Date.parse(depart)) / 86400000));
+  const month = Number(depart.slice(5, 7));
+  const trip = estimateTrip(dest, price, month, nights, party, profile.style);
+  return (
+    <div className="card flight-watch">
+      <span className="grow">
+        <strong>¿Querés esperar a que baje?</strong>
+        <span className="small muted">
+          Hoy, vuelo desde {money(price)} por adulto. Con alojamiento estimado para {nights} noches, el viaje sale unos {money(trip.total)}.
+        </span>
+      </span>
+      <WatchButton
+        destinationId={dest.id}
+        name={dest.name}
+        targetUSD={trip.total}
+        month={month}
+        nights={nights}
+        party={party}
+        style={profile.style}
+        variant="button"
+      />
     </div>
   );
 }
@@ -821,6 +862,8 @@ function TripResults() {
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stays, setStays] = useState<Record<number, StayPick>>({});
+  // Traslados por tierra (estimado): se suman al total salvo que el usuario los saque.
+  const [withGround, setWithGround] = useState(true);
 
   useEffect(() => {
     setPlan(null);
@@ -840,7 +883,9 @@ function TripResults() {
   const missingFlights = flights.filter((l) => l.price == null).length;
   const approxFlights = flights.some((l) => l.priceKind === "mes");
   const staysTotal = Object.values(stays).reduce((s, x) => s + x.total, 0);
-  const total = flightsTotal + staysTotal;
+  const groundLegs = plan?.legs.filter((l) => l.kind === "ground" && l.ground) ?? [];
+  const groundUSD = groundTotal(groundLegs, party);
+  const total = flightsTotal + staysTotal + (withGround ? groundUSD : 0);
   const single = stops.length === 1 && stops[0].destinationId;
 
   function save() {
@@ -853,6 +898,14 @@ function TripResults() {
         amountUSD: stays[i]?.total ?? 0,
         link: stays[i]?.link,
       })),
+      ...(withGround
+        ? groundLegs.map((l) => ({
+            kind: "extra" as const,
+            label: `${l.label}: ${l.ground!.mode} (estimado)`,
+            amountUSD: l.ground!.perPerson * groundSeats(party),
+            link: l.ground!.rome2rioUrl,
+          }))
+        : []),
     ];
     app.savePackage({
       id: `pkg_${Date.now().toString(36)}`,
@@ -892,7 +945,7 @@ function TripResults() {
         {!plan && Array.from({ length: 3 }, (_, i) => <div key={i} className="card skeleton flight-skeleton" aria-hidden="true" />)}
         {plan && (
           <ol className="timeline">
-            {outbound && <LegCard leg={outbound} units={units} money={money} />}
+            {outbound && <LegCard leg={outbound} units={units} money={money} seats={groundSeats(party)} />}
             {plan.stops.map((st, i) => (
               <li key={i} className="timeline-stop">
                 <StopCard
@@ -903,10 +956,10 @@ function TripResults() {
                   money={money}
                   onPick={(pick) => setStays((x) => ({ ...x, [i]: pick }))}
                 />
-                {after(i) && <LegCard leg={after(i)!} units={units} money={money} />}
+                {after(i) && <LegCard leg={after(i)!} units={units} money={money} seats={groundSeats(party)} />}
               </li>
             ))}
-            {inbound && <LegCard leg={inbound} units={units} money={money} />}
+            {inbound && <LegCard leg={inbound} units={units} money={money} seats={groundSeats(party)} />}
           </ol>
         )}
       </div>
@@ -933,14 +986,34 @@ function TripResults() {
               <span>{stays[i] ? money(stays[i].total) : "—"}</span>
             </li>
           ))}
+          {groundLegs.length > 0 && (
+            <li className={withGround ? "" : "off"}>
+              <span className="label">
+                <Icon name="pin" size={16} />
+                Traslados por tierra (estimado)
+              </span>
+              <span>{withGround ? money(groundUSD) : <s aria-label={`No sumado: ${money(groundUSD)}`}>{money(groundUSD)}</s>}</span>
+            </li>
+          )}
         </ul>
+        {groundLegs.length > 0 && (
+          <label className="check ground-toggle">
+            <input type="checkbox" checked={withGround} onChange={(e) => setWithGround(e.target.checked)} />
+            Sumar traslados por tierra al total
+          </label>
+        )}
         <div className="total">
           <span className="headline">Total</span>
           <span className="price">{money(total)}</span>
         </div>
         <p className="small muted">
-          {missingFlights ? "Hay tramos sin precio visto: buscalos en vivo y sumalos. " : ""}Traslados por tierra no incluidos. Precios de referencia; se
-          reservan por separado.
+          {missingFlights ? "Hay tramos sin precio visto: buscalos en vivo y sumalos. " : ""}
+          {groundLegs.length > 0
+            ? withGround
+              ? "Traslados por tierra: pasaje de micro o tren estimado. "
+              : "Traslados por tierra no incluidos. "
+            : ""}
+          Precios de referencia; se reservan por separado.
         </p>
         <button className="primary full" disabled={!plan} onClick={save}>
           <Icon name="bookmark" size={18} />
@@ -951,8 +1024,9 @@ function TripResults() {
   );
 }
 
-function LegCard({ leg, units, money }: { leg: TripLeg; units: number; money: (n: number) => string }) {
+function LegCard({ leg, units, money, seats }: { leg: TripLeg; units: number; money: (n: number) => string; seats: number }) {
   if (leg.kind === "ground") {
+    const g = leg.ground;
     return (
       <div className="card trip-leg ground">
         <Icon name="pin" size={18} />
@@ -961,12 +1035,33 @@ function LegCard({ leg, units, money }: { leg: TripLeg; units: number; money: (n
           <span className="small muted">
             {capitalize(shortDate(leg.date))} · unos {leg.km} km · cerca de {String(leg.hours).replace(".", ",")} h en auto, transfer o micro
           </span>
+          {g && (
+            <span className="ground-cost small">
+              {capitalize(g.mode)} aprox. {money(g.perPerson)} por persona
+              {g.transfer != null && <> · Transfer privado aprox. {money(g.transfer)} por vehículo</>}
+            </span>
+          )}
         </span>
-        {leg.mapsUrl && (
-          <a className="button secondary" href={leg.mapsUrl} target="_blank" rel="noreferrer">
-            Ver ruta <Icon name="external" size={14} />
-          </a>
-        )}
+        <span className="trip-leg-price">
+          {g && seats > 1 && (
+            <>
+              <strong>{money(g.perPerson * seats)}</strong>
+              <span className="small muted">estimado, {seats} pasajes</span>
+            </>
+          )}
+          <span className="ground-links">
+            {leg.mapsUrl && (
+              <a className="button secondary" href={leg.mapsUrl} target="_blank" rel="noreferrer">
+                Ver ruta <Icon name="external" size={14} />
+              </a>
+            )}
+            {g && (
+              <a className="button secondary" href={g.rome2rioUrl} target="_blank" rel="noreferrer">
+                Horarios y precios <Icon name="external" size={14} />
+              </a>
+            )}
+          </span>
+        </span>
       </div>
     );
   }

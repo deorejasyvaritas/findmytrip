@@ -1,6 +1,8 @@
 import type { Destination, ExtraDestination, RealPrice } from "../../shared/types.ts";
 import { cached, fetchJSON } from "../cache.ts";
 import { DESTINATIONS } from "../data/destinations.ts";
+import { addDays } from "../engine.ts";
+import { offersFor } from "../escapes.ts";
 import { airportsFor, cheapestAnywhere } from "./flights.ts";
 
 // Precios reales para la búsqueda inicial ("¿a dónde me alcanza?").
@@ -115,6 +117,8 @@ export async function realPrices(
   origin: string,
   months: { month: number; year: number }[],
   singleMonth: number | null,
+  /** "Fines de semana largos": precios para esas fechas exactas (en vez del mínimo del mes). */
+  weekends?: { from: string; to: string }[],
 ): Promise<RealPrices> {
   const wanted = new Set(months.map((m) => m.month));
   const byDest = new Map<string, RealPrice[]>();
@@ -123,7 +127,9 @@ export async function realPrices(
 
   const [google, tp] = await Promise.all([
     keys.serpapi ? googleExploreRaw(keys.serpapi, origin, singleMonth) : Promise.resolve([]),
-    keys.travelpayouts
+    keys.travelpayouts && weekends
+      ? Promise.resolve([])
+      : keys.travelpayouts
       ? Promise.all(
           // Hasta 6 meses: alcanza para comparar y no pasa el límite de CPU del plan gratuito.
           months.slice(0, 6).map(async ({ month, year }) => [
@@ -178,6 +184,21 @@ export async function realPrices(
       if (googleIds.has(dest.id)) continue;
       const flight = prices.get(dest.iata);
       if (flight) push(dest.id, { month, flightPP: flight, source: "aviasales" });
+    }
+  }
+
+  // Fines de semana largos: lo que vieron en Aviasales saliendo la noche
+  // anterior o el primer día libre y volviendo el último (mismo caché que /escapes).
+  if (keys.travelpayouts && weekends?.length) {
+    const lists = await Promise.all(
+      weekends.flatMap((w) => [offersFor(keys.travelpayouts!, origin, addDays(w.from, -1), w.to), offersFor(keys.travelpayouts!, origin, w.from, w.to)]),
+    );
+    for (const list of lists) {
+      for (const o of list) {
+        const dest = BY_AIRPORT.get(o.code);
+        if (!dest) continue;
+        push(dest.id, { month: Number(o.depart.slice(5, 7)), flightPP: o.price, depart: o.depart, ret: o.ret, airline: o.airline, source: "aviasales" });
+      }
     }
   }
 

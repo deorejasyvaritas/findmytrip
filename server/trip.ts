@@ -1,6 +1,7 @@
 import type { Destination, GeoPlace, TripLeg, TripPlan, TripPlanRequest } from "../shared/types.ts";
 import { cached, fetchJSON } from "./cache.ts";
 import { DESTINATIONS } from "./data/destinations.ts";
+import { groundEstimate } from "../shared/ground.ts";
 import { addDays } from "./engine.ts";
 import { cheapestAnywhere, googleFlights } from "./providers/flights.ts";
 import { searchFlights } from "./search.ts";
@@ -202,6 +203,7 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
         km,
         hours: Math.round((km / 70 + 0.5) * 2) / 2,
         mapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lon}&destination=${b.lat},${b.lon}&travelmode=driving`,
+        ground: groundEstimate(km, a.country, b.country, a.name, b.name),
       });
     }
   }
