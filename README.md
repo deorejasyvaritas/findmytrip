@@ -114,7 +114,7 @@ notepad partner-head.html
 npm run deploy
 ```
 
-Pegá ahí el script de **Drive** y el **Main White Label code** del widget de vuelos. La página
+Pegá ahí el script de **Drive** y el **Main White Label code** del widget de vuelos. Se insertan solo en `/vuelos.html` (en el resto de la app el Drive reescribía links y rompía las pantallas). La página
 `/vuelos.html` ya tiene los contenedores `tpwl-search` y `tpwl-tickets`: es un buscador de vuelos en
 tiempo real, sin límite de búsquedas y con comisión para vos.
 

@@ -5,14 +5,16 @@ import react from "@vitejs/plugin-react";
 import { cloudflare } from "@cloudflare/vite-plugin";
 
 // Códigos de socios (Travelpayouts Drive, White Label, etc.): se pegan en
-// `partner-head.html`, que no se sube a git, y se insertan en el <head> de
-// todas las páginas al compilar. Así nunca hay conflictos al hacer `git pull`.
+// `partner-head.html`, que no se sube a git, y se insertan al compilar.
+// Solo van en vuelos.html (el buscador en vivo): en la app principal, el Drive
+// reescribe links por su cuenta y eso rompía las pantallas al cambiar de sección.
+// Los links de la app ya llevan el código de afiliado armado por nosotros.
 function partnerHead(): Plugin {
   const file = resolve(__dirname, "partner-head.html");
   return {
     name: "partner-head",
-    transformIndexHtml(html) {
-      if (!existsSync(file)) return html;
+    transformIndexHtml(html, ctx) {
+      if (!existsSync(file) || !ctx.filename.endsWith("vuelos.html")) return html;
       return html.replace("</head>", `${readFileSync(file, "utf8")}\n  </head>`);
     },
   };
