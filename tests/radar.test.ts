@@ -5,6 +5,9 @@ import { runRadar } from "../server/radar.ts";
 
 useCacheStore(undefined); // memoria
 
+// Barrido completo (los 6 meses de una vez); el de producción hace 1 mes por vez.
+const ALL_MONTHS = { monthsPerRun: 6 };
+
 function mockAPIs(prices: Record<string, number>, telegram: string[] = []) {
   vi.stubGlobal(
     "fetch",
@@ -35,10 +38,10 @@ describe("radar", () => {
     const t0 = new Date("2026-10-13T12:00:00Z");
     for (const [i, p] of [400, 410, 405].entries()) {
       mockAPIs({ SSA: p });
-      await runRadar("tok", "BUE", new Date(t0.getTime() + i * 6 * 3600000));
+      await runRadar("tok", "BUE", new Date(t0.getTime() + i * 6 * 3600000), ALL_MONTHS);
     }
     mockAPIs({ SSA: 300 });
-    const snap = await runRadar("tok", "BUE", new Date(t0.getTime() + 24 * 3600000));
+    const snap = await runRadar("tok", "BUE", new Date(t0.getTime() + 24 * 3600000), ALL_MONTHS);
     const ssa = snap.items.find((i) => i.destinationId === "salvador")!;
     expect(ssa).toMatchObject({ priceUSD: 300, typicalUSD: 405, baseline: "historial", trend: "down", isMinimum: true, isDeal: true });
     expect(ssa.discountPct).toBe(26);
@@ -49,13 +52,13 @@ describe("radar", () => {
 
   it("si Travelpayouts no responde, conserva la última foto", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 500 })));
-    const snap = await runRadar("tok", "BUE", new Date("2026-10-15T12:00:00Z"));
+    const snap = await runRadar("tok", "BUE", new Date("2026-10-15T12:00:00Z"), ALL_MONTHS);
     expect(snap.items.find((i) => i.destinationId === "salvador")?.priceUSD).toBe(300);
   });
 
   it("detecta ofertas frente al precio estimado cuando todavía no hay historial", async () => {
     mockAPIs({ MCZ: 150, GIG: 9999 });
-    const snap = await runRadar("tok", "ROS", new Date("2026-10-13T12:00:00Z"));
+    const snap = await runRadar("tok", "ROS", new Date("2026-10-13T12:00:00Z"), ALL_MONTHS);
     const maceio = snap.items.find((i) => i.destinationId === "maceio")!;
     expect(maceio).toMatchObject({ priceUSD: 150, baseline: "estimado", isDeal: true, airline: "H2", flightNumber: "H21820" });
     expect(maceio.discountPct).toBeGreaterThan(50);
@@ -82,7 +85,7 @@ describe("alertas", () => {
     });
     const sent: string[] = [];
     mockAPIs({ MCZ: 300 }, sent);
-    const snap = await runRadar("tok", "MDZ", new Date("2026-10-13T12:00:00Z"));
+    const snap = await runRadar("tok", "MDZ", new Date("2026-10-13T12:00:00Z"), ALL_MONTHS);
     expect((await evaluateAlerts("javier", snap, { token: "bot", siteUrl: "https://x.dev" })).sent).toBe(1);
     expect(sent[0]).toContain("Maceió entró en tu presupuesto");
     expect(sent[0]).toContain("https://x.dev/destino/maceio");
@@ -94,7 +97,7 @@ describe("alertas", () => {
     await saveSettings("javier", { radarDeals: true, minDiscount: 30, telegramChatId: "42", origin: "TUC" });
     const sent: string[] = [];
     mockAPIs({ FLN: 90 }, sent);
-    const snap = await runRadar("tok", "TUC", new Date("2026-10-13T12:00:00Z"));
+    const snap = await runRadar("tok", "TUC", new Date("2026-10-13T12:00:00Z"), ALL_MONTHS);
     await evaluateAlerts("javier", snap, { token: "bot" });
     expect(sent.some((m) => m.startsWith("Oferta del radar: Florianópolis"))).toBe(true);
   });
@@ -102,7 +105,7 @@ describe("alertas", () => {
   it("sin Telegram conectado no manda nada", async () => {
     await saveSettings("ana", { radarDeals: true, minDiscount: 5, origin: "SLA" });
     mockAPIs({ FLN: 90 });
-    const snap = await runRadar("tok", "SLA", new Date("2026-10-13T12:00:00Z"));
+    const snap = await runRadar("tok", "SLA", new Date("2026-10-13T12:00:00Z"), ALL_MONTHS);
     expect((await evaluateAlerts("ana", snap, { token: "bot" })).sent).toBe(0);
   });
 

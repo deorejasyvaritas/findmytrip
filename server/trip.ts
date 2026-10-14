@@ -1,6 +1,7 @@
 import type { Destination, GeoPlace, TripLeg, TripPlan, TripPlanRequest } from "../shared/types.ts";
-import { cached, fetchJSON } from "./cache.ts";
+import { edgeCached, fetchJSON } from "./cache.ts";
 import { DESTINATIONS } from "./data/destinations.ts";
+import AIRPORTS from "./data/airports.json";
 import { groundEstimate } from "../shared/ground.ts";
 import { addDays } from "./engine.ts";
 import { cheapestAnywhere, googleFlights } from "./providers/flights.ts";
@@ -38,7 +39,7 @@ export async function geocode(term: string): Promise<GeoPlace[]> {
     .slice(0, 3)
     .map((d) => ({ name: d.name, region: null, country: d.country, lat: d.lat, lon: d.lon, destinationId: d.id }));
   const found =
-    (await cached<GeoPlace[]>(`geo:${norm(q)}`, 30 * 86400, async () => {
+    (await edgeCached<GeoPlace[]>(`geo:${norm(q)}`, 30 * 86400, async () => {
       const qs = new URLSearchParams({ name: q, count: "8", language: "es" });
       const r = await fetchJSON<{ results?: OpenMeteoPlace[] }>(`https://geocoding-api.open-meteo.com/v1/search?${qs}`, "geocoding");
       if (!r) return null;
@@ -57,18 +58,14 @@ export async function geocode(term: string): Promise<GeoPlace[]> {
 
 type AirportRow = [code: string, city: string, lat: number, lon: number, name: string];
 
-/** Aeropuertos con vuelos comerciales (lista compacta en KV por 30 días). */
+/**
+ * Aeropuertos con vuelos comerciales: lista compacta incluida en el código
+ * (server/data/airports.json, se regenera con `node scripts/airports.mjs`).
+ * Antes se bajaba y parseaba la lista completa (2,4 MB): eso solo ya pasaba el
+ * límite de CPU del plan gratuito.
+ */
 async function airports(): Promise<AirportRow[]> {
-  const list = await cached<AirportRow[]>("airports:v1", 30 * 86400, async () => {
-    const r = await fetchJSON<
-      { code: string; city_code: string; name: string | null; name_translations?: { en?: string }; coordinates?: { lat: number; lon: number }; flightable?: boolean; iata_type?: string }[]
-    >("https://api.travelpayouts.com/data/es/airports.json", "airports");
-    if (!Array.isArray(r)) return null;
-    return r
-      .filter((a) => a.flightable && a.iata_type === "airport" && a.coordinates)
-      .map((a) => [a.code, a.city_code, Math.round(a.coordinates!.lat * 1000) / 1000, Math.round(a.coordinates!.lon * 1000) / 1000, a.name ?? a.name_translations?.en ?? a.code]);
-  });
-  return list ?? [];
+  return AIRPORTS as AirportRow[];
 }
 
 export interface NearAirport {

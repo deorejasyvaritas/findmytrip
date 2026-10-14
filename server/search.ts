@@ -1,5 +1,5 @@
 import type { FlightResult, FlightSearch, LegResult, MultiSearch, Place } from "../shared/types.ts";
-import { cached, fetchJSON } from "./cache.ts";
+import { cached, edgeCached, fetchJSON } from "./cache.ts";
 import { addDays } from "./engine.ts";
 
 // Buscador completo (estilo Despegar) con datos gratis:
@@ -23,7 +23,7 @@ interface TPPlace {
 export async function searchPlaces(term: string): Promise<Place[]> {
   const q = term.trim().toLowerCase();
   if (q.length < 2) return [];
-  const list = await cached<Place[]>(`places:${q}`, 30 * 86400, async () => {
+  const list = await edgeCached<Place[]>(`places:${q}`, 30 * 86400, async () => {
     const qs = new URLSearchParams({ term: q, locale: "es" });
     qs.append("types[]", "city");
     qs.append("types[]", "airport");

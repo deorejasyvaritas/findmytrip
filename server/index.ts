@@ -4,7 +4,7 @@ import type { Destination, Meta, SharedTripResponse } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
 import { addDays, baseFlightFrom, explore, lodgingNightly, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
-import { deleteJSON, fetchJSON, loadJSON, saveJSON, useCacheStore } from "./cache.ts";
+import { StorageError, deleteJSON, fetchJSON, loadJSON, saveJSON, useCacheStore } from "./cache.ts";
 import {
   changePassword,
   clearCookie,
@@ -19,6 +19,7 @@ import {
   normalizeUser,
   readSession,
   registerFail,
+  revokeSessions,
   requireAuth,
   saveAuthSettings,
   sessionCookie,
@@ -106,20 +107,23 @@ app.post("/register", async (c) => {
 
 app.post("/login", async (c) => {
   const ip = c.req.header("CF-Connecting-IP") ?? "local";
-  const locked = await loginLocked(ip);
-  if (locked) return c.json({ error: `Demasiados intentos. Probá de nuevo en ${locked} min.` }, 429);
   const body = credentials.parse(await c.req.json());
+  const locked = await loginLocked(ip, body.user);
+  if (locked) return c.json({ error: `Demasiados intentos. Probá de nuevo en ${locked} min.` }, 429);
   const account = await verifyPassword(body.user, body.password);
   if (!account) {
-    await registerFail(ip);
+    await registerFail(ip, body.user);
     return c.json({ error: "Usuario o contraseña incorrectos." }, 401);
   }
-  await clearFails(ip);
+  await clearFails(ip, body.user);
   c.header("Set-Cookie", sessionCookie(await createSession(account), isHttps(c.req.url)));
   return c.json({ ok: true, user: account.user, role: account.role });
 });
 
-app.post("/logout", (c) => {
+app.post("/logout", async (c) => {
+  // Revoca la sesión también en el servidor (si alguien copió la cookie, deja de servir).
+  const account = await readSession(cookieToken(c.req.header("Cookie"))).catch(() => null);
+  if (account) await revokeSessions(account).catch((err) => console.warn("[logout]", (err as Error).message));
   c.header("Set-Cookie", clearCookie(isHttps(c.req.url)));
   return c.json({ ok: true });
 });
@@ -127,7 +131,14 @@ app.post("/logout", (c) => {
 app.post("/account/password", async (c) => {
   const body = z.object({ current: z.string().max(200), password: z.string().min(8).max(200) }).parse(await c.req.json());
   const user = userId(c);
-  if (!(await verifyPassword(user, body.current))) return c.json({ error: "La contraseña actual no es correcta." }, 400);
+  const ip = c.req.header("CF-Connecting-IP") ?? "local";
+  const locked = await loginLocked(ip, user, "password");
+  if (locked) return c.json({ error: `Demasiados intentos. Probá de nuevo en ${locked} min.` }, 429);
+  if (!(await verifyPassword(user, body.current))) {
+    await registerFail(ip, user, "password");
+    return c.json({ error: "La contraseña actual no es correcta." }, 400);
+  }
+  await clearFails(ip, user, "password");
   await changePassword(user, body.password);
   const account = (await getAccount(user))!;
   c.header("Set-Cookie", sessionCookie(await createSession(account), isHttps(c.req.url)));
@@ -331,8 +342,8 @@ app.get("/stays", async (c) => {
       console.error("xotelo", err);
       return null;
     });
-    // Si el comparador gratis no trae datos, Google Hotels automático (con freno para no agotar el mes).
-    if (!quote && has(serpKey) && (await canUseGoogle(serpKey))) {
+    // Si el comparador gratis no trae datos, Google Hotels solo si el cliente lo pide (y con freno para no agotar el mes).
+    if (!quote && q.google === "1" && has(serpKey) && (await canUseGoogle(serpKey))) {
       quote = await googleHotels(serpKey, dest, q.checkin, q.nights, Math.min(q.travelers, 2));
     }
   }
@@ -409,10 +420,18 @@ app.post("/agent", async (c) => {
 // Radar de ofertas
 // ---------------------------------------------------------------------------
 
+/** Ciudades que barre el radar (RADAR_ORIGINS). Solo esas pueden disparar un barrido. */
+const radarOrigins = (e: Env) => (e.RADAR_ORIGINS ?? "BUE").split(",").map((o) => o.trim().toUpperCase()).filter(Boolean);
+
 app.get("/radar", async (c) => {
   const { origin } = z.object({ origin: originCode }).parse(c.req.query());
-  const snap = await getRadar(env(c).TRAVELPAYOUTS_TOKEN, origin);
-  if (!snap) return c.json({ error: "El radar necesita TRAVELPAYOUTS_TOKEN para funcionar." }, 503);
+  const e = env(c);
+  const allowed = radarOrigins(e).includes(origin);
+  const snap = await getRadar(allowed ? e.TRAVELPAYOUTS_TOKEN : undefined, origin);
+  if (!snap) {
+    if (!allowed) return c.json({ error: "El radar todavía no revisa precios desde esa ciudad." }, 404);
+    return c.json({ error: "El radar necesita TRAVELPAYOUTS_TOKEN para funcionar." }, 503);
+  }
   return c.json(snap);
 });
 
@@ -498,8 +517,8 @@ app.get("/trip/hotels", async (c) => {
     .object({
       name: z.string().max(80),
       country: z.string().max(60),
-      lat: z.coerce.number(),
-      lon: z.coerce.number(),
+      lat: z.coerce.number().min(-90).max(90),
+      lon: z.coerce.number().min(-180).max(180),
       checkin: isoDate,
       nights: nightsQ,
       travelers: travelersQ,
@@ -515,7 +534,8 @@ app.get("/trip/hotels", async (c) => {
   // Fuera del catálogo: Google Hotels automático (con freno para no agotar el mes).
   if (!quote && has(serpKey) && (await canUseGoogle(serpKey))) {
     // Destino "de paso" armado con el lugar elegido: Google filtra los hoteles cerca de esas coordenadas.
-    const place: Destination = { ...near.dest, id: `geo-${q.lat.toFixed(2)},${q.lon.toFixed(2)}`, name: q.name, country: q.country, lat: q.lat, lon: q.lon };
+    // Coordenadas redondeadas (~10 km) en la clave de caché: lugares casi iguales comparten búsqueda.
+    const place: Destination = { ...near.dest, id: `geo-${q.lat.toFixed(1)},${q.lon.toFixed(1)}`, name: q.name, country: q.country, lat: q.lat, lon: q.lon };
     quote = await googleHotels(serpKey, place, q.checkin, q.nights, Math.min(q.travelers, 2)).catch(() => null);
   }
   const estimateNight = lodgingNightly(near.dest, q.style, Number(q.checkin.slice(5, 7)));
@@ -641,6 +661,7 @@ app.post("/radar/run", async (c) => {
   const { origin } = z.object({ origin: originCode }).parse(c.req.query());
   const token = env(c).TRAVELPAYOUTS_TOKEN;
   if (!token) return c.json({ error: "Falta TRAVELPAYOUTS_TOKEN." }, 503);
+  if (!radarOrigins(env(c)).includes(origin)) return c.json({ error: "El radar todavía no revisa precios desde esa ciudad." }, 404);
   const prev = await getRadar(undefined, origin);
   if (prev && Date.now() - Date.parse(prev.updatedAt) < 20 * 60000) return c.json(prev);
   const snap = await runRadar(token, origin);
@@ -725,6 +746,13 @@ app.onError((err, c) => {
     const msg = field === "budgetUSD" ? "Poné un presupuesto mayor a cero." : `Revisá los datos de la búsqueda${field ? ` (${field})` : ""}.`;
     return c.json({ error: msg, details: err.issues }, 400);
   }
+  // Cuerpo que no es JSON válido.
+  if (err instanceof SyntaxError) return c.json({ error: "El pedido no es válido." }, 400);
+  // KV no respondió o se agotó la cuota de escrituras del día.
+  if (err instanceof StorageError) {
+    console.error("[kv]", err.message, err.cause);
+    return c.json({ error: "No pudimos guardar ni leer tus datos en este momento. Probá de nuevo en un rato." }, 503);
+  }
   console.error(err);
   return c.json({ error: "Algo salió mal. Probá de nuevo en un momento." }, 500);
 });
@@ -734,12 +762,13 @@ async function scheduledRadar(raw: Env): Promise<void> {
   useCacheStore(raw.CACHE);
   const e = config(raw);
   if (!e.TRAVELPAYOUTS_TOKEN) return;
-  const origins = (e.RADAR_ORIGINS ?? "BUE").split(",").map((o) => o.trim().toUpperCase()).filter(Boolean);
+  const origins = radarOrigins(e);
+  if (!origins.length) return;
+  // Una ciudad por barrido (rotando por hora) para no pasar el límite de CPU del plan gratuito.
+  const origin = origins[Math.floor(Date.now() / 3600000) % origins.length];
   const users = await listUsers();
-  for (const origin of origins.slice(0, 3)) {
-    const snap = await runRadar(e.TRAVELPAYOUTS_TOKEN, origin);
-    for (const user of users) await evaluateAlerts(user, snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL });
-  }
+  const snap = await runRadar(e.TRAVELPAYOUTS_TOKEN, origin);
+  for (const user of users) await evaluateAlerts(user, snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL });
 }
 
 export default {

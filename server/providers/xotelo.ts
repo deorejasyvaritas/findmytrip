@@ -1,5 +1,5 @@
 import type { Destination, HotelQuote, RealHotel, Style } from "../../shared/types.ts";
-import { cached, fetchJSON } from "../cache.ts";
+import { cached, edgeCached, fetchJSON } from "../cache.ts";
 import { addDays } from "../engine.ts";
 import { nearDestination } from "./hotels.ts";
 
@@ -112,9 +112,13 @@ async function listHotels(dest: Destination, geo: string): Promise<ListedHotel[]
   return list ?? [];
 }
 
-/** Precio más barato por noche (con impuestos) entre los sitios que comparan. */
+/**
+ * Precio más barato por noche (con impuestos) entre los sitios que comparan.
+ * Caché de borde, no KV: son 12 por búsqueda y gastaban la cuota diaria de
+ * escrituras. La cotización completa sí va a KV (una sola escritura).
+ */
 async function bestRate(key: string, checkin: string, checkout: string): Promise<{ nightly: number; site: string } | null> {
-  return cached(`xr:${key}-${checkin}-${checkout}`, 12 * 3600, async () => {
+  return edgeCached(`xr:${key}-${checkin}-${checkout}`, 12 * 3600, async () => {
     const r = await fetchJSON<XoteloResponse<{ rates?: XoteloRate[] }>>(
       `${API}/rates?${new URLSearchParams({ hotel_key: key, chk_in: checkin, chk_out: checkout, currency: "USD" })}`,
       "xotelo-rates",
@@ -143,8 +147,12 @@ const percentile = (sorted: number[], p: number) =>
   sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)))];
 
 export async function xoteloHotels(dest: Destination, checkin: string, nights: number): Promise<HotelQuote | null> {
+  if (!TA_GEO[dest.id]) return null;
+  return cached<HotelQuote>(`xq1:${dest.id}-${checkin}-${nights}`, 12 * 3600, () => xoteloQuote(dest, checkin, nights));
+}
+
+async function xoteloQuote(dest: Destination, checkin: string, nights: number): Promise<HotelQuote | null> {
   const geo = TA_GEO[dest.id];
-  if (!geo) return null;
   const checkout = addDays(checkin, nights);
   const listed = spread(await listHotels(dest, geo), 12);
   if (!listed.length) return null;

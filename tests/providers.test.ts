@@ -6,8 +6,10 @@ import { googleHotels } from "../server/providers/hotels.ts";
 import { usdArsRate } from "../server/providers/fx.ts";
 
 // Simula las APIs externas: cada test responde según la URL pedida.
+// La cuenta de SerpApi siempre tiene búsquedas de sobra.
 function mockFetch(handler: (url: string) => unknown) {
   const fn = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("serpapi.com/account.json")) return Response.json({ total_searches_left: 200 });
     const body = handler(String(input));
     return body === undefined ? new Response("", { status: 500 }) : Response.json(body);
   });
@@ -89,8 +91,10 @@ describe("SerpApi", () => {
       search_metadata: { google_flights_url: "https://www.google.com/travel/flights?x" },
     }));
     const q = await googleFlights("key", "BUE", rio, "2027-03-10", "2027-03-17");
-    expect(String(fn.mock.calls[0][0])).toContain("departure_id=EZE%2CAEP");
-    expect(String(fn.mock.calls[0][0])).toContain("arrival_id=GIG%2CSDU");
+    const search = String(fn.mock.calls.find((c) => String(c[0]).includes("search.json"))?.[0]);
+    expect(search).toContain("departure_id=EZE%2CAEP");
+    expect(search).toContain("arrival_id=GIG%2CSDU");
+    expect(search).toContain("api_key=key");
     expect(q?.lowestUSD).toBe(380);
     expect(q?.offers[0]).toMatchObject({ airlines: ["GOL"], stops: 1 });
     expect(q?.typicalRangeUSD).toEqual([400, 600]);

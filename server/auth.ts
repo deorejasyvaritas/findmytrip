@@ -1,11 +1,14 @@
 import type { Context, Next } from "hono";
-import { loadJSON, saveJSON } from "./cache.ts";
+import { edgeGet, edgePut, loadJSONStrict, saveJSON, trySaveJSON } from "./cache.ts";
 
 // Cuentas con usuario y contraseña, creadas desde el sitio.
 // - La primera cuenta que se registra es la dueña del sitio.
 // - Después, el registro queda cerrado salvo que la dueña lo habilite.
 // - Contraseñas guardadas con PBKDF2-SHA256 y sal aleatoria (nunca en texto).
 // - Sesión en una cookie firmada con HMAC (clave aleatoria guardada en KV).
+// - Los datos de cuentas (auth:*) se leen en modo estricto: si KV falla, el
+//   pedido falla (StorageError) en vez de tomarlo como "no existe", que antes
+//   regeneraba la clave de sesión o reabría el registro.
 
 const COOKIE = "fmt_session";
 const SESSION_DAYS = 30;
@@ -21,6 +24,8 @@ export interface Account {
   iterations: number;
   role: "owner" | "member";
   createdAt: string;
+  /** Generación de sesiones: al cerrar sesión sube y las cookies anteriores dejan de valer. */
+  gen?: number;
 }
 
 interface AuthSettings {
@@ -43,9 +48,9 @@ export const validUser = (u: string) => /^[a-z0-9._-]{3,30}$/.test(u);
 // Cuentas
 // ---------------------------------------------------------------------------
 
-export const listUsers = async () => (await loadJSON<string[]>("auth:users")) ?? [];
-export const getAccount = (user: string) => loadJSON<Account>(`auth:user:${normalizeUser(user)}`);
-export const getAuthSettings = async () => (await loadJSON<AuthSettings>("auth:settings")) ?? { openSignup: false };
+export const listUsers = async () => (await loadJSONStrict<string[]>("auth:users")) ?? [];
+export const getAccount = (user: string) => loadJSONStrict<Account>(`auth:user:${normalizeUser(user)}`);
+export const getAuthSettings = async () => (await loadJSONStrict<AuthSettings>("auth:settings")) ?? { openSignup: false };
 export const saveAuthSettings = (s: AuthSettings) => saveJSON("auth:settings", s);
 
 async function derive(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<Uint8Array> {
@@ -67,18 +72,22 @@ export async function signupOpen(): Promise<boolean> {
 
 export async function createAccount(rawUser: string, password: string): Promise<Account> {
   const user = normalizeUser(rawUser);
-  const users = await listUsers();
   const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = toB64(await derive(password, salt, PBKDF2_ITERATIONS));
+  // Releemos la lista justo antes de escribir (después del cálculo lento del
+  // hash) y la combinamos: así un registro simultáneo no borra a otro usuario.
+  const users = await listUsers();
   const account: Account = {
     user,
     salt: toB64(salt),
-    hash: toB64(await derive(password, salt, PBKDF2_ITERATIONS)),
+    hash,
     iterations: PBKDF2_ITERATIONS,
-    role: users.length === 0 ? "owner" : "member",
+    role: users.filter((u) => u !== user).length === 0 ? "owner" : "member",
     createdAt: new Date().toISOString(),
   };
   await saveJSON(`auth:user:${user}`, account);
-  await saveJSON("auth:users", [...users, user]);
+  const latest = await listUsers();
+  await saveJSON("auth:users", [...new Set([...latest, ...users, user])]);
   return account;
 }
 
@@ -106,18 +115,30 @@ export async function changePassword(user: string, password: string): Promise<vo
 // Sesión (cookie firmada)
 // ---------------------------------------------------------------------------
 
+let secretMemo: string | null = null;
+
 async function hmacKey(): Promise<CryptoKey> {
-  let secret = await loadJSON<string>("auth:secret");
+  // Lectura estricta: si KV falla, lanza (no inventamos otra clave, que cerraría todas las sesiones).
+  let secret = secretMemo ?? (await loadJSONStrict<string>("auth:secret"));
   if (!secret) {
     secret = randomB64(32);
     await saveJSON("auth:secret", secret);
   }
+  secretMemo = secret;
   return crypto.subtle.importKey("raw", fromB64(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
 
+/** Solo para tests: olvida la clave en memoria (simula otro Worker). */
+export const forgetSessionSecret = () => {
+  secretMemo = null;
+};
+
 export async function createSession(account: Account): Promise<string> {
   // La firma incluye un pedazo del hash: si cambiás la contraseña, se cierran las sesiones viejas.
-  const payload = toB64(enc.encode(JSON.stringify({ u: account.user, h: account.hash.slice(0, 8), exp: Date.now() + SESSION_DAYS * 86400000 })));
+  // Y la generación de sesiones: cerrar sesión las revoca en el servidor.
+  const payload = toB64(
+    enc.encode(JSON.stringify({ u: account.user, h: account.hash.slice(0, 8), g: account.gen ?? 0, exp: Date.now() + SESSION_DAYS * 86400000 })),
+  );
   const sig = toB64(new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(), enc.encode(payload))));
   return `${payload}.${sig}`;
 }
@@ -126,15 +147,23 @@ export async function readSession(token: string | undefined): Promise<Account | 
   if (!token) return null;
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return null;
+  let data: { u: string; h: string; g?: number; exp: number };
   try {
     if (!(await crypto.subtle.verify("HMAC", await hmacKey(), fromB64(sig), enc.encode(payload)))) return null;
-    const data = JSON.parse(new TextDecoder().decode(fromB64(payload))) as { u: string; h: string; exp: number };
-    if (data.exp < Date.now()) return null;
-    const account = await getAccount(data.u);
-    return account && account.hash.slice(0, 8) === data.h ? account : null;
-  } catch {
+    data = JSON.parse(new TextDecoder().decode(fromB64(payload)));
+  } catch (err) {
+    // Una falla de KV no es "sesión inválida": que el pedido falle y se reintente.
+    if ((err as Error)?.name === "StorageError") throw err;
     return null;
   }
+  if (typeof data?.exp !== "number" || data.exp < Date.now() || typeof data.u !== "string") return null;
+  const account = await getAccount(data.u);
+  return account && account.hash.slice(0, 8) === data.h && (account.gen ?? 0) === (data.g ?? 0) ? account : null;
+}
+
+/** Cierra todas las sesiones de la cuenta (1 escritura de KV). */
+export async function revokeSessions(account: Account): Promise<void> {
+  await saveJSON(`auth:user:${account.user}`, { ...account, gen: (account.gen ?? 0) + 1 });
 }
 
 export const sessionCookie = (token: string, secure: boolean) =>
@@ -148,23 +177,69 @@ export const cookieToken = (header: string | undefined) =>
     ?.slice(COOKIE.length + 1);
 
 // ---------------------------------------------------------------------------
-// Freno contra intentos repetidos: 5 fallos seguidos bloquean 15 min por IP.
+// Freno contra intentos repetidos: 5 fallos seguidos para un mismo usuario
+// desde una IP (o 20 desde una IP para cualquier usuario) bloquean 15 min.
+// Los contadores van en memoria y en la caché de borde (gratis, sin gastar
+// escrituras de KV). Solo el bloqueo se guarda en KV (1 escritura cada 5
+// fallos), para que valga en todos los servidores.
 // ---------------------------------------------------------------------------
 
 interface Fails {
   n: number;
   until?: number;
 }
-export async function loginLocked(ip: string): Promise<number> {
-  const f = await loadJSON<Fails>(`auth:fails:${ip}`);
-  return f?.until && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 60000) : 0;
+
+const MAX_FAILS_PER_IP = 20;
+const failKeys = (scope: string, ip: string, user: string) => [
+  { key: `${scope}:${ip}:${normalizeUser(user).slice(0, 80)}`, max: MAX_FAILS },
+  { key: `${scope}:${ip}`, max: MAX_FAILS_PER_IP },
+];
+const lockKey = (key: string) => `auth:lock:${key}`;
+
+async function readFails(key: string): Promise<Fails> {
+  const f = await edgeGet<Fails>(`fails:${key}`);
+  return f && typeof f.n === "number" ? f : { n: 0 };
 }
-export async function registerFail(ip: string): Promise<void> {
-  const f = (await loadJSON<Fails>(`auth:fails:${ip}`)) ?? { n: 0 };
-  const n = f.until && f.until < Date.now() ? 1 : f.n + 1;
-  await saveJSON(`auth:fails:${ip}`, n >= MAX_FAILS ? { n: 0, until: Date.now() + LOCK_MINUTES * 60000 } : { n });
+
+/** Minutos de bloqueo que quedan (0 si puede intentar). */
+export async function loginLocked(ip: string, user = "", scope = "login"): Promise<number> {
+  const now = Date.now();
+  let until = 0;
+  for (const { key } of failKeys(scope, ip, user)) {
+    const f = await readFails(key);
+    if (f.until && f.until > now) until = Math.max(until, f.until);
+  }
+  if (!until) {
+    for (const { key } of failKeys(scope, ip, user)) {
+      const lock = await loadJSONStrict<{ until: number }>(lockKey(key));
+      if (lock?.until && lock.until > now) until = Math.max(until, lock.until);
+    }
+  }
+  return until ? Math.ceil((until - now) / 60000) : 0;
 }
-export const clearFails = (ip: string) => saveJSON(`auth:fails:${ip}`, { n: 0 });
+
+export async function registerFail(ip: string, user = "", scope = "login"): Promise<void> {
+  const now = Date.now();
+  for (const { key, max } of failKeys(scope, ip, user)) {
+    const f = await readFails(key);
+    const n = f.until && f.until < now ? 1 : f.n + 1;
+    if (n >= max) {
+      const until = now + LOCK_MINUTES * 60000;
+      await edgePut(`fails:${key}`, { n: 0, until }, LOCK_MINUTES * 60);
+      // Si KV no deja escribir (cuota del día), el bloqueo queda igual en memoria y en la caché.
+      await trySaveJSON(lockKey(key), { until }, { expirationTtl: LOCK_MINUTES * 60 });
+    } else {
+      await edgePut(`fails:${key}`, { n }, LOCK_MINUTES * 60);
+    }
+  }
+}
+
+/** Reinicia el contador del usuario después de un ingreso correcto (solo si había fallos). */
+export async function clearFails(ip: string, user = "", scope = "login"): Promise<void> {
+  const [own] = failKeys(scope, ip, user);
+  const f = await readFails(own.key);
+  if (f.n > 0) await edgePut(`fails:${own.key}`, { n: 0 }, 60);
+}
 
 // ---------------------------------------------------------------------------
 // Middleware: toda la API pide sesión salvo el ingreso y el registro.
