@@ -337,7 +337,15 @@ function CountryCard({ o, search, budget }: { o: CountryOption; search: CountryS
         <div className="small muted">
           Total para {describeParty(search.party).toLowerCase()} · {money(s.cost.perPerson)} por persona
         </div>
-        {left != null && left > 0 && <div className="small muted">Te quedan {money(left)} del presupuesto</div>}
+        {left != null && left > 0 && (
+          <div className="small muted">
+            {!s.cost.dailyIncluded && s.cost.daily > 0
+              ? left >= s.cost.daily
+                ? `Te quedan ${money(left)}: alcanza para comidas y paseos (estimados en ${money(s.cost.daily)})`
+                : `Te quedan ${money(left)}, pero comidas y paseos se estiman en ${money(s.cost.daily)}`
+              : `Te quedan ${money(left)} del presupuesto`}
+          </div>
+        )}
       </div>
       <dl className="country-lines small">
         <div>
