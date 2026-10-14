@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { RadarItem, RadarSnapshot, RadarTier, Region } from "../../shared/types.ts";
 import { withRadarScore } from "../../shared/radar-score.ts";
 import { airlineName } from "../../shared/airlines.ts";
 import { api } from "../lib/api.ts";
+import { rememberRadar, useRadar } from "../lib/radar.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { capitalize, formatRange, timeAgo } from "../lib/format.ts";
 import Icon from "./Icon.tsx";
@@ -61,8 +62,13 @@ const TREND = {
 
 export default function RadarSection() {
   const { profile, meta, money, photos, destinations } = useApp();
-  const [snap, setSnap] = useState<RadarSnapshot | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const radar = useRadar(profile.origin, Boolean(meta?.liveFlights));
+  // Después de "Actualizar" se muestra la foto nueva (solo para esta ciudad).
+  const [fresh, setFresh] = useState<RadarSnapshot | null>(null);
+  const snap = fresh && fresh.origin === profile.origin ? fresh : radar.snap;
+  const state = radar.state;
+  // Cerrado: las 3 mejores. Abierto: números, filtros y todas las ofertas.
+  const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState<"deals" | "all">("deals");
   const [showMore, setShowMore] = useState(false);
   const [buying, setBuying] = useState<PurchaseTarget | null>(null);
@@ -76,25 +82,15 @@ export default function RadarSection() {
     [snap],
   );
 
-  useEffect(() => {
-    if (!meta?.liveFlights) return;
-    setState("loading");
-    api
-      .radar(profile.origin)
-      .then((s) => {
-        setSnap(s);
-        setState("ready");
-      })
-      .catch(() => setState("error"));
-  }, [meta?.liveFlights, profile.origin]);
-
   if (!meta?.liveFlights || state === "error") return null;
   const originName = meta.origins.find((o) => o.code === profile.origin)?.name ?? profile.origin;
 
   async function refresh() {
     setRefreshing(true);
     try {
-      setSnap(await api.radarRun(profile.origin));
+      const s = await api.radarRun(profile.origin);
+      rememberRadar(profile.origin, s);
+      setFresh(s);
     } finally {
       setRefreshing(false);
     }
@@ -107,7 +103,7 @@ export default function RadarSection() {
   );
   const deals = filtered.filter((i) => i.isDeal);
   const list = view === "deals" && deals.length ? deals : filtered;
-  const visible = list.slice(0, showMore ? 24 : 6);
+  const visible = list.slice(0, expanded ? (showMore ? 24 : 6) : 3);
   const filtering = Boolean(month || region || maxPrice);
 
   return (
@@ -132,7 +128,7 @@ export default function RadarSection() {
         )}
       </div>
 
-      {snap && (
+      {snap && expanded && (
         <div className="radar-stats" role="list">
           <Stat icon="tag" value={snap.stats.deals} label="Ofertas" />
           <Stat icon="trendDown" value={snap.stats.down} label="Bajaron" />
@@ -141,7 +137,7 @@ export default function RadarSection() {
         </div>
       )}
 
-      {snap && snap.items.length > 0 && (
+      {snap && expanded && snap.items.length > 0 && (
         <div className="radar-filters" role="group" aria-label="Filtrar ofertas">
           <select className="inline" aria-label="Mes" value={month} onChange={(e) => (setMonth(e.target.value), setShowMore(false))}>
             <option value="">Cualquier mes</option>
@@ -173,7 +169,7 @@ export default function RadarSection() {
         </div>
       )}
 
-      {snap && deals.length > 0 && (
+      {snap && expanded && deals.length > 0 && (
         <Segmented
           label="Qué mostrar"
           value={view}
@@ -185,7 +181,7 @@ export default function RadarSection() {
         />
       )}
 
-      <div className="grid-cards">
+      <div id="radar-list" className={expanded ? "grid-cards" : "grid-cards radar-top"}>
         {state === "loading" &&
           Array.from({ length: 3 }, (_, i) => (
             <div key={i} className="card skeleton" aria-hidden="true">
@@ -217,10 +213,30 @@ export default function RadarSection() {
           <p className="muted">El radar todavía no encontró precios desde {originName}. El próximo barrido es en unas horas.</p>
         </div>
       )}
-      {list.length > 6 && (
+      {expanded && list.length > 6 && (
         <button className="plain" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore}>
           {showMore ? "Ver menos" : `Ver ${Math.min(list.length, 24) - 6} más`}
           <Icon name="chevronDown" size={16} />
+        </button>
+      )}
+      {snap && snap.items.length > 0 && (expanded || base.length > 3) && (
+        <button
+          className="secondary radar-toggle"
+          aria-expanded={expanded}
+          aria-controls="radar-list"
+          onClick={() => {
+            setExpanded((v) => !v);
+            setShowMore(false);
+            if (expanded) {
+              setMonth("");
+              setRegion("");
+              setMaxPrice(0);
+              setView("deals");
+            }
+          }}
+        >
+          {expanded ? "Ver menos ofertas" : "Ver todas las ofertas"}
+          <Icon name="chevronDown" size={16} className={expanded ? "flip" : undefined} />
         </button>
       )}
 

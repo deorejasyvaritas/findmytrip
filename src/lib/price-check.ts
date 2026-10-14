@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TripPackage } from "../../shared/types.ts";
-import { applyRecheck, diffPackage, itemQuote, recheckRequest, type ItemDiff, type RecheckResponse } from "../../shared/recheck.ts";
+import { applyRecheck, diffPackage, itemQuote, netChange, recheckRequest, type ItemDiff, type RecheckResponse } from "../../shared/recheck.ts";
 import { ageHours } from "../../shared/price-age.ts";
 import { api } from "./api.ts";
 
@@ -29,6 +29,13 @@ function store(id: string, v: RecheckResponse): void {
   } catch {
     // Sin almacenamiento (modo privado): queda solo en pantalla.
   }
+}
+
+/** Última revisión guardada en este navegador, resumida para todo el viaje (sin consultar nada). */
+export function savedCheck(pkg: TripPackage): { checkedAt: string; status: "subio" | "bajo" | "igual"; deltaUSD: number } | null {
+  const res = load(pkg.id);
+  const net = res ? netChange(diffPackage(pkg, res)) : null;
+  return res && net ? { checkedAt: res.checkedAt, ...net } : null;
 }
 
 /** Horas desde el precio más viejo del viaje. */

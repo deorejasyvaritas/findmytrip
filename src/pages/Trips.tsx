@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import type { TripPackage } from "../../shared/types.ts";
 import { othersLabel, type CTrip } from "../../shared/ctrip.ts";
 import { defaultChecklist } from "../../shared/itinerary.ts";
@@ -41,6 +41,12 @@ export default function Trips() {
       .catch(() => setShares({}));
   }, []);
   const { money, meta, destinations, profile } = useApp();
+  // Desde "Seguí con tu viaje" (Explorar) se llega con #viaje-<id>: bajamos hasta ese viaje.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!hash.startsWith("#viaje-")) return;
+    requestAnimationFrame(() => document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: "start" }));
+  }, [hash]);
   // Los viajes por Argentina se muestran en pesos al oficial: para sumarlos con el resto
   // (dólar tarjeta) los pasamos a su equivalente en dólares tarjeta.
   const rates = { card: meta?.usdArsRate ?? 1450, official: meta?.usdArsOfficialRate };

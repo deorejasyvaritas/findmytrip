@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { Bags, ExploreResponse, Interest, MealPlan, Party, Profile, Region, Style, WatchItem, When } from "../../shared/types.ts";
+import type { Bags, ExploreResponse, Interest, MealPlan, Party, Profile, Region, Style, TripPackage, WatchItem, When } from "../../shared/types.ts";
 import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
@@ -14,7 +14,10 @@ import SuggestionCard, { Photo, SuggestionSkeleton } from "../components/Suggest
 import { PartyPicker, WhenPicker, describeWhen, validateWhen } from "../components/TripPickers.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { capitalize, formatDate, formatRange, monthName } from "../lib/format.ts";
+import { capitalize, formatDate, formatRange, isDomestic, monthName, timeAgo } from "../lib/format.ts";
+import { HERO_FALLBACK, pickHeroTiles, shortRange, tileHref } from "../lib/hero-picks.ts";
+import { savedCheck } from "../lib/price-check.ts";
+import { useRadar } from "../lib/radar.ts";
 import { useStored } from "../lib/storage.ts";
 
 interface Search {
@@ -94,6 +97,8 @@ export default function Home() {
   const [status, setStatus] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const [destQuery, setDestQuery] = useState("");
+  // En el celular los filtros secundarios van plegados: así el botón de buscar queda a la vista.
+  const [moreFilters, setMoreFilters] = useState(false);
 
   // Destinos que el usuario ya tiene en mente: los usamos para sugerir alternativas.
   const known = useMemo(
@@ -201,267 +206,13 @@ export default function Home() {
         ? { from: shown.when.depart, to: shown.when.depart }
         : undefined;
 
-  return (
-    <div className="stack-lg">
-      <section className="search-panel" aria-labelledby="search-title">
-        <div className="hero">
-          <div className="hero-copy">
-            <p className="hero-eyebrow">{profile.name ? `Hola ${profile.name}` : "Tu agente de viajes"}</p>
-            <h1 id="search-title">
-              Viajá más lejos <span>con lo que tenés.</span>
-            </h1>
-            <p className="lead">
-              Precios reales de vuelos y hoteles, saliendo desde {originName}.{" "}
-              {!app.profileSaved && (
-                <>
-                  <Link to="/perfil">Completá tu perfil</Link> para recomendaciones a tu medida.
-                </>
-              )}
-            </p>
-          </div>
-          <HeroPostcards />
-        </div>
+  const searched = Boolean(lastSearch);
+  const activeFilters =
+    (form.regions.length ? 1 : 0) + (form.maxFlightPP ? 1 : 0) + (form.directOnly ? 1 : 0) + (form.longWeekends && !exact ? 1 : 0) + form.interests.length;
 
-        {/* Botones con aria-pressed (no role="tab"): cada uno cambia el formulario de abajo. */}
-        <div className="search-tabs" role="group" aria-label="Tipo de búsqueda">
-          {HOME_TABS.map((t) => (
-            <button key={t.id} type="button" aria-pressed={tab === t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {tab === "vuelos" || tab === "paquete" ? (
-          <FlightForm key={tab} kind={tab} />
-        ) : tab === "hoteles" ? (
-          <HotelForm />
-        ) : tab === "multi" ? (
-          <MultiForm />
-        ) : tab === "budget" ? (
-          <form className="stack" style={{ gap: 16 }} onSubmit={submit} noValidate>
-            <div className="search-grid five">
-              <label className="tile">
-                <span>Presupuesto total ({profile.currency})</span>
-                <input inputMode="numeric" value={budgetInput} onChange={(e) => setBudgetInput(e.target.value.replace(/[^\d]/g, ""))} required />
-              </label>
-              <button
-                type="button"
-                className="tile tile-button"
-                aria-expanded={sheet === "when"}
-                aria-controls="sheet"
-                onClick={() => setSheet(sheet === "when" ? null : "when")}
-              >
-                <span>Cuándo</span>
-                <strong>{describeWhen(form.when)}</strong>
-              </button>
-              <label className="tile">
-                <span>Noches</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={60}
-                  disabled={exact}
-                  value={form.when.kind === "exact" && form.when.depart && form.when.ret ? nightsBetween(form.when.depart, form.when.ret) : form.nights}
-                  onChange={(e) => setForm({ ...form, nights: Number(e.target.value) })}
-                />
-              </label>
-              <button
-                type="button"
-                className="tile tile-button"
-                aria-expanded={sheet === "party"}
-                aria-controls="sheet"
-                onClick={() => setSheet(sheet === "party" ? null : "party")}
-              >
-                <span>Pasajeros</span>
-                <strong>{describeParty(form.party)}</strong>
-              </button>
-              <label className="tile">
-                <span>Equipaje por persona</span>
-                <select value={form.party.bags} onChange={(e) => setForm({ ...form, party: { ...form.party, bags: e.target.value as Bags } })}>
-                  {(Object.keys(BAGS_LABEL) as Bags[]).map((b) => (
-                    <option key={b} value={b}>
-                      {BAGS_LABEL[b]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {sheet && (
-              <div className="sheet" id="sheet">
-                <div className="sheet-head">
-                  <h3>{sheet === "when" ? "¿Cuándo querés viajar?" : "¿Quiénes viajan?"}</h3>
-                  <button type="button" className="plain" onClick={() => setSheet(null)}>
-                    Listo
-                  </button>
-                </div>
-                {sheet === "when" ? (
-                  <WhenPicker value={form.when} onChange={(when) => (setForm({ ...form, when }), setFormError(null))} />
-                ) : (
-                  <PartyPicker value={form.party} onChange={(party) => setForm({ ...form, party })} />
-                )}
-              </div>
-            )}
-            {formError && (
-              <p className="form-error" role="alert">
-                {formError}
-              </p>
-            )}
-
-            <div className="search-row">
-              <LodgingPicker
-                value={form.style}
-                onChange={(style) => setForm({ ...form, style })}
-                mealPlan={form.mealPlan ?? "room"}
-                onMealPlan={(mealPlan) => setForm({ ...form, mealPlan })}
-              />
-              <select
-                className="inline"
-                aria-label="Región"
-                value={form.regions[0] ?? ""}
-                onChange={(e) => setForm({ ...form, regions: e.target.value ? [e.target.value as Region] : [] })}
-              >
-                <option value="">Cualquier región</option>
-                {meta?.regions.map((r) => (
-                  <option key={r}>{r}</option>
-                ))}
-              </select>
-              <select
-                className="inline"
-                aria-label="Precio máximo de vuelo por persona"
-                value={form.maxFlightPP}
-                onChange={(e) => setForm({ ...form, maxFlightPP: Number(e.target.value) })}
-              >
-                <option value={0}>Sin tope de vuelo</option>
-                {FLIGHT_CAPS.map((p) => (
-                  <option key={p} value={p}>
-                    Vuelo hasta {app.money(p)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className={`chip ${form.directOnly ? "on" : ""}`}
-                aria-pressed={form.directOnly}
-                onClick={() => setForm({ ...form, directOnly: !form.directOnly })}
-              >
-                Solo directos
-              </button>
-              <button
-                type="button"
-                className={`chip ${form.longWeekends && !exact ? "on" : ""}`}
-                aria-pressed={Boolean(form.longWeekends && !exact)}
-                disabled={exact}
-                title={exact ? "Con fechas exactas no aplica" : "Salidas en los próximos fines de semana largos"}
-                onClick={() => setForm({ ...form, longWeekends: !form.longWeekends })}
-              >
-                <Icon name="calendar" size={14} />
-                Fines de semana largos
-              </button>
-            </div>
-            {meta && <InterestPicker options={meta.interests} value={form.interests} onChange={(interests) => setForm({ ...form, interests })} />}
-            <button className="search-cta" disabled={loading}>
-              <Icon name="search" size={18} />
-              {loading ? "Buscando precios…" : "Ver a dónde me alcanza"}
-            </button>
-            {status && !loading && (
-              <p className={status.startsWith("Listo") ? "search-status" : "form-error"} role="status">
-                {status}
-              </p>
-            )}
-          </form>
-        ) : (
-          <div className="stack-lg">
-            <TripForm />
-            <Link to="/rutas" className="routes-hint">
-              <Icon name="compass" size={18} />
-              ¿Sin ideas para combinar? Mirá rutas armadas
-              <Icon name="chevronRight" size={16} />
-            </Link>
-            <div className="stack">
-            <p className="catalog-title">O elegí un destino con ficha completa</p>
-            <div className="dest-search">
-              <Icon name="search" size={18} />
-              <input
-                aria-label="Buscar destino"
-                placeholder="Destino, país o tipo de viaje"
-                value={destQuery}
-                onChange={(e) => setDestQuery(e.target.value)}
-              />
-            </div>
-            <div className="dest-list">
-              {filteredDest.map((d) => (
-                <div key={d.id} className="dest-item-wrap">
-                  <button className="dest-item" onClick={() => navigate(`/destino/${d.id}`)}>
-                    {photos[d.id] && <img className="dest-thumb" src={photos[d.id]} alt="" loading="lazy" referrerPolicy="no-referrer" />}
-                    <span className="stack-sm grow">
-                      <span>{d.name}</span>
-                      <span className="sub">
-                        {d.country} · {d.tags.slice(0, 3).join(", ")}
-                      </span>
-                    </span>
-                    <Icon name="chevronRight" size={18} />
-                  </button>
-                  <CompareToggle id={d.id} name={d.name} iconOnly />
-                </div>
-              ))}
-              {filteredDest.length === 0 && <p>No hay destinos del catálogo con ese nombre. Usá el buscador de arriba: encuentra cualquier lugar.</p>}
-            </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <RadarSection />
-
-      <Link to="/rutas" className="card map-teaser">
-        <span className="map-teaser-art" aria-hidden="true">
-          <Icon name="compass" size={28} />
-        </span>
-        <span className="grow">
-          <strong>Rutas armadas</strong>
-          <span className="small muted">Nordeste de Brasil, Perú clásico, Europa y más: viajes de varias paradas listos para ajustar.</span>
-        </span>
-        <Icon name="chevronRight" size={18} />
-      </Link>
-
-      <Link to="/cruceros" className="card map-teaser">
-        <span className="map-teaser-art" aria-hidden="true">
-          <Icon name="ship" size={28} />
-        </span>
-        <span className="grow">
-          <strong>Cruceros</strong>
-          <span className="small muted">Brasil desde Buenos Aires, Caribe, Mediterráneo, fiordos y Cabo de Hornos: rutas, temporadas y dónde ver las salidas.</span>
-        </span>
-        <Icon name="chevronRight" size={18} />
-      </Link>
-
-      {meta?.liveFlights && (
-        <Link to="/mapa" className="card map-teaser">
-          <span className="map-teaser-art" aria-hidden="true">
-            <Icon name="globe" size={28} />
-          </span>
-          <span className="grow">
-            <strong>Mapa de vuelos baratos</strong>
-            <span className="small muted">Mirá en el mapa cuánto sale volar a cada destino desde tu ciudad.</span>
-          </span>
-          <Icon name="chevronRight" size={18} />
-        </Link>
-      )}
-
-      <LongWeekends />
-
-      {watchlist.length > 0 && (
-        <section>
-          <p className="grouped-title">Destinos que seguís</p>
-          <div className="grouped">
-            {watchlist.map((w) => (
-              <WatchRow key={w.id} w={w} />
-            ))}
-          </div>
-        </section>
-      )}
-
+  // Un solo bloque (con el ancla para bajar hasta los resultados al buscar).
+  const resultsArea = (
+    <div ref={resultsRef} className="stack-lg scroll-anchor">
       {error && (
         <div className="card empty" role="alert">
           <Icon name="info" size={28} />
@@ -472,7 +223,6 @@ export default function Home() {
         </div>
       )}
 
-      <div ref={resultsRef} className="scroll-anchor" />
       {loading && (
         <section aria-busy="true" aria-label="Buscando opciones">
           <div className="section-head">
@@ -490,7 +240,7 @@ export default function Home() {
         <>
           <section>
             <div className="section-head">
-              <h2>{lastSearch ? "Mejores opciones para vos" : "Ideas para vos"}</h2>
+              <h2>{searched ? "Mejores opciones para vos" : "Ideas para vos"}</h2>
               <div className="section-tools">
                 <span className="small muted">
                   {result.suggestions.length} de {result.considered} destinos entran en {app.money(shown.budgetUSD)} · {describeParty(shown.party)}
@@ -596,6 +346,246 @@ export default function Home() {
       )}
     </div>
   );
+
+  return (
+    <div className="stack-lg">
+      <section className="search-panel" aria-labelledby="search-title">
+        <div className="hero">
+          <div className="hero-copy">
+            <p className="hero-eyebrow">{profile.name ? `Hola ${profile.name}` : "Tu agente de viajes"}</p>
+            <h1 id="search-title">
+              Viajá más lejos <span>con lo que tenés.</span>
+            </h1>
+            {/* En el celular se acorta: el mosaico ya dice desde dónde son los precios. */}
+            <p className={`lead ${app.profileSaved ? "hide-sm" : ""}`}>
+              <span className="hide-sm">Precios reales de vuelos y hoteles, saliendo desde {originName}. </span>
+              {!app.profileSaved && (
+                <>
+                  <Link to="/perfil">Completá tu perfil</Link> para recomendaciones a tu medida.
+                </>
+              )}
+            </p>
+          </div>
+          <HeroMosaic originName={originName} />
+        </div>
+
+        {/* Botones con aria-pressed (no role="tab"): cada uno cambia el formulario de abajo. */}
+        <div className="search-tabs" role="group" aria-label="Tipo de búsqueda">
+          {HOME_TABS.map((t) => (
+            <button key={t.id} type="button" aria-pressed={tab === t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "vuelos" || tab === "paquete" ? (
+          <FlightForm key={tab} kind={tab} />
+        ) : tab === "hoteles" ? (
+          <HotelForm />
+        ) : tab === "multi" ? (
+          <MultiForm />
+        ) : tab === "budget" ? (
+          <form className="stack" style={{ gap: 16 }} onSubmit={submit} noValidate>
+            <div className="search-grid five">
+              <label className="tile">
+                <span>Presupuesto total ({profile.currency})</span>
+                <input inputMode="numeric" value={budgetInput} onChange={(e) => setBudgetInput(e.target.value.replace(/[^\d]/g, ""))} required />
+              </label>
+              <button
+                type="button"
+                className="tile tile-button"
+                aria-expanded={sheet === "when"}
+                aria-controls="sheet"
+                onClick={() => setSheet(sheet === "when" ? null : "when")}
+              >
+                <span>Cuándo</span>
+                <strong>{describeWhen(form.when)}</strong>
+              </button>
+              <label className="tile">
+                <span>Noches</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  disabled={exact}
+                  value={form.when.kind === "exact" && form.when.depart && form.when.ret ? nightsBetween(form.when.depart, form.when.ret) : form.nights}
+                  onChange={(e) => setForm({ ...form, nights: Number(e.target.value) })}
+                />
+              </label>
+              <button
+                type="button"
+                className="tile tile-button"
+                aria-expanded={sheet === "party"}
+                aria-controls="sheet"
+                onClick={() => setSheet(sheet === "party" ? null : "party")}
+              >
+                <span>Pasajeros</span>
+                <strong>{describeParty(form.party)}</strong>
+              </button>
+              <label className="tile">
+                <span>Equipaje por persona</span>
+                <select value={form.party.bags} onChange={(e) => setForm({ ...form, party: { ...form.party, bags: e.target.value as Bags } })}>
+                  {(Object.keys(BAGS_LABEL) as Bags[]).map((b) => (
+                    <option key={b} value={b}>
+                      {BAGS_LABEL[b]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {sheet && (
+              <div className="sheet" id="sheet">
+                <div className="sheet-head">
+                  <h3>{sheet === "when" ? "¿Cuándo querés viajar?" : "¿Quiénes viajan?"}</h3>
+                  <button type="button" className="plain" onClick={() => setSheet(null)}>
+                    Listo
+                  </button>
+                </div>
+                {sheet === "when" ? (
+                  <WhenPicker value={form.when} onChange={(when) => (setForm({ ...form, when }), setFormError(null))} />
+                ) : (
+                  <PartyPicker value={form.party} onChange={(party) => setForm({ ...form, party })} />
+                )}
+              </div>
+            )}
+            {formError && (
+              <p className="form-error" role="alert">
+                {formError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              className="more-filters-btn"
+              aria-expanded={moreFilters}
+              aria-controls="search-extras"
+              onClick={() => setMoreFilters((v) => !v)}
+            >
+              <Icon name="sliders" size={16} />
+              {moreFilters ? "Menos filtros" : activeFilters ? `Más filtros (${activeFilters})` : "Más filtros"}
+              <Icon name="chevronDown" size={16} className={moreFilters ? "flip" : undefined} />
+            </button>
+            <div id="search-extras" className={`search-extras ${moreFilters ? "open" : ""}`}>
+            <div className="search-row">
+              <LodgingPicker
+                value={form.style}
+                onChange={(style) => setForm({ ...form, style })}
+                mealPlan={form.mealPlan ?? "room"}
+                onMealPlan={(mealPlan) => setForm({ ...form, mealPlan })}
+              />
+              <select
+                className="inline"
+                aria-label="Región"
+                value={form.regions[0] ?? ""}
+                onChange={(e) => setForm({ ...form, regions: e.target.value ? [e.target.value as Region] : [] })}
+              >
+                <option value="">Cualquier región</option>
+                {meta?.regions.map((r) => (
+                  <option key={r}>{r}</option>
+                ))}
+              </select>
+              <select
+                className="inline"
+                aria-label="Precio máximo de vuelo por persona"
+                value={form.maxFlightPP}
+                onChange={(e) => setForm({ ...form, maxFlightPP: Number(e.target.value) })}
+              >
+                <option value={0}>Sin tope de vuelo</option>
+                {FLIGHT_CAPS.map((p) => (
+                  <option key={p} value={p}>
+                    Vuelo hasta {app.money(p)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className={`chip ${form.directOnly ? "on" : ""}`}
+                aria-pressed={form.directOnly}
+                onClick={() => setForm({ ...form, directOnly: !form.directOnly })}
+              >
+                Solo directos
+              </button>
+              <button
+                type="button"
+                className={`chip ${form.longWeekends && !exact ? "on" : ""}`}
+                aria-pressed={Boolean(form.longWeekends && !exact)}
+                disabled={exact}
+                title={exact ? "Con fechas exactas no aplica" : "Salidas en los próximos fines de semana largos"}
+                onClick={() => setForm({ ...form, longWeekends: !form.longWeekends })}
+              >
+                <Icon name="calendar" size={14} />
+                Fines de semana largos
+              </button>
+            </div>
+            {meta && <InterestPicker options={meta.interests} value={form.interests} onChange={(interests) => setForm({ ...form, interests })} />}
+            </div>
+            <button className="search-cta" disabled={loading}>
+              <Icon name="search" size={18} />
+              {loading ? "Buscando precios…" : "Ver a dónde me alcanza"}
+            </button>
+            {status && !loading && (
+              <p className={status.startsWith("Listo") ? "search-status" : "form-error"} role="status">
+                {status}
+              </p>
+            )}
+          </form>
+        ) : (
+          <div className="stack-lg">
+            <TripForm />
+            <Link to="/rutas" className="routes-hint">
+              <Icon name="compass" size={18} />
+              ¿Sin ideas para combinar? Mirá rutas armadas
+              <Icon name="chevronRight" size={16} />
+            </Link>
+            <div className="stack">
+            <p className="catalog-title">O elegí un destino con ficha completa</p>
+            <div className="dest-search">
+              <Icon name="search" size={18} />
+              <input
+                aria-label="Buscar destino"
+                placeholder="Destino, país o tipo de viaje"
+                value={destQuery}
+                onChange={(e) => setDestQuery(e.target.value)}
+              />
+            </div>
+            <div className="dest-list">
+              {filteredDest.map((d) => (
+                <div key={d.id} className="dest-item-wrap">
+                  <button className="dest-item" onClick={() => navigate(`/destino/${d.id}`)}>
+                    {photos[d.id] && <img className="dest-thumb" src={photos[d.id]} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+                    <span className="stack-sm grow">
+                      <span>{d.name}</span>
+                      <span className="sub">
+                        {d.country} · {d.tags.slice(0, 3).join(", ")}
+                      </span>
+                    </span>
+                    <Icon name="chevronRight" size={18} />
+                  </button>
+                  <CompareToggle id={d.id} name={d.name} iconOnly />
+                </div>
+              ))}
+              {filteredDest.length === 0 && <p>No hay destinos del catálogo con ese nombre. Usá el buscador de arriba: encuentra cualquier lugar.</p>}
+            </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Con búsqueda propia, los resultados van primero; si son ideas por defecto, al final. */}
+      {searched && resultsArea}
+
+      <ContinueTrip />
+
+      <RadarSection />
+
+      <LongWeekends />
+
+      <Inspire showMap={Boolean(meta?.liveFlights)} />
+
+      {!searched && resultsArea}
+    </div>
+  );
 }
 
 function WatchRow({ w }: { w: WatchItem }) {
@@ -642,22 +632,167 @@ function WatchRow({ w }: { w: WatchItem }) {
   );
 }
 
-// Postales del banner: tres destinos con foto, inclinadas como en una cartelera de viaje.
-const HERO_PICKS = ["florianopolis", "bariloche", "cusco", "madrid", "cartagena", "rio"];
+/** Último viaje guardado que todavía no pasó (propio o compartido). */
+function latestTrip(list: TripPackage[], today: string): TripPackage | null {
+  const upcoming = list.filter((p) => {
+    const end = p.returnDate || p.departDate;
+    return !end || end >= today;
+  });
+  return upcoming.reduce<TripPackage | null>((a, b) => (!a || Date.parse(b.createdAt) > Date.parse(a.createdAt) ? b : a), null);
+}
 
-function HeroPostcards() {
-  const { photos, destinations } = useApp();
-  const picks = HERO_PICKS.map((id) => destinations.find((d) => d.id === id)).filter((d) => d && photos[d.id]).slice(0, 3);
-  if (picks.length < 3) return null;
+/** "Seguí con tu viaje": el último viaje guardado y los destinos que seguís. */
+function ContinueTrip() {
+  const { packages, sharedTrips, watchlist, photos, destinations, money } = useApp();
+  const trip = useMemo(() => {
+    const seen = new Set<string>();
+    const all = [...sharedTrips.map((t) => t.pkg), ...packages].filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+    return latestTrip(all, new Date().toISOString().slice(0, 10));
+  }, [packages, sharedTrips]);
+  // Última revisión de precios guardada en este navegador (no consulta nada).
+  const check = useMemo(() => (trip ? savedCheck(trip) : null), [trip]);
+  if (!trip && watchlist.length === 0) return null;
+
+  const domestic = trip ? isDomestic(destinations.find((d) => d.id === trip.destinationId)?.region) : false;
+  const tripMoney = (usd: number) => money(usd, { domestic });
   return (
-    <div className="hero-cards" aria-hidden="true">
-      {picks.map((d) => (
-        <figure key={d!.id} className="postcard">
-          {/* lazy: en el celular las postales están ocultas y así no se bajan. */}
-          <img src={photos[d!.id]} alt="" width={128} height={110} loading="lazy" decoding="async" referrerPolicy="no-referrer" />
-          <figcaption>{d!.name}</figcaption>
-        </figure>
-      ))}
+    <section className="stack" aria-labelledby="continue-title">
+      <h2 id="continue-title">Seguí con tu viaje</h2>
+      {trip && (
+        <Link to={`/viajes#viaje-${trip.id}`} className="card continue-trip">
+          {photos[trip.destinationId] ? (
+            <img src={photos[trip.destinationId]} alt="" width={56} height={56} loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="continue-thumb" aria-hidden="true">
+              <Icon name="bookmark" size={22} />
+            </span>
+          )}
+          <span className="continue-body">
+            <strong>Viaje a {trip.destinationName}</strong>
+            <span className="small muted">
+              {trip.departDate && trip.returnDate ? formatRange(trip.departDate, trip.returnDate) : "Fechas a definir"} · {trip.travelers}{" "}
+              {trip.travelers === 1 ? "viajero" : "viajeros"}
+            </span>
+            {check && (
+              <span className={`small continue-check ${check.status === "subio" ? "warn-text" : check.status === "bajo" ? "success" : "muted"}`}>
+                {check.status !== "igual" && <Icon name={check.status === "subio" ? "trendUp" : "trendDown"} size={14} />}
+                {check.status === "subio"
+                  ? `Subió ${tripMoney(check.deltaUSD)}`
+                  : check.status === "bajo"
+                    ? `Bajó ${tripMoney(-check.deltaUSD)}`
+                    : "Sigue igual"}
+                {` · revisado ${timeAgo(check.checkedAt)}`}
+              </span>
+            )}
+          </span>
+          <span className="continue-total">
+            <strong>{tripMoney(trip.totalUSD)}</strong>
+            <span className="small muted">total</span>
+          </span>
+          <Icon name="chevronRight" size={18} />
+        </Link>
+      )}
+      {watchlist.length > 0 && (
+        <div>
+          <p className="grouped-title">Destinos que seguís</p>
+          <div className="grouped">
+            {watchlist.map((w) => (
+              <WatchRow key={w.id} w={w} />
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Rutas armadas, cruceros y mapa: tres accesos chicos en una fila. */
+function Inspire({ showMap }: { showMap: boolean }) {
+  const tiles = [
+    { to: "/rutas", icon: "compass" as const, title: "Rutas armadas", sub: "Viajes de varias paradas" },
+    { to: "/cruceros", icon: "ship" as const, title: "Cruceros", sub: "Rutas y temporadas" },
+    ...(showMap ? [{ to: "/mapa", icon: "globe" as const, title: "Mapa", sub: "Vuelos baratos" }] : []),
+  ];
+  return (
+    <section className="stack" aria-labelledby="inspire-title">
+      <h2 id="inspire-title">Para inspirarte</h2>
+      <div className="inspire-row">
+        {tiles.map((t) => (
+          <Link key={t.to} to={t.to} className="card inspire-tile">
+            <span className="inspire-art" aria-hidden="true">
+              <Icon name={t.icon} size={22} />
+            </span>
+            <strong>{t.title}</strong>
+            <span className="small muted">{t.sub}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Banner: mosaico de tres fotos con precios del radar. La grande es la oferta del día.
+ * Sin radar, fotos del catálogo sin precios (nunca montos inventados).
+ */
+function HeroMosaic({ originName }: { originName: string }) {
+  const { profile, meta, photos, destinations, money } = useApp();
+  const { snap, state } = useRadar(profile.origin, Boolean(meta?.liveFlights));
+  const byId = useMemo(() => new Map(destinations.map((d) => [d.id, d])), [destinations]);
+  const tiles = useMemo(
+    () =>
+      pickHeroTiles(snap?.items, {
+        photos,
+        regionOf: (id) => byId.get(id)?.region,
+        nameOf: (id) => byId.get(id)?.name,
+        fallbackIds: HERO_FALLBACK,
+      }),
+    [snap, photos, byId],
+  );
+
+  if (state === "loading") {
+    return (
+      <div className="hero-art" aria-hidden="true">
+        <div className="hero-mosaic">
+          {[0, 1, 2].map((k) => (
+            <span key={k} className={`mosaic-tile mosaic-sk ${k === 0 ? "big" : ""}`} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (tiles.length < 3) return null;
+  const priced = tiles.some((t) => t.priceUSD);
+  return (
+    <div className="hero-art">
+      <div className="hero-mosaic">
+        {tiles.map((t, k) => {
+          const price = t.priceUSD ? money(t.priceUSD, { domestic: isDomestic(byId.get(t.destinationId)?.region) }) : null;
+          const dates = k === 0 && t.depart && t.ret ? shortRange(t.depart, t.ret) : null;
+          const label = [t.name, k === 0 && t.deal && "hoy conviene", price && `desde ${price} ida y vuelta por persona`, dates && `del ${dates}`]
+            .filter(Boolean)
+            .join(", ");
+          return (
+            <Link key={t.destinationId} to={tileHref(t)} className={`mosaic-tile ${k === 0 ? "big" : ""}`} aria-label={label}>
+              <img
+                src={photos[t.destinationId]}
+                alt={t.name}
+                width={k === 0 ? 220 : 160}
+                height={k === 0 ? 240 : 116}
+                decoding="async"
+                referrerPolicy="no-referrer"
+              />
+              {k === 0 && t.deal && <span className="mosaic-pill">Hoy conviene</span>}
+              <span className="mosaic-info">
+                <strong>{t.name}</strong>
+                {price && <span>desde {price}</span>}
+                {dates && <span className="mosaic-dates">{dates}</span>}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+      {priced && <p className="mosaic-caption">Ida y vuelta por persona desde {originName}, visto en los últimos días.</p>}
     </div>
   );
 }

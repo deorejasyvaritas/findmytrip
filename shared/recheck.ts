@@ -118,6 +118,17 @@ export function diffPackage(pkg: TripPackage, res: RecheckResponse): ItemDiff[] 
   return out;
 }
 
+/**
+ * Resumen de una revisión para todo el viaje: suma solo los precios exactos de
+ * las mismas fechas. Null si ningún ítem se pudo comparar.
+ */
+export function netChange(diffs: ItemDiff[]): { status: "subio" | "bajo" | "igual"; deltaUSD: number } | null {
+  const exact = diffs.filter((d) => d.status === "igual" || d.status === "subio" || d.status === "bajo");
+  if (!exact.length) return null;
+  const deltaUSD = exact.reduce((s, d) => s + d.deltaUSD, 0);
+  return { status: deltaUSD > 0 ? "subio" : deltaUSD < 0 ? "bajo" : "igual", deltaUSD };
+}
+
 const dm = (iso: string) => `${Number(iso.slice(8, 10))}/${Number(iso.slice(5, 7))}`;
 
 /** "Sigue a USD 820", "Subió USD 40", "Bajó USD 25"... (`money` formatea en la moneda del usuario). */

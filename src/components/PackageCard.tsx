@@ -56,7 +56,7 @@ export default function PackageCard({
   const staleText = stale && !check?.checkedAt ? staleNote(stale) : null;
 
   return (
-    <article className="card package">
+    <article className="card package scroll-anchor" id={`viaje-${pkg.id}`}>
       <div className="suggestion-head">
         <div>
           <h3>{pkg.destinationName}</h3>
