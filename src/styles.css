@@ -489,14 +489,15 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .photo {
   margin: -20px -20px 0; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--r-lg) var(--r-lg) 0 0;
   background: linear-gradient(135deg, var(--brand) 0%, var(--brand-strong) 100%);
-  display: grid; place-items: center;
+  display: grid; place-items: center; position: relative;
 }
-.photo img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 300ms var(--ease-out); }
+/* Absoluta: en Safari de iPhone, height: 100% dentro de un grid con aspect-ratio no se resuelve y la foto se corre. */
+.photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 300ms var(--ease-out); }
 .photo span { color: #fefefe; font-size: 22px; font-weight: 700; letter-spacing: -0.016em; padding: 0 24px; text-align: center; }
 .suggestion:hover .photo img { transform: scale(1.03); }
 .sk.photo { background: var(--fill); }
-.dest-hero { aspect-ratio: 21 / 9; border-radius: var(--r-lg); overflow: hidden; background: var(--fill); }
-.dest-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dest-hero { position: relative; aspect-ratio: 21 / 9; border-radius: var(--r-lg); overflow: hidden; background: var(--fill); }
+.dest-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* ---------- Selectores de búsqueda ---------- */
 .search-grid.five { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) minmax(0, 0.7fr) minmax(0, 1.3fr) minmax(0, 1.2fr); }
