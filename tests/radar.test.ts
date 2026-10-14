@@ -42,6 +42,8 @@ describe("radar", () => {
     const ssa = snap.items.find((i) => i.destinationId === "salvador")!;
     expect(ssa).toMatchObject({ priceUSD: 300, typicalUSD: 405, baseline: "historial", trend: "down", isMinimum: true, isDeal: true });
     expect(ssa.discountPct).toBe(26);
+    // 40 + 26 × 1,5 + 10 (mínimo) + 4 (bajó) = 93, con 26 % de descuento: "Excelente"
+    expect(ssa).toMatchObject({ radarScore: 93, tier: "Excelente" });
     expect(snap.stats).toMatchObject({ down: 1, minimums: 1, deals: 1 });
   });
 
@@ -57,6 +59,8 @@ describe("radar", () => {
     const maceio = snap.items.find((i) => i.destinationId === "maceio")!;
     expect(maceio).toMatchObject({ priceUSD: 150, baseline: "estimado", isDeal: true, airline: "H2", flightNumber: "H21820" });
     expect(maceio.discountPct).toBeGreaterThan(50);
+    // Contra un precio estimado el puntaje queda topeado en 85
+    expect(maceio).toMatchObject({ radarScore: 85, tier: "Muy buena" });
     expect(snap.items[0].destinationId).toBe("maceio"); // la mejor oferta primero
     expect(snap.byMonth.maceio["2026-11"]).toMatchObject({ p: 150, dep: "2026-11-14" });
   });

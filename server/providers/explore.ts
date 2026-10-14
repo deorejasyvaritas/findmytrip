@@ -150,6 +150,7 @@ export async function realPrices(
       link: g.link,
       source: "google",
     };
+    if (typeof g.number_of_stops === "number") price.stops = g.number_of_stops;
     const dest = g.destination_airport?.code ? BY_AIRPORT.get(g.destination_airport.code) : undefined;
     if (dest) {
       push(dest.id, price);

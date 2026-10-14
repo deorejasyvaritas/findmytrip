@@ -116,6 +116,10 @@ export interface ExploreRequest {
   when?: When;
   /** Sumar comidas y paseos al total (por defecto van aparte). */
   includeDaily?: boolean;
+  /** Tope del vuelo ida y vuelta por persona, en USD. */
+  maxFlightPP?: number | null;
+  /** Solo vuelos directos (descarta lo que sabemos que tiene escalas). */
+  directOnly?: boolean;
 }
 
 export interface CostBreakdown {
@@ -147,6 +151,8 @@ export interface Suggestion {
   ret?: string;
   airline?: string;
   link?: string;
+  /** Vuelo directo comprobado (Google). Si no se sabe, queda sin marcar. */
+  direct?: boolean;
 }
 
 export type PriceSource = "google" | "aviasales" | "estimado";
@@ -160,6 +166,8 @@ export interface RealPrice {
   ret?: string;
   airline?: string;
   link?: string;
+  /** Escalas según Google; Aviasales no lo informa. */
+  stops?: number;
   source: "google" | "aviasales";
 }
 
@@ -338,8 +346,14 @@ export interface RadarItem {
   ret?: string;
   airline?: string;
   flightNumber?: string;
+  /** Orden interno del radar (descuento + extras); no se muestra. */
   score: number;
+  /** Puntaje público 0-100 (shared/radar-score.ts). Falta en fotos guardadas antes de existir. */
+  radarScore?: number;
+  tier?: RadarTier | null;
 }
+
+export type RadarTier = "Ofertón" | "Excelente" | "Muy buena" | "Buena";
 
 export interface RadarSnapshot {
   origin: string;

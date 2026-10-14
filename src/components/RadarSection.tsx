@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { RadarItem, RadarSnapshot, Region } from "../../shared/types.ts";
+import type { RadarItem, RadarSnapshot, RadarTier, Region } from "../../shared/types.ts";
+import { withRadarScore } from "../../shared/radar-score.ts";
 import { airlineName } from "../../shared/airlines.ts";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
@@ -22,7 +23,7 @@ function itemsForMonth(snap: RadarSnapshot, month: string): RadarItem[] {
     if (!m) continue;
     const discountPct = Math.max(0, Math.round((1 - m.p / item.typicalUSD) * 100));
     const isMinimum = item.isMinimum && m.p <= item.priceUSD;
-    out.push({
+    out.push(withRadarScore({
       ...item,
       priceUSD: m.p,
       depart: m.dep,
@@ -34,10 +35,18 @@ function itemsForMonth(snap: RadarSnapshot, month: string): RadarItem[] {
       isDeal: discountPct >= 15 || isMinimum,
       trend: m.p === item.priceUSD ? item.trend : "same",
       score: discountPct + (isMinimum ? 10 : 0),
-    });
+    }));
   }
   return out.sort((a, b) => b.score - a.score || a.priceUSD - b.priceUSD);
 }
+
+// Etiqueta pública según el puntaje: lo mejor en rosa de marca.
+const TIER_CLS: Record<RadarTier, string> = {
+  "Ofertón": "badge-brand",
+  Excelente: "badge-ok",
+  "Muy buena": "badge-ok",
+  Buena: "badge-tint",
+};
 
 const TREND = {
   down: { icon: "trendDown" as const, label: "Bajó", cls: "success" },
@@ -87,7 +96,8 @@ export default function RadarSection() {
     }
   }
 
-  const base = snap ? (month ? itemsForMonth(snap, month) : snap.items) : [];
+  // Las fotos guardadas antes del puntaje no lo traen: se calcula acá.
+  const base = snap ? (month ? itemsForMonth(snap, month) : snap.items.map(withRadarScore)) : [];
   const filtered = base.filter(
     (i) => (!region || regionOf.get(i.destinationId) === region) && (!maxPrice || i.priceUSD <= maxPrice),
   );
@@ -239,18 +249,25 @@ function RadarCard({
           <h3>{item.name}</h3>
           <p className="small muted">{item.depart && item.ret ? formatRange(item.depart, item.ret) : "Fechas flexibles"}</p>
         </div>
-        {item.isMinimum ? (
+        {item.tier ? (
+          <span className={`badge ${TIER_CLS[item.tier]}`} title={`Puntaje ${item.radarScore} de 100`}>
+            {item.tier}
+          </span>
+        ) : item.isMinimum ? (
           <span className="badge badge-ok">Mínimo</span>
         ) : item.discountPct > 0 ? (
-          <span className={`badge ${item.isDeal ? "badge-ok" : "badge-tint"}`}>−{item.discountPct} %</span>
+          <span className="badge badge-tint">−{item.discountPct} %</span>
         ) : null}
       </div>
       <div className="price-row">
         <div>
           <div className="price">{money(item.priceUSD)}</div>
           <div className="small muted">
-            Ida y vuelta por persona · habitual {money(item.typicalUSD)}
+            Ida y vuelta por persona · habitual{" "}
+            {item.priceUSD < item.typicalUSD ? <s>{money(item.typicalUSD)}</s> : money(item.typicalUSD)}
             {item.baseline === "estimado" ? " (estimado)" : ""}
+            {item.tier && item.discountPct > 0 ? ` · −${item.discountPct} %` : ""}
+            {item.tier && item.isMinimum ? " · mínimo visto" : ""}
           </div>
         </div>
         {trend && (
