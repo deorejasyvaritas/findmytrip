@@ -25,11 +25,13 @@ export function clearLocalData(): void {
 
 /**
  * Se llama apenas se sabe quién inició sesión, antes de leer la copia local.
- * Si la copia es de otra cuenta (o de antes de guardar la dueña), se borra:
- * los datos de esta cuenta vuelven del servidor.
+ * Si la copia es de otra cuenta, se borra: los datos de esta cuenta vuelven del
+ * servidor. Una copia sin dueña (de antes de guardarla) se adopta: era de quien
+ * usaba este navegador, y borrarla podía perder viajes que no llegaron a subirse.
  */
 export function claimLocalData(user: string): void {
-  if (localOwner() === user) return;
-  clearLocalData();
+  const owner = localOwner();
+  if (owner === user) return;
+  if (owner != null) clearLocalData();
   save(OWNER_KEY, user);
 }
