@@ -63,12 +63,19 @@ describe("explore con fechas: mínimos mensuales de Aviasales (#1)", () => {
 
 describe("explore con fechas de Google (#2)", () => {
   it("el costo usa las noches de las fechas que muestra, no las pedidas", () => {
-    const g: RealPrice = { month: 12, flightPP: 300, depart: "2026-12-03", ret: "2026-12-06", source: "google" };
+    const g: RealPrice = { month: 12, flightPP: 300, depart: "2026-12-03", ret: "2026-12-09", source: "google" };
     const s = find(explore({ ...base, nights: 7 }, realFor("rio", [g]), today), "rio")!;
     expect(s.depart).toBe("2026-12-03");
-    expect(s.ret).toBe("2026-12-06");
-    expect(s.nights).toBe(3);
-    expect(s.cost).toEqual(tripCost("BUE", rio, 12, 3, { adults: 2, childAges: [], bags: "cabin" }, "mid", 300));
+    expect(s.ret).toBe("2026-12-09");
+    expect(s.nights).toBe(6);
+    expect(s.cost).toEqual(tripCost("BUE", rio, 12, 6, { adults: 2, childAges: [], bags: "cabin" }, "mid", 300));
+  });
+
+  it("descarta fechas de Google con una estadía muy distinta a la pedida", () => {
+    // 3 noches no es el precio de un viaje de 7: no se muestra como si lo fuera.
+    const g: RealPrice = { month: 12, flightPP: 300, depart: "2026-12-03", ret: "2026-12-06", source: "google" };
+    const s = find(explore({ ...base, nights: 7 }, realFor("rio", [g]), today), "rio");
+    expect(s?.depart === "2026-12-03" && s?.ret === "2026-12-06").toBe(false);
   });
 });
 

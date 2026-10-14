@@ -368,12 +368,15 @@ export function explore(
     // estadía) no son el precio de esas fechas, así que ahí se estima.
     const inRange = (p: RealPrice) =>
       !window.from || (Boolean(p.depart) && p.depart! >= window.from && p.depart! <= (window.to ?? window.from));
-    const googleInRange = google.filter(inRange);
+    // Un precio real con fechas solo sirve si la estadía se parece a la pedida
+    // (±2 noches): un viaje de 6 noches no es el precio de uno de 10.
+    const lengthOk = (p: RealPrice) => !(p.depart && p.ret) || Math.abs(nightsBetween(p.depart, p.ret) - nights) <= 2;
+    const googleInRange = google.filter((p) => inRange(p) && lengthOk(p));
     // "Solo directos": descartamos lo que Google sabe que tiene escalas. Si
     // Google solo ve vuelos con escalas a ese destino, el destino no va.
     const googleOk = req.directOnly ? googleInRange.filter((p) => (p.stops ?? 0) === 0) : googleInRange;
     if (googleInRange.length && !googleOk.length) continue;
-    const realList = googleOk.length ? googleOk : realKnown.filter((p) => p.source !== "google" && inRange(p));
+    const realList = googleOk.length ? googleOk : realKnown.filter((p) => p.source !== "google" && inRange(p) && lengthOk(p));
     let options: TripOption[];
     if (window.weekends) {
       if (dest.flightHours > LONG_WEEKEND_MAX_HOURS) continue;
