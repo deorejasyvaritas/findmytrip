@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { Meta } from "../shared/types.ts";
+import type { Destination, Meta } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
-import { baseFlightFrom, explore, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
+import { addDays, baseFlightFrom, explore, lodgingNightly, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
 import { fetchJSON, loadJSON, saveJSON, useCacheStore } from "./cache.ts";
 import {
   changePassword,
@@ -49,6 +49,7 @@ import { escapes } from "./escapes.ts";
 import { crossAndFly } from "./cross.ts";
 import { partnerLinks } from "./partner-links.ts";
 import { searchFlights, searchMulti, searchPlaces } from "./search.ts";
+import { geocode, nearestCatalog, planTrip } from "./trip.ts";
 import { BY_CODE } from "./radar.ts";
 import { stayLinks } from "../shared/links.ts";
 import { extrasFor } from "../shared/extras.ts";
@@ -459,6 +460,64 @@ app.get("/search/hotels", async (c) => {
     hotels: quote?.hotels ?? [],
     options: dest ? stayOptions(dest, q.checkin, nights, q.travelers, quote?.tiers) : [],
     links: stayLinks(dest?.name ?? q.name ?? q.place, q.checkin, q.checkout, q.travelers, rooms),
+  });
+});
+
+// "Ya sé a dónde": cualquier lugar del mundo, con una o varias paradas.
+app.get("/geo", async (c) => {
+  const { q } = z.object({ q: z.string().max(60) }).parse(c.req.query());
+  return c.json(await geocode(q));
+});
+
+const stopSchema = z.object({
+  name: z.string().min(1).max(80),
+  region: z.string().max(80).nullable().optional(),
+  country: z.string().max(60),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+  nights: z.number().int().min(1).max(30),
+});
+
+app.post("/trip/plan", async (c) => {
+  const body = z.object({ origin: iata, depart: isoDate, stops: z.array(stopSchema).min(1).max(5) }).parse(await c.req.json());
+  const e = env(c);
+  return c.json(await planTrip(e.TRAVELPAYOUTS_TOKEN, body, e.TRAVELPAYOUTS_MARKER));
+});
+
+// Alojamiento de una parada: precios reales si está en el catálogo (o con Google, a pedido); si no, estimado y links.
+app.get("/trip/hotels", async (c) => {
+  const q = z
+    .object({
+      name: z.string().max(80),
+      country: z.string().max(60),
+      lat: z.coerce.number(),
+      lon: z.coerce.number(),
+      checkin: isoDate,
+      nights: nightsQ,
+      travelers: travelersQ,
+      style: z.enum(["low", "mid", "high"]).default("mid"),
+      google: z.string().optional(),
+    })
+    .parse(c.req.query());
+  const rooms = Math.max(1, Math.ceil(q.travelers / 2));
+  const near = nearestCatalog(q.lat, q.lon);
+  const inCatalog = near.km < 40 ? near.dest : null;
+  let quote = inCatalog ? await xoteloHotels(inCatalog, q.checkin, q.nights).catch(() => null) : null;
+  const serpKey = env(c).SERPAPI_KEY;
+  if (!quote && q.google === "1" && has(serpKey)) {
+    // Destino "de paso" armado con el lugar elegido: Google filtra los hoteles cerca de esas coordenadas.
+    const place: Destination = { ...near.dest, id: `geo-${q.lat.toFixed(2)},${q.lon.toFixed(2)}`, name: q.name, country: q.country, lat: q.lat, lon: q.lon };
+    quote = await googleHotels(serpKey, place, q.checkin, q.nights, Math.min(q.travelers, 2)).catch(() => null);
+  }
+  const estimateNight = lodgingNightly(near.dest, q.style, Number(q.checkin.slice(5, 7)));
+  return c.json({
+    destinationId: inCatalog?.id ?? null,
+    hotels: quote?.hotels ?? [],
+    source: quote?.source ?? null,
+    rooms,
+    estimateNight,
+    estimateFrom: near.km < 40 ? null : near.dest.name,
+    links: stayLinks(`${q.name}, ${q.country}`, q.checkin, addDays(q.checkin, q.nights), q.travelers, rooms),
   });
 });
 

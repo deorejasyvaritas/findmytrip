@@ -1,5 +1,8 @@
 import type { Extra } from "../../shared/extras.ts";
 import type {
+  GeoPlace,
+  TripPlan,
+  TripPlanRequest,
   FlightResult,
   LegResult,
   Place,
@@ -84,6 +87,18 @@ export const api = {
       options: StayOption[];
       links: { label: string; url: string }[];
     }>(`/api/search/hotels?${qs(p)}`),
+  geo: (q: string) => request<GeoPlace[]>(`/api/geo?${qs({ q })}`),
+  planTrip: (body: TripPlanRequest) => request<TripPlan>("/api/trip/plan", { method: "POST", body: JSON.stringify(body) }),
+  tripHotels: (p: { name: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; style: string; google?: 1 }) =>
+    request<{
+      destinationId: string | null;
+      hotels: RealHotel[];
+      source: "xotelo" | "google" | null;
+      rooms: number;
+      estimateNight: number;
+      estimateFrom: string | null;
+      links: { label: string; url: string }[];
+    }>(`/api/trip/hotels?${qs(p)}`),
   extras: (dest: string) => request<{ extras: Extra[]; partner: boolean }>(`/api/extras?dest=${dest}`),
   cross: (p: { origin: string; dest: string; month: string }) => request<CrossResult>(`/api/cross?${qs(p)}`),
   escapes: (origin: string) => request<EscapeWeekend[]>(`/api/escapes?origin=${origin}`),

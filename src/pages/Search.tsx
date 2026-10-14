@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { FlightResult, LegResult, RealHotel, StayOption, TripPackage } from "../../shared/types.ts";
+import type { FlightResult, LegResult, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
 import { airlineName } from "../../shared/airlines.ts";
 import { DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams } from "../../shared/pricing.ts";
-import { FlightForm, HotelForm, MultiForm, readPlace, type SearchKind } from "../components/FullSearch.tsx";
+import { FlightForm, HotelForm, MultiForm, TripForm, readPlace, readStop, type SearchKind } from "../components/FullSearch.tsx";
 import Icon from "../components/Icon.tsx";
 import Segmented from "../components/Segmented.tsx";
 import { api } from "../lib/api.ts";
@@ -19,6 +19,7 @@ const TITLES: Record<SearchKind, string> = {
   hoteles: "Hoteles",
   paquete: "Vuelo + Hotel",
   multi: "Multidestino",
+  viaje: "Tu viaje",
 };
 
 const shortDate = (iso: string) => formatDate(iso.slice(0, 10), { weekday: "short", day: "numeric", month: "short" });
@@ -43,8 +44,11 @@ export default function SearchPage() {
 
   useEffect(() => setEditing(false), [params]);
 
+  const tripStops = params.getAll("stop").map(readStop).filter((x): x is NonNullable<typeof x> => Boolean(x));
   const summary =
-    kind === "multi"
+    kind === "viaje"
+      ? `${tripStops.map((t) => `${t.name} (${t.nights} ${t.nights === 1 ? "noche" : "noches"})`).join(", ")} · desde ${depart && shortDate(depart)} · ${describeParty(party)}`
+      : kind === "multi"
       ? `${params.getAll("leg").length} tramos · ${describeParty(party)}`
       : kind === "hoteles"
         ? `${to?.label ?? ""} · ${depart && shortDate(depart)} al ${ret && shortDate(ret)} · ${describeParty(party)}`
@@ -69,7 +73,7 @@ export default function SearchPage() {
         </div>
         {editing && (
           <div className="search-panel compact">
-            {kind === "hoteles" ? <HotelForm /> : kind === "multi" ? <MultiForm /> : <FlightForm kind={kind} />}
+            {kind === "hoteles" ? <HotelForm /> : kind === "multi" ? <MultiForm /> : kind === "viaje" ? <TripForm /> : <FlightForm kind={kind} />}
           </div>
         )}
       </section>
@@ -78,6 +82,7 @@ export default function SearchPage() {
       {kind === "paquete" && from && to && depart && ret && <PackageResults />}
       {kind === "hoteles" && to && depart && ret && <HotelResults place={to.code} name={to.label} checkin={depart} checkout={ret} travelers={headcount(party)} />}
       {kind === "multi" && <MultiResults />}
+      {kind === "viaje" && from && depart && tripStops.length > 0 && <TripResults />}
     </div>
   );
 }
@@ -780,5 +785,312 @@ function MultiResults() {
         )}
       </aside>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// "Ya sé a dónde": recorrido con vuelos, traslados y alojamiento por parada
+// ---------------------------------------------------------------------------
+
+interface StayPick {
+  label: string;
+  total: number;
+  real: boolean;
+  link?: string;
+}
+
+function TripResults() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const app = useApp();
+  const { money, profile } = app;
+  const party = partyFromParams(params, DEFAULT_PARTY);
+  const units = fareUnits(party);
+  const from = readPlace(params.get("from"))!;
+  const depart = params.get("depart")!;
+  const stops = params.getAll("stop").map(readStop).filter((x): x is NonNullable<typeof x> => Boolean(x));
+  const key = params.getAll("stop").join(",") + from.code + depart;
+  const [plan, setPlan] = useState<TripPlan | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [stays, setStays] = useState<Record<number, StayPick>>({});
+
+  useEffect(() => {
+    setPlan(null);
+    setError(null);
+    setStays({});
+    api
+      .planTrip({ origin: from.code, depart, stops: stops.map(({ name, region, country, lat, lon, nights }) => ({ name, region, country, lat, lon, nights })) })
+      .then(setPlan)
+      .catch((e) => setError((e as Error).message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  if (error) return <ErrorCard message={error} />;
+
+  const flights = plan?.legs.filter((l) => l.kind === "flight") ?? [];
+  const flightsTotal = flights.reduce((s, l) => s + (l.price ? Math.round(l.price * units) : 0), 0);
+  const missingFlights = flights.filter((l) => l.price == null).length;
+  const staysTotal = Object.values(stays).reduce((s, x) => s + x.total, 0);
+  const total = flightsTotal + staysTotal;
+  const single = stops.length === 1 && stops[0].destinationId;
+
+  function save() {
+    if (!plan) return;
+    const items: TripPackage["items"] = [
+      ...flights.map((l) => ({ kind: "vuelo" as const, label: `${l.label}${l.price == null ? " (sin precio)" : ""}`, amountUSD: l.price ? Math.round(l.price * units) : 0, link: l.link ?? undefined })),
+      ...plan.stops.map((st, i) => ({
+        kind: "alojamiento" as const,
+        label: `${st.name}: ${stays[i]?.label ?? "alojamiento"} · ${st.nights} noches${stays[i]?.real ? "" : " (estimado)"}`,
+        amountUSD: stays[i]?.total ?? 0,
+        link: stays[i]?.link,
+      })),
+    ];
+    app.savePackage({
+      id: `pkg_${Date.now().toString(36)}`,
+      destinationId: stops[0].destinationId ?? `geo-${stops[0].name}`,
+      destinationName: stops.map((x) => x.name).join(" + "),
+      origin: from.code,
+      departDate: plan.depart,
+      returnDate: plan.ret,
+      travelers: headcount(party),
+      style: profile.style,
+      items,
+      totalUSD: total,
+      createdAt: new Date().toISOString(),
+      status: "armando",
+    });
+    navigate("/viajes");
+  }
+
+  // El recorrido intercala vuelos/traslados con las paradas.
+  const outbound = plan?.legs.find((l) => l.role === "out");
+  const inbound = plan?.legs.find((l) => l.role === "back");
+  const after = (i: number) => plan?.legs.find((l) => l.role === "between" && l.after === i);
+
+  return (
+    <div className="package-layout">
+      <div className="stack-lg">
+        {single && (
+          <Link className="card trip-catalog" to={`/destino/${stops[0].destinationId}?month=${depart.slice(0, 7)}&depart=${depart}&nights=${stops[0].nights}`}>
+            <Icon name="compass" size={20} />
+            <span className="grow">
+              <strong>{stops[0].name} tiene ficha completa</strong>
+              <span className="small muted">Calendario de precios por día, cuándo conviene ir, extras y más.</span>
+            </span>
+            <Icon name="chevronRight" size={18} />
+          </Link>
+        )}
+        {!plan && Array.from({ length: 3 }, (_, i) => <div key={i} className="card skeleton flight-skeleton" aria-hidden="true" />)}
+        {plan && (
+          <ol className="timeline">
+            {outbound && <LegCard leg={outbound} units={units} money={money} />}
+            {plan.stops.map((st, i) => (
+              <li key={i} className="timeline-stop">
+                <StopCard
+                  stop={st}
+                  index={i}
+                  travelers={headcount(party)}
+                  style={profile.style}
+                  money={money}
+                  onPick={(pick) => setStays((x) => ({ ...x, [i]: pick }))}
+                />
+                {after(i) && <LegCard leg={after(i)!} units={units} money={money} />}
+              </li>
+            ))}
+            {inbound && <LegCard leg={inbound} units={units} money={money} />}
+          </ol>
+        )}
+      </div>
+      <aside className="card summary">
+        <h2>Tu viaje</h2>
+        <p className="small muted">
+          {plan ? `${shortDate(plan.depart)} al ${shortDate(plan.ret)}` : ""} · {describeParty(party)}
+        </p>
+        <ul className="items">
+          <li>
+            <span className="label">
+              <Icon name="plane" size={16} />
+              Vuelos{missingFlights ? ` (${missingFlights} sin precio)` : ""}
+            </span>
+            <span>{money(flightsTotal)}</span>
+          </li>
+          {plan?.stops.map((st, i) => (
+            <li key={i}>
+              <span className="label">
+                <Icon name="bed" size={16} />
+                {st.name} · {st.nights} {st.nights === 1 ? "noche" : "noches"}
+                {stays[i] && !stays[i].real ? " (estimado)" : ""}
+              </span>
+              <span>{stays[i] ? money(stays[i].total) : "—"}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="total">
+          <span className="headline">Total</span>
+          <span className="price">{money(total)}</span>
+        </div>
+        <p className="small muted">
+          {missingFlights ? "Hay tramos sin precio visto: buscalos en vivo y sumalos. " : ""}Traslados por tierra no incluidos. Precios de referencia; se
+          reservan por separado.
+        </p>
+        <button className="primary full" disabled={!plan} onClick={save}>
+          <Icon name="bookmark" size={18} />
+          Guardar en Mis viajes
+        </button>
+      </aside>
+    </div>
+  );
+}
+
+function LegCard({ leg, units, money }: { leg: TripLeg; units: number; money: (n: number) => string }) {
+  if (leg.kind === "ground") {
+    return (
+      <div className="card trip-leg ground">
+        <Icon name="pin" size={18} />
+        <span className="grow">
+          <strong>{leg.label}</strong>
+          <span className="small muted">
+            {capitalize(shortDate(leg.date))} · unos {leg.km} km · cerca de {String(leg.hours).replace(".", ",")} h en auto, transfer o micro
+          </span>
+        </span>
+        {leg.mapsUrl && (
+          <a className="button secondary" href={leg.mapsUrl} target="_blank" rel="noreferrer">
+            Ver ruta <Icon name="external" size={14} />
+          </a>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="card trip-leg">
+      <Icon name="plane" size={18} />
+      <span className="grow">
+        <strong>{leg.label}</strong>
+        <span className="small muted">
+          {capitalize(shortDate(leg.date))}
+          {leg.returnDate ? ` al ${shortDate(leg.returnDate)}` : ""}
+          {leg.price != null ? ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")}` : " · sin precio visto para esa fecha"}
+        </span>
+      </span>
+      <span className="trip-leg-price">
+        {leg.price != null && (
+          <>
+            <strong>{money(Math.round(leg.price * units))}</strong>
+            <span className="small muted">{money(leg.price)} por adulto</span>
+          </>
+        )}
+        <a className="button secondary" href={(leg.price != null ? leg.link : leg.liveUrl) ?? "#"} target="_blank" rel="noreferrer sponsored">
+          {leg.price != null ? "Ver en Aviasales" : "Buscar en vivo"} <Icon name="external" size={14} />
+        </a>
+      </span>
+    </div>
+  );
+}
+
+function StopCard({
+  stop,
+  index,
+  travelers,
+  style,
+  money,
+  onPick,
+}: {
+  stop: TripPlan["stops"][number];
+  index: number;
+  travelers: number;
+  style: string;
+  money: (n: number) => string;
+  onPick: (p: StayPick) => void;
+}) {
+  const { meta } = useApp();
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.tripHotels>> | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
+  const load = (google: boolean) =>
+    api.tripHotels({ name: stop.name, country: stop.country, lat: stop.lat, lon: stop.lon, checkin: stop.checkin, nights: stop.nights, travelers, style, ...(google ? { google: 1 as const } : {}) });
+
+  useEffect(() => {
+    setData(null);
+    load(false)
+      .then(setData)
+      .catch(() => setData(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stop.name, stop.checkin, stop.nights, travelers]);
+
+  const hotels = (data?.hotels ?? []).slice(0, 6);
+  const choice = hotels.find((h) => h.name === picked) ?? hotels[Math.floor(hotels.length / 3)];
+  const rooms = data?.rooms ?? 1;
+
+  useEffect(() => {
+    if (!data) return;
+    if (choice) onPick({ label: choice.name, total: choice.totalUSD * rooms, real: true, link: choice.link ?? undefined });
+    else onPick({ label: "alojamiento", total: data.estimateNight * stop.nights * rooms, real: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, choice?.name]);
+
+  return (
+    <section className="card trip-stop" aria-label={`Parada ${index + 1}: ${stop.name}`}>
+      <div className="trip-stop-head">
+        <span className="leg-n" aria-hidden="true">
+          {index + 1}
+        </span>
+        <div className="grow">
+          <h3>{stop.name}</h3>
+          <p className="small muted">
+            {[stop.region, stop.country].filter(Boolean).join(", ")} · {stop.nights} {stop.nights === 1 ? "noche" : "noches"} · {shortDate(stop.checkin)} al{" "}
+            {shortDate(stop.checkout)}
+          </p>
+          {stop.airport && (
+            <p className="small muted">
+              Aeropuerto más conveniente: {stop.airport.name} ({stop.airport.code}){stop.airport.km > 15 ? `, a ${stop.airport.km} km` : ""}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {!data && <div className="sk" style={{ width: "100%", height: 72 }} />}
+      {data && hotels.length > 0 && (
+        <div className="hotel-results">
+          {hotels.map((h) => (
+            <HotelCard key={h.name} h={h} rooms={rooms} money={money} selected={choice === h} onSelect={() => setPicked(h.name)} />
+          ))}
+        </div>
+      )}
+      {data && hotels.length === 0 && (
+        <div className="trip-estimate">
+          <p>
+            Alojamiento estimado: <strong>{money(data.estimateNight * stop.nights * rooms)}</strong>{" "}
+            <span className="small muted">
+              ({money(data.estimateNight)} por noche{rooms > 1 ? ` · ${rooms} habitaciones` : ""}
+              {data.estimateFrom ? `, según precios de ${data.estimateFrom}` : ""})
+            </span>
+          </p>
+          {meta?.googleQuotes && (
+            <button
+              className="secondary"
+              disabled={loadingGoogle}
+              onClick={() => {
+                setLoadingGoogle(true);
+                load(true)
+                  .then(setData)
+                  .finally(() => setLoadingGoogle(false));
+              }}
+            >
+              {loadingGoogle ? "Buscando hoteles…" : "Ver hoteles reales (usa 1 búsqueda de Google)"}
+            </button>
+          )}
+        </div>
+      )}
+      {data && (
+        <div className="results-foot">
+          <span className="small muted">Compará en:</span>
+          {data.links.map((l) => (
+            <a key={l.label} className="pill-link" href={l.url} target="_blank" rel="noreferrer">
+              {l.label} <Icon name="external" size={14} />
+            </a>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

@@ -445,7 +445,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 @media (max-width: 860px) {
   .search-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .search-grid > :nth-child(-n + 2) { grid-column: span 2; }
-  .search-grid.flights > :nth-child(2), .search-grid.hotels > :nth-child(2), .search-grid.multi > *, .search-grid.party-only > * { grid-column: auto; }
+  .search-grid.flights > :nth-child(2), .search-grid.hotels > :nth-child(2), .search-grid.multi > *, .search-grid.party-only > *, .search-grid.stop > *, .search-grid.trip > * { grid-column: auto; }
   .grid-3 { grid-template-columns: 1fr; }
   .month-bars { grid-template-columns: repeat(6, minmax(0, 1fr)); row-gap: 16px; }
   .starters { grid-template-columns: 1fr; }
@@ -785,7 +785,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 }
 @media (max-width: 767px) {
   /* Estas grillas definen su propio armado: anulan el "dos primeros a lo ancho" del buscador por presupuesto. */
-  .search-grid.flights > *, .search-grid.hotels > *, .search-grid.multi > *, .search-grid.party-only > * { grid-column: auto; }
+  .search-grid.flights > *, .search-grid.hotels > *, .search-grid.multi > *, .search-grid.party-only > *, .search-grid.stop > * { grid-column: auto; }
   .search-grid.flights { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .search-grid.flights > .od, .search-grid.flights > .tile-button, .search-grid > .span-all { grid-column: 1 / -1; }
   /* Origen arriba, destino abajo, y el botón de invertir montado entre los dos. */
@@ -808,3 +808,34 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   .search-panel.compact { padding: 20px 16px; }
 }
 .results-bar select.inline { width: auto; min-width: 0; min-height: 36px; border-radius: 999px; font-size: 13px; font-weight: 500; padding-left: 12px; background-color: var(--surface); box-shadow: var(--shadow-sm); }
+.error-detail { display: block; max-width: 100%; overflow-wrap: anywhere; font-size: 13px; color: var(--label-2); }
+
+/* ---------- "Ya sé a dónde": viaje con paradas ---------- */
+.search-grid.stop { grid-template-columns: minmax(0, 1fr) 120px; flex: 1; min-width: 0; }
+.search-grid.trip { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); }
+.trip-nights { color: #fefefe; font-size: 13px; font-weight: 600; }
+.catalog-title { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(254, 254, 254, 0.86); }
+.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.timeline-stop { display: flex; flex-direction: column; gap: 12px; }
+.trip-leg { display: flex; align-items: center; gap: 12px; padding: 12px 16px; flex-wrap: wrap; }
+.trip-leg > .icon { color: var(--label-2); flex-shrink: 0; }
+.trip-leg .grow { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.trip-leg.ground { background: var(--fill-2); box-shadow: none; }
+.trip-leg-price { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.trip-stop { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
+.trip-stop-head { display: flex; gap: 12px; align-items: flex-start; }
+.trip-stop-head .leg-n { background: var(--brand); color: #fefefe; }
+.trip-stop-head h3 { font-size: 20px; }
+.trip-stop-head p { margin-top: 2px; }
+.trip-estimate { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.trip-catalog { display: flex; align-items: center; gap: 12px; padding: 16px; color: var(--label); font-weight: 400; }
+.trip-catalog:hover { text-decoration: none; box-shadow: var(--shadow-md); }
+.trip-catalog .grow { display: flex; flex-direction: column; gap: 2px; }
+.trip-catalog > .icon:first-child { color: var(--brand-ink); }
+@media (max-width: 767px) {
+  .search-grid.stop { grid-template-columns: minmax(0, 1fr) 96px; }
+  .search-grid.trip { grid-template-columns: minmax(0, 1fr); }
+  .search-grid.trip > * { grid-column: auto; }
+  .trip-leg-price { align-items: flex-start; width: 100%; }
+  .trip-leg-price .button { width: 100%; justify-content: center; }
+}

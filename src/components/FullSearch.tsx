@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type { Party, Place } from "../../shared/types.ts";
+import type { GeoPlace, Party, Place } from "../../shared/types.ts";
 import { DEFAULT_PARTY, describeParty, partyFromParams, partyToParams } from "../../shared/pricing.ts";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
@@ -11,7 +11,7 @@ import { PartyPicker } from "./TripPickers.tsx";
 // Buscador completo (estilo Despegar): vuelos, hoteles, vuelo + hotel y multidestino.
 // Cada formulario lleva a /buscar con los datos en la URL (se puede compartir y volver atrás).
 
-export type SearchKind = "vuelos" | "hoteles" | "paquete" | "multi";
+export type SearchKind = "vuelos" | "hoteles" | "paquete" | "multi" | "viaje";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (iso: string, n: number) => {
@@ -396,6 +396,185 @@ export function MultiForm() {
         )}
       </div>
       <div className="search-grid party-only">
+        <PartyTile party={party} onChange={setParty} />
+      </div>
+    </FormShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// "Ya sé a dónde": una o varias paradas, en cualquier lugar (también pueblos sin aeropuerto).
+// ---------------------------------------------------------------------------
+
+const geoLabel = (p: GeoPlace) => [p.name, p.region, p.country].filter(Boolean).join(", ");
+
+/** Campo de lugar (ciudad, pueblo o playa) con sugerencias. */
+export function GeoInput({ label, value, onChange }: { label: string; value: GeoPlace | null; onChange: (v: GeoPlace | null) => void }) {
+  const id = useId();
+  const [text, setText] = useState(value ? geoLabel(value) : "");
+  const [items, setItems] = useState<GeoPlace[]>([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const typed = useRef(false);
+
+  useEffect(() => setText(value ? geoLabel(value) : ""), [value?.lat, value?.lon, value?.name]);
+
+  useEffect(() => {
+    if (!typed.current || text.trim().length < 2) return setItems([]);
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api
+        .geo(text)
+        .then((r) => !cancelled && (setItems(r), setActive(0)))
+        .catch(() => !cancelled && setItems([]));
+    }, 220);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [text]);
+
+  function pick(p: GeoPlace) {
+    typed.current = false;
+    setText(geoLabel(p));
+    setOpen(false);
+    onChange(p);
+  }
+
+  return (
+    <label className="tile place">
+      <span>{label}</span>
+      <input
+        role="combobox"
+        aria-expanded={open && items.length > 0}
+        aria-controls={`${id}-list`}
+        aria-autocomplete="list"
+        aria-activedescendant={open && items[active] ? `${id}-${active}` : undefined}
+        autoComplete="off"
+        value={text}
+        placeholder="Ciudad, pueblo o playa"
+        onChange={(e) => {
+          typed.current = true;
+          setText(e.target.value);
+          setOpen(true);
+          if (value) onChange(null);
+        }}
+        onFocus={(e) => e.target.select()}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (!open || !items.length) return;
+          if (e.key === "ArrowDown") (e.preventDefault(), setActive((a) => Math.min(items.length - 1, a + 1)));
+          if (e.key === "ArrowUp") (e.preventDefault(), setActive((a) => Math.max(0, a - 1)));
+          if (e.key === "Enter") (e.preventDefault(), pick(items[active]));
+          if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      {open && items.length > 0 && (
+        <ul className="place-list" id={`${id}-list`} role="listbox">
+          {items.map((p, i) => (
+            <li
+              key={`${p.name}-${p.lat}-${p.lon}`}
+              id={`${id}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              className={i === active ? "on" : ""}
+              onMouseDown={(e) => (e.preventDefault(), pick(p))}
+            >
+              <Icon name="pin" size={16} />
+              <span className="grow">
+                <strong>{p.name}</strong>
+                <span className="small muted">{[p.region, p.country].filter(Boolean).join(", ")}</span>
+              </span>
+              {p.destinationId && <span className="place-code">Con ficha</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </label>
+  );
+}
+
+interface StopDraft {
+  place: GeoPlace | null;
+  nights: number;
+}
+
+export const stopParam = (p: GeoPlace, nights: number) => [p.name, p.region ?? "", p.country, p.lat, p.lon, nights, p.destinationId ?? ""].join("~");
+export function readStop(raw: string): (GeoPlace & { nights: number }) | null {
+  const [name, region, country, lat, lon, nights, destinationId] = raw.split("~");
+  if (!name || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return null;
+  return { name, region: region || null, country: country ?? "", lat: Number(lat), lon: Number(lon), nights: Math.max(1, Number(nights) || 1), destinationId: destinationId || null };
+}
+
+export function TripForm() {
+  const navigate = useNavigate();
+  const home = useOrigin();
+  const pre = usePrefill("viaje");
+  const [origin, setOrigin] = useState<PlaceValue | null>(readPlace(pre?.get("from") ?? null) ?? home);
+  useEffect(() => setOrigin((o) => (o && o.code === home.code && o.label !== home.label ? home : o)), [home.code, home.label]);
+  const [depart, setDepart] = useState(pre?.get("depart") ?? plusDays(today(), 30));
+  const [stops, setStops] = useState<StopDraft[]>(() => {
+    const fromUrl = (pre?.getAll("stop") ?? []).map(readStop).filter((s): s is NonNullable<typeof s> => Boolean(s));
+    return fromUrl.length ? fromUrl.map((s) => ({ place: s, nights: s.nights })) : [{ place: null, nights: 5 }];
+  });
+  const [party, setParty] = useParty(pre);
+  const [error, setError] = useState<string | null>(null);
+  const totalNights = stops.reduce((n, s) => n + (s.nights || 0), 0);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!origin) return setError("Elegí desde dónde salís.");
+    if (stops.some((s) => !s.place)) return setError("Elegí cada lugar de la lista de sugerencias.");
+    if (stops.some((s) => !s.nights || s.nights < 1)) return setError("Cada parada necesita al menos 1 noche.");
+    if (!depart) return setError("Elegí la fecha de salida.");
+    setError(null);
+    const q = new URLSearchParams({ tipo: "viaje", from: placeParam(origin), depart, ...partyToParams(party) });
+    stops.forEach((s) => q.append("stop", stopParam(s.place!, s.nights)));
+    navigate(`/buscar?${q}`);
+  }
+
+  return (
+    <FormShell onSubmit={submit} error={error} cta="Armar el viaje">
+      <ol className="legs">
+        {stops.map((s, i) => (
+          <li key={i} className="leg">
+            <span className="leg-n" aria-hidden="true">
+              {i + 1}
+            </span>
+            <div className="search-grid stop">
+              <GeoInput label={stops.length > 1 ? `Parada ${i + 1}` : "¿A dónde vas?"} value={s.place} onChange={(place) => setStops((ls) => ls.map((l, j) => (j === i ? { ...l, place } : l)))} />
+              <label className="tile">
+                <span>Noches</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={30}
+                  value={s.nights}
+                  onChange={(e) => setStops((ls) => ls.map((l, j) => (j === i ? { ...l, nights: Number(e.target.value) } : l)))}
+                />
+              </label>
+            </div>
+            {stops.length > 1 && (
+              <button type="button" className="leg-remove" aria-label={`Quitar parada ${i + 1}`} onClick={() => setStops((ls) => ls.filter((_, j) => j !== i))}>
+                <Icon name="close" size={16} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ol>
+      <div className="search-row">
+        {stops.length < 5 && (
+          <button type="button" className="chip" onClick={() => setStops((ls) => [...ls, { place: null, nights: 4 }])}>
+            <Icon name="plus" size={16} />
+            Agregar otra parada
+          </button>
+        )}
+        {stops.length > 1 && <span className="trip-nights">{totalNights} noches en total</span>}
+      </div>
+      <div className="search-grid trip">
+        <PlaceInput label="Salís desde" value={origin} onChange={setOrigin} placeholder="Ciudad o aeropuerto" />
+        <DateTile label="Fecha de salida" value={depart} min={today()} onChange={setDepart} />
         <PartyTile party={party} onChange={setParty} />
       </div>
     </FormShell>

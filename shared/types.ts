@@ -495,3 +495,67 @@ export interface LegResult {
   date: string;
   options: FlightResult[];
 }
+
+// ---------------------------------------------------------------------------
+// "Ya sé a dónde": viaje con una o varias paradas
+// ---------------------------------------------------------------------------
+
+export interface GeoPlace {
+  name: string;
+  region: string | null;
+  country: string;
+  lat: number;
+  lon: number;
+  /** Destino del catálogo en esa zona (tiene ficha completa). */
+  destinationId: string | null;
+}
+
+export interface TripStopInput {
+  name: string;
+  region?: string | null;
+  country: string;
+  lat: number;
+  lon: number;
+  nights: number;
+}
+
+export interface TripPlanRequest {
+  origin: string;
+  depart: string;
+  stops: TripStopInput[];
+}
+
+export interface TripLeg {
+  kind: "flight" | "ground";
+  /** out = ida (o ida y vuelta), between = entre la parada `after` y la siguiente, back = vuelta. */
+  role: "out" | "between" | "back";
+  after: number | null;
+  label: string;
+  from: string;
+  to: string;
+  date: string;
+  returnDate: string | null;
+  /** Vuelo: precio por adulto visto en Aviasales (null si no hay datos). */
+  price: number | null;
+  airline: string | null;
+  stops: number | null;
+  link: string | null;
+  liveUrl: string | null;
+  /** Por tierra: distancia y horas aproximadas. */
+  km: number | null;
+  hours: number | null;
+  mapsUrl: string | null;
+}
+
+export interface TripPlan {
+  origin: string;
+  depart: string;
+  ret: string;
+  stops: (TripStopInput & {
+    region: string | null;
+    checkin: string;
+    checkout: string;
+    airport: { code: string; city: string; name: string; km: number } | null;
+  })[];
+  legs: TripLeg[];
+}

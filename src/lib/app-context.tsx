@@ -45,7 +45,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [photos, setPhotos] = useState<Record<string, string>>({});
   const [storedProfile, setStoredProfile] = useStored<Profile | null>("fmt.profile", null);
-  const [packages, setPackages] = useStored<TripPackage[]>("fmt.packages", []);
+  const [rawPackages, setPackages] = useStored<TripPackage[]>("fmt.packages", []);
+  const packages = useMemo(() => cleanPackages(rawPackages), [rawPackages]);
   const [watchlist, setWatchlist] = useStored<WatchItem[]>("fmt.watchlist", []);
 
   // Tus datos viven en el servidor (protegidos y sincronizados entre dispositivos).
@@ -61,8 +62,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           else if (!isEmpty(local)) api.saveUserData(key, local).catch(() => {});
         };
         sync("profile", storedProfile, setStoredProfile, (v) => v == null);
-        sync("packages", packages, setPackages, (v) => !v.length);
-        sync("watchlist", watchlist, setWatchlist, (v) => !v.length);
+        sync("packages", packages, (v) => setPackages(cleanPackages(v)), (v) => !v.length);
+        sync("watchlist", watchlist, (v) => setWatchlist(Array.isArray(v) ? v.filter((w) => w && w.id && w.destinationId) : []), (v) => !v.length);
       })
       .catch(() => {})
       .finally(() => setSynced(true));
@@ -148,4 +149,22 @@ export function useApp(): AppState {
   const v = useContext(Ctx);
   if (!v) throw new Error("useApp fuera de AppProvider");
   return v;
+}
+
+/** Descarta o completa viajes guardados con datos incompletos (versiones viejas o datos dañados). */
+function cleanPackages(list: unknown): TripPackage[] {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((p): p is TripPackage => Boolean(p && typeof p === "object" && (p as TripPackage).id))
+    .map((p) => ({
+      ...p,
+      destinationName: p.destinationName || "Viaje",
+      departDate: typeof p.departDate === "string" ? p.departDate : "",
+      returnDate: typeof p.returnDate === "string" ? p.returnDate : "",
+      travelers: Number(p.travelers) > 0 ? Number(p.travelers) : 1,
+      items: Array.isArray(p.items) ? p.items.filter((i) => i && typeof i.amountUSD === "number") : [],
+      totalUSD: Number(p.totalUSD) || 0,
+      status: p.status === "idea" || p.status === "reservado" ? p.status : "armando",
+      style: p.style ?? "mid",
+    }));
 }

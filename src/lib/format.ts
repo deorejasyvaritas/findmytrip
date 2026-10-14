@@ -16,7 +16,9 @@ export function formatMoney(usd: number, currency: "USD" | "ARS", rate: number):
 }
 
 export function formatDate(iso: string, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }): string {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString("es-AR", opts);
+  // Acepta fechas con hora ("2026-12-10T23:55:00-03:00") y no rompe con datos vacíos.
+  const d = new Date(`${String(iso ?? "").slice(0, 10)}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("es-AR", opts);
 }
 
 export const STYLE_LABEL = { low: "Económico", mid: "Confort", high: "Premium" } as const;

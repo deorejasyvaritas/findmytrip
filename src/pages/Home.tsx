@@ -5,7 +5,7 @@ import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import LongWeekends from "../components/LongWeekends.tsx";
-import { FlightForm, HotelForm, MultiForm } from "../components/FullSearch.tsx";
+import { FlightForm, HotelForm, MultiForm, TripForm } from "../components/FullSearch.tsx";
 import RadarSection from "../components/RadarSection.tsx";
 import Segmented from "../components/Segmented.tsx";
 import SuggestionCard, { Photo, SuggestionSkeleton } from "../components/SuggestionCard.tsx";
@@ -344,7 +344,10 @@ export default function Home() {
             )}
           </form>
         ) : (
-          <div className="stack">
+          <div className="stack-lg">
+            <TripForm />
+            <div className="stack">
+            <p className="catalog-title">O elegí un destino con ficha completa</p>
             <div className="dest-search">
               <Icon name="search" size={18} />
               <input
@@ -352,7 +355,6 @@ export default function Home() {
                 placeholder="Destino, país o tipo de viaje"
                 value={destQuery}
                 onChange={(e) => setDestQuery(e.target.value)}
-                autoFocus
               />
             </div>
             <div className="dest-list">
@@ -368,7 +370,8 @@ export default function Home() {
                   <Icon name="chevronRight" size={18} />
                 </button>
               ))}
-              {filteredDest.length === 0 && <p>No hay destinos que coincidan. Probá con otra palabra, por ejemplo "playa".</p>}
+              {filteredDest.length === 0 && <p>No hay destinos del catálogo con ese nombre. Usá el buscador de arriba: encuentra cualquier lugar.</p>}
+            </div>
             </div>
           </div>
         )}

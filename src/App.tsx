@@ -1,4 +1,5 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import { LegalFooter } from "./pages/Legal.tsx";
 import Icon, { BrandMark } from "./components/Icon.tsx";
 import { useApp } from "./lib/app-context.tsx";
@@ -29,6 +30,7 @@ function TabLink({ tab, badge, withIcon }: { tab: (typeof TABS)[number]; badge?:
 
 export default function App() {
   const { packages } = useApp();
+  const location = useLocation();
   const badgeFor = (to: string) => (to === "/viajes" ? packages.length : 0);
   return (
     <div className="app">
@@ -45,6 +47,8 @@ export default function App() {
         </div>
       </header>
       <main className="main">
+        {/* Una por pantalla: al cambiar de sección se reinicia y se puede seguir navegando. */}
+        <ErrorBoundary key={location.pathname}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/destino/:id" element={<DestinationPage />} />
@@ -53,6 +57,7 @@ export default function App() {
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/buscar" element={<SearchPage />} />
         </Routes>
+        </ErrorBoundary>
       </main>
       <LegalFooter />
       <nav className="tabbar" aria-label="Principal">
