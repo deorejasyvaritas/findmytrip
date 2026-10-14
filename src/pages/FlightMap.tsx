@@ -90,7 +90,8 @@ export default function FlightMapPage() {
     if (!el || state !== "ready") return;
     const map = L.map(el, {
       worldCopyJump: true,
-      minZoom: 2,
+      // En el celular, zoom 1 (el mundo entero mide ~512 px) para que entren todos los pines.
+      minZoom: el.clientWidth < 640 ? 1 : 2,
       maxZoom: 10,
       zoomControl: true,
       zoomAnimation: !reducedMotion(),
@@ -180,6 +181,7 @@ export default function FlightMapPage() {
     const pts: L.LatLngTuple[] = items.map((i) => byId.get(i.destinationId)).filter((d) => d != null).map((d) => [d.lat, d.lon]);
     if (origin) pts.push([origin.lat, origin.lon]);
     if (pts.length < 2) return;
+    map.invalidateSize();
     map.fitBounds(L.latLngBounds(pts), { padding: [32, 32], maxZoom: 6, animate: !reducedMotion() });
   }, [items, state]);
 
