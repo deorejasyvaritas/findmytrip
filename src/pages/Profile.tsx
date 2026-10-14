@@ -93,9 +93,9 @@ export default function ProfilePage() {
         <p className="grouped-title">Preferencias</p>
         <div className="grouped">
           <div className="list-row">
-            <span className="grow">Estilo de viaje</span>
+            <span className="grow">Alojamiento preferido</span>
             <Segmented
-              label="Estilo de viaje"
+              label="Alojamiento preferido"
               value={form.style}
               onChange={(style) => update({ style })}
               options={[

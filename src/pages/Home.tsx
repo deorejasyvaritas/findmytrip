@@ -8,6 +8,7 @@ import LongWeekends from "../components/LongWeekends.tsx";
 import { FlightForm, HotelForm, MultiForm, TripForm } from "../components/FullSearch.tsx";
 import RadarSection from "../components/RadarSection.tsx";
 import Segmented from "../components/Segmented.tsx";
+import LodgingPicker from "../components/LodgingPicker.tsx";
 import SuggestionCard, { Photo, SuggestionSkeleton } from "../components/SuggestionCard.tsx";
 import { PartyPicker, WhenPicker, describeWhen, validateWhen } from "../components/TripPickers.tsx";
 import { api } from "../lib/api.ts";
@@ -289,16 +290,7 @@ export default function Home() {
             )}
 
             <div className="search-row">
-              <Segmented
-                label="Estilo de viaje"
-                value={form.style}
-                onChange={(style) => setForm({ ...form, style })}
-                options={[
-                  { value: "low", label: "Económico" },
-                  { value: "mid", label: "Confort" },
-                  { value: "high", label: "Premium" },
-                ]}
-              />
+              <LodgingPicker value={form.style} onChange={(style) => setForm({ ...form, style })} />
               <select
                 className="inline"
                 aria-label="Región"
@@ -443,7 +435,7 @@ export default function Home() {
               <div className="card empty">
                 <Icon name="search" size={28} />
                 <h3>Con ese presupuesto no hay opciones todavía</h3>
-                <p className="muted">Probá con menos noches, estilo Económico o fechas flexibles: suelen abrir muchas opciones.</p>
+                <p className="muted">Probá con menos noches, alojamiento económico o fechas flexibles: suelen abrir muchas opciones.</p>
               </div>
             ) : (
               <div className="grid-cards">

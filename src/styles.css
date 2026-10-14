@@ -839,3 +839,11 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   .trip-leg-price { align-items: flex-start; width: 100%; }
   .trip-leg-price .button { width: 100%; justify-content: center; }
 }
+
+/* ---------- Selector de alojamiento ---------- */
+.lodging-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.lodging-label { font-size: 13px; font-weight: 600; color: var(--label-2); }
+.lodging-hint { font-size: 13px; color: var(--label-2); flex-basis: 100%; }
+.search-panel .lodging-label { color: #fefefe; }
+.search-panel .lodging-hint { color: rgba(254, 254, 254, 0.86); }
+.search-panel .search-row .lodging-picker { flex: 1 1 auto; }

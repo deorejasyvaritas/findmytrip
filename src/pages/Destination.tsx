@@ -14,7 +14,7 @@ import type {
   TripPackage,
 } from "../../shared/types.ts";
 import { flightLinks, stayLinks } from "../../shared/links.ts";
-import Segmented from "../components/Segmented.tsx";
+import LodgingPicker from "../components/LodgingPicker.tsx";
 import { PartyPicker } from "../components/TripPickers.tsx";
 import {
   BAGS_LABEL,
@@ -374,25 +374,14 @@ export default function DestinationPage() {
               ))}
             </select>
           </label>
-          <div className="stack-sm">
-            <span className="small muted" style={{ fontWeight: 500 }}>
-              Estilo
-            </span>
-            <Segmented
-              label="Estilo"
-              value={style}
-              onChange={(s) => {
-                setStyle(s);
-                setTier(s);
-                setCustom(null);
-              }}
-              options={[
-                { value: "low", label: "Económico" },
-                { value: "mid", label: "Confort" },
-                { value: "high", label: "Premium" },
-              ]}
-            />
-          </div>
+          <LodgingPicker
+            value={style}
+            onChange={(s) => {
+              setStyle(s);
+              setTier(s);
+              setCustom(null);
+            }}
+          />
         </section>
 
         {editParty && (

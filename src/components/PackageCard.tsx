@@ -21,7 +21,7 @@ export default function PackageCard({ pkg, actions }: { pkg: TripPackage; action
           <h3>{pkg.destinationName}</h3>
           <p className="small muted">
             {formatDate(pkg.departDate)} – {formatDate(pkg.returnDate, { day: "numeric", month: "short", year: "numeric" })} ·{" "}
-            {pkg.travelers} {pkg.travelers === 1 ? "viajero" : "viajeros"} · {STYLE_LABEL[pkg.style]}
+            {pkg.travelers} {pkg.travelers === 1 ? "viajero" : "viajeros"} · alojamiento {STYLE_LABEL[pkg.style].toLowerCase()}
           </p>
         </div>
         <div className="price">{money(pkg.totalUSD)}</div>
