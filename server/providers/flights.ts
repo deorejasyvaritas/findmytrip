@@ -123,6 +123,61 @@ export async function flightCalendar(
   return { ...estimated, days, cheapest, live: true };
 }
 
+/** [día, precio] más barato por día de salida, ordenado por fecha. */
+export type DayPrice = [date: string, price: number];
+
+/**
+ * Más barato por día de salida en todo el mes, para una ruta (solo ida si
+ * `nights` es null; si no, ida y vuelta de esa cantidad de noches, ±2).
+ * Junta dos fuentes gratis de la Data API: prices_for_dates del mes y
+ * grouped_prices agrupado por día. En KV queda solo una lista corta
+ * [día, precio] por ruta y mes (una escritura por ruta y mes cada 6 h).
+ */
+export async function monthDays(token: string, origin: string, destination: string, month: string, nights: number | null): Promise<DayPrice[]> {
+  const list = await cached<DayPrice[]>(`tpd:${origin}-${destination}-${month}-${nights ?? "ow"}`, 6 * 3600, async () => {
+    const headers = { headers: { "X-Access-Token": token } };
+    const forDates = new URLSearchParams({
+      origin,
+      destination,
+      departure_at: month,
+      one_way: nights == null ? "true" : "false",
+      currency: "usd",
+      sorting: "price",
+      limit: "1000",
+    });
+    const grouped = new URLSearchParams({ origin, destination, departure_at: month, group_by: "departure_at", currency: "usd" });
+    type Item = { price?: number; departure_at?: string; return_at?: string };
+    const [a, b] = await Promise.all([
+      fetchJSON<{ success: boolean; data: Item[] }>(`${TP}/aviasales/v3/prices_for_dates?${forDates}`, "travelpayouts", headers),
+      fetchJSON<{ success: boolean; data: Record<string, Item> }>(`${TP}/aviasales/v3/grouped_prices?${grouped}`, "travelpayouts", headers),
+    ]);
+    if (!a?.success && !b?.success) return null;
+    const items = [...(Array.isArray(a?.data) ? a!.data : []), ...(b?.data && !Array.isArray(b.data) ? Object.values(b.data) : [])];
+    return bestPerDay(items, month, nights);
+  });
+  return list ?? [];
+}
+
+/** Lo más barato por día, descartando lo que no es del tipo pedido (solo ida o la estadía buscada). */
+export function bestPerDay(items: { price?: number; departure_at?: string; return_at?: string }[], month: string, nights: number | null): DayPrice[] {
+  const byDay = new Map<string, number>();
+  for (const i of items) {
+    if (!i?.price || !i.departure_at) continue;
+    const day = i.departure_at.slice(0, 10);
+    if (!day.startsWith(month)) continue;
+    if (nights == null) {
+      if (i.return_at) continue;
+    } else {
+      if (!i.return_at) continue;
+      const stay = Math.round((Date.parse(i.return_at.slice(0, 10)) - Date.parse(day)) / 86400000);
+      if (Math.abs(stay - nights) > NIGHTS_TOLERANCE) continue;
+    }
+    const p = Math.round(i.price);
+    if (!byDay.has(day) || p < byDay.get(day)!) byDay.set(day, p);
+  }
+  return [...byDay.entries()].sort((x, y) => x[0].localeCompare(y[0]));
+}
+
 /** Precio real más barato del mes desde `origin` hacia cualquier destino (por IATA de ciudad). */
 export async function cheapestAnywhere(token: string, origin: string, month: string): Promise<Map<string, number>> {
   // Guardamos solo destino -> precio: la respuesta cruda es grande y procesarla
@@ -183,7 +238,7 @@ export async function googleFlights(
   origin: string,
   dest: Destination,
   depart: string,
-  ret: string,
+  ret: string | null,
   cacheOnly = false,
 ): Promise<FlightQuote | null> {
   const params = new URLSearchParams({
@@ -191,14 +246,15 @@ export async function googleFlights(
     departure_id: airportsFor(origin),
     arrival_id: airportsFor(dest.iata),
     outbound_date: depart,
-    return_date: ret,
-    type: "1",
+    // type 1 = ida y vuelta, 2 = solo ida (sin return_date).
+    ...(ret ? { return_date: ret, type: "1" } : { type: "2" }),
     adults: "1", // precio por persona
     currency: "USD",
     hl: "es",
     gl: "ar",
     api_key: apiKey,
   });
+  if (!ret) return googleOneWay(params, origin, dest.iata, depart, cacheOnly);
   const key = `gf:${origin}-${dest.iata}-${depart}-${ret}`;
   const data = cacheOnly
     ? await peek<GoogleFlightsResponse>(key)
@@ -208,21 +264,26 @@ export async function googleFlights(
       });
   if (!data) return null;
 
-  const toOffer = (f: GoogleFlight): FlightOffer | null =>
-    f.price
-      ? {
-          priceUSD: Math.round(f.price),
-          airlines: [...new Set((f.flights ?? []).map((s) => s.airline).filter(Boolean) as string[])],
-          stops: f.layovers?.length ?? Math.max(0, (f.flights?.length ?? 1) - 1),
-          durationMin: f.total_duration ?? null,
-          departTime: f.flights?.[0]?.departure_airport?.time ?? null,
-        }
-      : null;
+  return toQuote(data, depart, ret, 6);
+}
+
+const toOffer = (f: GoogleFlight): FlightOffer | null =>
+  f.price
+    ? {
+        priceUSD: Math.round(f.price),
+        airlines: [...new Set((f.flights ?? []).map((s) => s.airline).filter(Boolean) as string[])],
+        stops: f.layovers?.length ?? Math.max(0, (f.flights?.length ?? 1) - 1),
+        durationMin: f.total_duration ?? null,
+        departTime: f.flights?.[0]?.departure_airport?.time ?? null,
+      }
+    : null;
+
+function toQuote(data: GoogleFlightsResponse, depart: string, ret: string | null, max: number): FlightQuote | null {
   const offers = [...(data.best_flights ?? []), ...(data.other_flights ?? [])]
     .map(toOffer)
     .filter((o): o is FlightOffer => o != null)
     .sort((a, b) => a.priceUSD - b.priceUSD)
-    .slice(0, 6);
+    .slice(0, max);
   if (!offers.length) return null;
 
   const range = data.price_insights?.typical_price_range;
@@ -235,4 +296,17 @@ export async function googleFlights(
     priceLevel: data.price_insights?.price_level ?? null,
     url: data.search_metadata?.google_flights_url ?? null,
   };
+}
+
+/**
+ * Google Flights solo ida (type=2). Guarda en caché la cotización ya armada y
+ * recortada (3 ofertas), no la respuesta cruda: ocupa poco en KV.
+ */
+async function googleOneWay(params: URLSearchParams, origin: string, dest: string, depart: string, cacheOnly: boolean): Promise<FlightQuote | null> {
+  const key = `gf1:${origin}-${dest}-${depart}`;
+  if (cacheOnly) return peek<FlightQuote>(key);
+  return cached<FlightQuote>(key, 12 * 3600, async () => {
+    const r = await fetchJSON<GoogleFlightsResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-flights");
+    return r && !r.error ? toQuote(r, depart, null, 3) : null;
+  });
 }

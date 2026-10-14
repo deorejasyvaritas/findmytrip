@@ -84,6 +84,9 @@ interface ListedHotel {
   rating: number | null;
   reviews: number | null;
   min: number | null;
+  /** Coordenadas redondeadas (para mostrar la distancia a la parada). */
+  lat?: number | null;
+  lon?: number | null;
 }
 
 /** Hoteles de la ciudad (cambia poco: caché de 7 días). */
@@ -107,6 +110,8 @@ async function listHotels(dest: Destination, geo: string): Promise<ListedHotel[]
         rating: h.review_summary?.rating ?? null,
         reviews: h.review_summary?.count ?? null,
         min: h.price_ranges?.minimum ?? null,
+        lat: h.geo?.latitude != null ? Math.round(h.geo.latitude * 1000) / 1000 : null,
+        lon: h.geo?.longitude != null ? Math.round(h.geo.longitude * 1000) / 1000 : null,
       }));
   });
   return list ?? [];
@@ -163,6 +168,9 @@ export async function xoteloHotels(dest: Destination, checkin: string, nights: n
       thumbnail: h.image,
       link: h.url,
       site: rate!.site || null,
+      tripadvisorUrl: h.url,
+      lat: h.lat ?? null,
+      lon: h.lon ?? null,
     }))
     .sort((a, b) => a.nightlyUSD - b.nightlyUSD);
   if (hotels.length < 3) return null;

@@ -310,7 +310,8 @@ export interface FlightOffer {
 /** Cotización exacta de Google Flights para un par de fechas. */
 export interface FlightQuote {
   depart: string;
-  returnDate: string;
+  /** null = solo ida. */
+  returnDate: string | null;
   offers: FlightOffer[];
   lowestUSD: number;
   typicalRangeUSD: [number, number] | null;
@@ -330,6 +331,12 @@ export interface RealHotel {
   link: string | null;
   /** Sitio con el precio más barato (Booking.com, Agoda, ...). */
   site?: string | null;
+  /** Página del hotel en TripAdvisor (Xotelo). */
+  tripadvisorUrl?: string | null;
+  /** Sitio oficial del hotel (Google Hotels). */
+  officialUrl?: string | null;
+  lat?: number | null;
+  lon?: number | null;
 }
 
 export interface HotelQuote {
@@ -571,8 +578,11 @@ export interface TripLeg {
   returnDate: string | null;
   /** Vuelo: precio por adulto visto en Aviasales (null si no hay datos). */
   price: number | null;
-  /** exacto = para esa fecha · cercano = día vecino (±3) · mes = lo más barato del mes. */
-  priceKind: "exacto" | "cercano" | "mes" | null;
+  /**
+   * exacto = para esa fecha · cercano = día con precio más cercano (hasta 7 días) ·
+   * mes = lo más barato del mes · manual = precio que cargó el usuario.
+   */
+  priceKind: "exacto" | "cercano" | "mes" | "manual" | null;
   /** Fecha de salida del precio "cercano". */
   priceDate: string | null;
   /** De dónde salió el precio: lo visto en Aviasales o Google Flights de hoy. */

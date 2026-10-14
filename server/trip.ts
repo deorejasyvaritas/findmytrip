@@ -3,7 +3,8 @@ import { cached, fetchJSON } from "./cache.ts";
 import { DESTINATIONS } from "./data/destinations.ts";
 import { groundEstimate } from "../shared/ground.ts";
 import { addDays } from "./engine.ts";
-import { cheapestAnywhere, googleFlights } from "./providers/flights.ts";
+import { cheapestAnywhere, googleFlights, monthDays, type DayPrice } from "./providers/flights.ts";
+import { canUseGoogle } from "./google-budget.ts";
 import { searchFlights } from "./search.ts";
 
 // "Ya sé a dónde": un viaje con una o varias paradas en cualquier lugar del
@@ -85,11 +86,17 @@ export function nearestAirports(list: AirportRow[], lat: number, lon: number, n 
     .slice(0, n);
 }
 
+/** Aeropuertos que sirven para la parada: hasta 1,6 veces la distancia del más cercano (máximo 300 km). */
+export function airportOptions(near: NearAirport[]): NearAirport[] {
+  if (!near.length) return [];
+  const limit = Math.max(near[0].km * 1.6, near[0].km + 40);
+  return near.filter((a) => a.km <= Math.min(limit, 300));
+}
+
 /** Entre los aeropuertos cercanos (hasta 1,6 veces la distancia del más cercano), el de vuelo más barato. */
 export function pickAirport(near: NearAirport[], fares: Map<string, number>): NearAirport | null {
   if (!near.length) return null;
-  const limit = Math.max(near[0].km * 1.6, near[0].km + 40);
-  const options = near.filter((a) => a.km <= Math.min(limit, 300));
+  const options = airportOptions(near);
   const priced = options.filter((a) => fares.has(a.city)).sort((a, b) => fares.get(a.city)! - fares.get(b.city)!);
   return priced[0] ?? options[0] ?? near[0];
 }
@@ -103,6 +110,181 @@ export function nearestCatalog(lat: number, lon: number): { dest: Destination; k
   return DESTINATIONS.map((dest) => ({ dest, km: distanceKm(lat, lon, dest.lat, dest.lon) })).sort((a, b) => a.km - b.km)[0];
 }
 
+type LegPrice = Pick<TripLeg, "from" | "to" | "price" | "priceKind" | "priceDate" | "priceSource" | "airline" | "stops" | "link">;
+
+const gapDays = (a: string, b: string) => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86400000));
+
+/** Día con precio más cercano a `date` (si empatan, el más barato). */
+export function nearestDay(days: DayPrice[], date: string): DayPrice | null {
+  let best: DayPrice | null = null;
+  for (const d of days) {
+    const g = gapDays(d[0], date);
+    if (!best || g < gapDays(best[0], date) || (g === gapDays(best[0], date) && d[1] < best[1])) best = d;
+  }
+  return best;
+}
+
+/** Hasta cuántos días de distancia el precio del mes cuenta como "cercano" (más allá, es lo más barato del mes). */
+const NEAR_IN_MONTH = 7;
+
+export interface LegPriceInput {
+  token?: string;
+  googleKey?: string;
+  marker?: string;
+  from: string;
+  to: string;
+  date: string;
+  back: string | null;
+  /** Ciudad de salida del viaje: para la referencia del mes de ida y vuelta (cheapestAnywhere). */
+  origin?: string;
+  fares?: Map<string, number>;
+  /** Otros aeropuertos cercanos a cada punta, por si el elegido no tiene ningún precio. */
+  altFrom?: string[];
+  altTo?: string[];
+}
+
+/**
+ * Precio de un tramo (solo ida o ida y vuelta), en este orden:
+ * 1. Aviasales para el día exacto.
+ * 2. Google Flights de hoy (si queda cuota del mes; primero lo que ya está en caché).
+ * 3. Aviasales en un día vecino (±3).
+ * 4. Aviasales en el mes: el día con precio más cercano (hasta 7 días) o lo más barato del mes.
+ * 5. Si el aeropuerto elegido no tiene nada, el mes de Aviasales en los aeropuertos cercanos
+ *    (solo esa consulta, para no pasar el límite de subpedidos del plan gratis de Workers).
+ */
+export async function priceLeg(p: LegPriceInput): Promise<LegPrice> {
+  const own = await aviasalesLeg(p, p.from, p.to, true);
+  if (own.price != null) return own;
+  const combos = [
+    ...(p.altFrom ?? []).filter((a) => a !== p.from).map((a) => [a, p.to] as const),
+    ...(p.altTo ?? []).filter((a) => a !== p.to).map((a) => [p.from, a] as const),
+  ].slice(0, 2);
+  for (const [f, t] of combos) {
+    const alt = await aviasalesLeg(p, f, t, false);
+    if (alt.price != null) return alt;
+  }
+  return own;
+}
+
+async function aviasalesLeg(p: LegPriceInput, from: string, to: string, primary: boolean): Promise<LegPrice> {
+  const none: LegPrice = { from, to, price: null, priceKind: null, priceDate: null, priceSource: null, airline: null, stops: null, link: null };
+  const r = p.token && primary ? await searchFlights(p.token, { origin: from, destination: to, depart: p.date, ret: p.back }, p.marker).catch(() => null) : null;
+  const best = r?.results[0];
+  if (best) {
+    return { from, to, price: best.price, priceKind: "exacto", priceDate: null, priceSource: "aviasales", airline: best.airline, stops: best.stops, link: best.link };
+  }
+
+  if (primary && p.googleKey) {
+    const dest = { iata: to } as Destination;
+    const google =
+      (await googleFlights(p.googleKey, from, dest, p.date, p.back, true).catch(() => null)) ??
+      ((await canUseGoogle(p.googleKey)) ? await googleFlights(p.googleKey, from, dest, p.date, p.back).catch(() => null) : null);
+    if (google?.lowestUSD) {
+      return {
+        from,
+        to,
+        price: google.lowestUSD,
+        priceKind: "exacto",
+        priceDate: null,
+        priceSource: "google",
+        airline: null,
+        stops: google.offers[0]?.stops ?? null,
+        link: google.url,
+      };
+    }
+  }
+
+  const near = r?.strip.length ? [...r.strip].sort((a, b) => gapDays(a.date, p.date) - gapDays(b.date, p.date) || a.price - b.price)[0] : null;
+  if (near) return { ...none, price: near.price, priceKind: "cercano", priceDate: near.date, priceSource: "aviasales" };
+
+  if (p.token) {
+    const nights = p.back ? gapDays(p.back, p.date) : null;
+    const days = await monthDays(p.token, from, to, p.date.slice(0, 7), nights).catch(() => [] as DayPrice[]);
+    const day = nearestDay(days, p.date);
+    if (day && day[0] === p.date) return { ...none, price: day[1], priceKind: "exacto", priceSource: "aviasales" };
+    if (day && gapDays(day[0], p.date) <= NEAR_IN_MONTH) {
+      return { ...none, price: day[1], priceKind: "cercano", priceDate: day[0], priceSource: "aviasales" };
+    }
+    if (days.length) {
+      const min = days.reduce((a, b) => (b[1] < a[1] ? b : a));
+      return { ...none, price: min[1], priceKind: "mes", priceDate: min[0], priceSource: "aviasales" };
+    }
+  }
+
+  const month = p.back && from === p.origin ? (p.fares?.get(to) ?? null) : null;
+  if (month) return { ...none, price: month, priceKind: "mes", priceSource: "aviasales" };
+  return none;
+}
+
+interface TPItem {
+  price?: number;
+  airline?: string;
+  departure_at?: string;
+  return_at?: string;
+  transfers?: number;
+  link?: string;
+}
+
+/**
+ * Vuelve a mirar en Aviasales solo el día exacto, sin la caché de 3 h: cuando
+ * alguien busca esa ruta en Aviasales, el precio suele aparecer en la Data API
+ * a los pocos minutos. Caché de 2 minutos en el borde (Cache API), sin KV.
+ */
+export async function refreshLeg(
+  token: string | undefined,
+  marker: string | undefined,
+  from: string,
+  to: string,
+  date: string,
+  back: string | null,
+): Promise<LegPrice> {
+  const none: LegPrice = { from, to, price: null, priceKind: null, priceDate: null, priceSource: null, airline: null, stops: null, link: null };
+  if (!token) return none;
+  const qs = new URLSearchParams({
+    origin: from,
+    destination: to,
+    departure_at: date,
+    one_way: back ? "false" : "true",
+    currency: "usd",
+    sorting: "price",
+    limit: "30",
+  });
+  if (back) qs.set("return_at", back);
+  const data = await edgeFetch<{ success: boolean; data: TPItem[] }>(`https://api.travelpayouts.com/aviasales/v3/prices_for_dates?${qs}`, token);
+  const items = data?.success && Array.isArray(data.data) ? data.data : [];
+  const best = items
+    .filter((i) => i.price && i.departure_at?.slice(0, 10) === date && (back ? i.return_at?.slice(0, 10) === back : !i.return_at))
+    .sort((a, b) => a.price! - b.price!)[0];
+  if (!best) return none;
+  const link = best.link ? `https://www.aviasales.com${best.link}${marker ? `${best.link.includes("?") ? "&" : "?"}marker=${marker}` : ""}` : null;
+  return {
+    from,
+    to,
+    price: Math.round(best.price!),
+    priceKind: "exacto",
+    priceDate: null,
+    priceSource: "aviasales",
+    airline: best.airline ?? null,
+    stops: best.transfers ?? null,
+    link,
+  };
+}
+
+async function edgeFetch<T>(url: string, token: string): Promise<T | null> {
+  const edge = typeof caches !== "undefined" ? (caches as unknown as { default?: Cache }).default : undefined;
+  const key = new Request(url);
+  if (edge) {
+    const hit = await edge.match(key).catch(() => undefined);
+    if (hit) return (await hit.json().catch(() => null)) as T | null;
+  }
+  const data = await fetchJSON<T>(url, "travelpayouts-fresh", { headers: { "X-Access-Token": token } });
+  if (data && edge) {
+    const res = new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json", "Cache-Control": "max-age=120" } });
+    await edge.put(key, res).catch(() => undefined);
+  }
+  return data;
+}
+
 export async function planTrip(token: string | undefined, req: TripPlanRequest, marker?: string, googleKey?: string): Promise<TripPlan> {
   const list = await airports();
   const fares = token ? await cheapestAnywhere(token, req.origin, req.depart.slice(0, 7)).catch(() => new Map<string, number>()) : new Map<string, number>();
@@ -112,63 +294,53 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
   const stops = req.stops.map((s) => {
     const checkin = cursor;
     cursor = addDays(cursor, s.nights);
-    const airport = pickAirport(nearestAirports(list, s.lat, s.lon), fares);
-    return { ...s, checkin, checkout: cursor, airport };
+    const near = nearestAirports(list, s.lat, s.lon);
+    const airport = pickAirport(near, fares);
+    // Otros aeropuertos de la zona, por si el elegido no tiene precios.
+    const alternates = [...new Set(airportOptions(near).map((a) => a.city))].filter((c) => c !== airport?.city).slice(0, 2);
+    return { ...s, checkin, checkout: cursor, airport, alternates };
   });
   const ret = cursor;
   const first = stops[0].airport;
   const last = stops[stops.length - 1].airport;
 
-  const cheapest = async (from: string, to: string, depart: string, back: string | null) => {
-    if (!token) return { best: null, near: null };
-    const r = await searchFlights(token, { origin: from, destination: to, depart, ret: back }, marker).catch(() => null);
-    // El día con precio real más cercano a la fecha pedida (si empatan, el más barato).
-    const gap = (d: string) => Math.abs(Date.parse(d) - Date.parse(depart));
-    const near = r?.strip.length ? [...r.strip].sort((a, b) => gap(a.date) - gap(b.date) || a.price - b.price)[0] : null;
-    return { best: r?.results[0] ?? null, near };
-  };
-
   const legs: TripLeg[] = [];
-  const flightLeg = async (from: string, to: string, date: string, back: string | null, label: string, role: TripLeg["role"], after: number | null = null): Promise<TripLeg> => {
-    const { best, near } = await cheapest(from, to, date, back);
-    // Sin precio visto para el día exacto: Google Flights de hoy (ida y vuelta, si hay búsquedas en el mes),
-    // después el día vecino con precio real y, por último, la referencia del mes.
-    const google =
-      !best && back && googleKey
-        ? await googleFlights(googleKey, from, { iata: to } as Destination, date, back).catch(() => null)
-        : null;
-    const month = back && from === req.origin ? (fares.get(to) ?? null) : null;
-    const price = best?.price ?? google?.lowestUSD ?? near?.price ?? month;
-    const priceKind = best || google ? "exacto" : near ? "cercano" : month ? "mes" : null;
+  const flightLeg = async (
+    from: string,
+    to: string,
+    date: string,
+    back: string | null,
+    label: (from: string, to: string) => string,
+    role: TripLeg["role"],
+    after: number | null = null,
+    alt: { from?: string[]; to?: string[] } = {},
+  ): Promise<TripLeg> => {
+    const p = await priceLeg({ token, googleKey, marker, from, to, date, back, origin: req.origin, fares, altFrom: alt.from, altTo: alt.to });
+    const liveUrl = aviasalesUrl(p.from, p.to, date, back, 1, marker);
     return {
       kind: "flight",
       role,
       after,
-      priceKind,
-      priceDate: priceKind === "cercano" ? near!.date : null,
-      priceSource: google && !best ? "google" : price != null ? "aviasales" : null,
-      label,
-      from,
-      to,
+      ...p,
+      label: label(p.from, p.to),
       date,
       returnDate: back,
-      price: price ?? null,
-      airline: best?.airline ?? null,
-      stops: best?.stops ?? null,
-      link: best?.link ?? (google?.url || aviasalesUrl(from, to, date, back, 1, marker)),
-      liveUrl: aviasalesUrl(from, to, date, back, 1, marker),
+      link: p.link || liveUrl,
+      liveUrl,
       km: null,
       hours: null,
       mapsUrl: null,
     };
   };
 
+  const firstStop = stops[0];
+  const lastStop = stops[stops.length - 1];
   const sameAirport = first && last && first.city === last.city;
   if (first && last) {
     if (sameAirport) {
-      legs.push(await flightLeg(req.origin, first.city, req.depart, ret, `Vuelo ida y vuelta ${req.origin}–${first.city}`, "out"));
+      legs.push(await flightLeg(req.origin, first.city, req.depart, ret, (f, t) => `Vuelo ida y vuelta ${f}–${t}`, "out", null, { to: firstStop.alternates }));
     } else {
-      legs.push(await flightLeg(req.origin, first.city, req.depart, null, `Vuelo de ida ${req.origin}–${first.city}`, "out"));
+      legs.push(await flightLeg(req.origin, first.city, req.depart, null, (f, t) => `Vuelo de ida ${f}–${t}`, "out", null, { to: firstStop.alternates }));
     }
   }
 
@@ -180,7 +352,9 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
     const km = Math.round(straight * 1.3);
     const byAir = straight > 500 && a.airport && b.airport && a.airport.city !== b.airport.city;
     if (byAir) {
-      legs.push(await flightLeg(a.airport!.city, b.airport!.city, a.checkout, null, `Vuelo ${a.name}–${b.name}`, "between", i));
+      legs.push(
+        await flightLeg(a.airport!.city, b.airport!.city, a.checkout, null, () => `Vuelo ${a.name}–${b.name}`, "between", i, { from: a.alternates, to: b.alternates }),
+      );
     } else {
       // ~70 km/h promedio más media hora de margen.
       legs.push({
@@ -209,7 +383,7 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
   }
 
   if (first && last && !sameAirport) {
-    legs.push(await flightLeg(last.city, req.origin, ret, null, `Vuelo de vuelta ${last.city}–${req.origin}`, "back"));
+    legs.push(await flightLeg(last.city, req.origin, ret, null, (f, t) => `Vuelo de vuelta ${f}–${t}`, "back", null, { from: lastStop.alternates }));
   }
 
   return {

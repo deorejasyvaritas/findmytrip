@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { FlightResult, LegResult, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
 import { airlineName } from "../../shared/airlines.ts";
-import { DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams } from "../../shared/pricing.ts";
+import { DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams, roomsForParty } from "../../shared/pricing.ts";
+import { hotelDistanceKm, hotelLinks } from "../../shared/hotel-links.ts";
 import { estimateTrip } from "../../shared/compare.ts";
 import { groundSeats, groundTotal } from "../../shared/ground.ts";
 import { FlightForm, HotelForm, MultiForm, TripForm, readPlace, readStop, type SearchKind } from "../components/FullSearch.tsx";
@@ -118,12 +119,16 @@ function useFlights(origin: string, dest: string, depart: string, ret: string | 
   const [data, setData] = useState<FlightData | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    let alive = true;
     setData(null);
     setError(null);
     api
       .searchFlights({ origin, dest, depart, ...(ret ? { ret } : {}), ...(direct ? { direct: 1 as const } : {}) })
-      .then(setData)
-      .catch((e) => setError((e as Error).message));
+      .then((d) => alive && setData(d))
+      .catch((e) => alive && setError((e as Error).message));
+    return () => {
+      alive = false;
+    };
   }, [origin, dest, depart, ret, direct]);
   return { data, error };
 }
@@ -477,12 +482,16 @@ function useHotels(place: string, name: string, checkin: string, checkout: strin
   const [data, setData] = useState<HotelData | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    let alive = true;
     setData(null);
     setError(null);
     api
       .searchHotels({ place, name: name.split(",")[0].replace(/\s*\([A-Z]{3}\)$/, ""), checkin, checkout, travelers })
-      .then(setData)
-      .catch((e) => setError((e as Error).message));
+      .then((d) => alive && setData(d))
+      .catch((e) => alive && setError((e as Error).message));
+    return () => {
+      alive = false;
+    };
   }, [place, name, checkin, checkout, travelers]);
   return { data, error };
 }
@@ -759,14 +768,18 @@ function MultiResults() {
   const [picked, setPicked] = useState<Record<number, number>>({});
 
   useEffect(() => {
+    let alive = true;
     setData(null);
     setError(null);
     setPicked({});
     if (legs.length < 2) return;
     api
       .searchMulti(legs.map((l) => ({ origin: l.origin.code, destination: l.destination.code, date: l.date })))
-      .then(setData)
-      .catch((e) => setError((e as Error).message));
+      .then((d) => alive && setData(d))
+      .catch((e) => alive && setError((e as Error).message));
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [legsKey]);
 
@@ -850,6 +863,19 @@ interface StayPick {
   link?: string;
 }
 
+/** Lo que devuelve /api/trip/leg al volver a mirar un tramo. */
+type LegPatch = Pick<TripLeg, "price" | "priceKind" | "priceDate" | "priceSource" | "airline" | "stops" | "link">;
+
+/** Tramo con lo que se actualizó después de Aviasales y, encima, el precio que cargó el usuario. */
+function effectiveLeg(base: TripLeg, patch: LegPatch | undefined, manual: number | undefined): TripLeg {
+  const auto = patch ? { ...base, ...patch, link: patch.link ?? base.link } : base;
+  return manual != null ? { ...auto, price: manual, priceKind: "manual" } : auto;
+}
+
+/** Cuántas veces volvemos a mirar un tramo después de cada visita a Aviasales. */
+const MAX_RECHECKS = 2;
+const RECHECK_AFTER_MS = 60_000;
+
 function TripResults() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -857,49 +883,145 @@ function TripResults() {
   const { money, profile } = app;
   const party = partyFromParams(params, DEFAULT_PARTY);
   const units = fareUnits(party);
+  const rooms = roomsForParty(party);
   const from = readPlace(params.get("from"))!;
   const depart = params.get("depart")!;
   const stops = params.getAll("stop").map(readStop).filter((x): x is NonNullable<typeof x> => Boolean(x));
   const key = params.getAll("stop").join(",") + from.code + depart;
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [stays, setStays] = useState<Record<number, StayPick>>({});
+  const [attempt, setAttempt] = useState(0);
+  const [stays, setStays] = useState<Record<number, StayPick | null>>({});
   // Traslados por tierra (estimado): se suman al total salvo que el usuario los saque.
   const [withGround, setWithGround] = useState(true);
+  // Precio que cargó el usuario (USD por adulto) y precios que aparecieron al volver de Aviasales, por índice de tramo.
+  const [manual, setManual] = useState<Record<number, number>>({});
+  const [refreshed, setRefreshed] = useState<Record<number, LegPatch>>({});
+  const [updated, setUpdated] = useState<Record<number, boolean>>({});
+  const [checking, setChecking] = useState<number | null>(null);
 
   useEffect(() => {
+    let alive = true;
     setPlan(null);
     setError(null);
     setStays({});
+    setManual({});
+    setRefreshed({});
+    setUpdated({});
     api
       .planTrip({ origin: from.code, depart, stops: stops.map(({ name, region, country, lat, lon, nights }) => ({ name, region, country, lat, lon, nights })) })
-      .then(setPlan)
-      .catch((e) => setError((e as Error).message));
+      .then((p) => alive && setPlan(p))
+      .catch((e) => alive && setError((e as Error).message));
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, attempt]);
 
-  if (error) return <ErrorCard message={error} />;
+  const autoLegs = useMemo(() => plan?.legs.map((l, i) => effectiveLeg(l, refreshed[i], undefined)) ?? [], [plan, refreshed]);
+  const legs = autoLegs.map((l, i) => (manual[i] != null ? effectiveLeg(l, undefined, manual[i]) : l));
 
-  const flights = plan?.legs.filter((l) => l.kind === "flight") ?? [];
+  // "Actualizar después de Aviasales": al tocar "Ver en Aviasales" recordamos el tramo y,
+  // cuando el usuario vuelve a la página, lo miramos de nuevo (y una vez más al minuto).
+  const autoRef = useRef(autoLegs);
+  autoRef.current = autoLegs;
+  const pending = useRef<{ idx: number; tries: number; left: boolean; running: boolean; timer?: number } | null>(null);
+
+  const recheck = useCallback(async () => {
+    const p = pending.current;
+    if (!p || p.running || p.tries >= MAX_RECHECKS) return;
+    const leg = autoRef.current[p.idx];
+    if (!leg) return;
+    p.running = true;
+    p.tries++;
+    setChecking(p.idx);
+    let found = false;
+    try {
+      const r = await api.tripLeg({ from: leg.from, to: leg.to, date: leg.date, returnDate: leg.returnDate });
+      const cur = autoRef.current[p.idx];
+      if (pending.current === p && cur && r.price != null && (cur.price == null || cur.priceKind !== "exacto" || r.price < cur.price)) {
+        found = true;
+        setRefreshed((x) => ({ ...x, [p.idx]: r }));
+        setUpdated((x) => ({ ...x, [p.idx]: true }));
+      }
+    } catch {
+      // Sin red o sin respuesta: queda el precio que había.
+    }
+    p.running = false;
+    if (pending.current !== p) return;
+    setChecking(null);
+    if (!found && p.tries < MAX_RECHECKS) p.timer = window.setTimeout(recheck, RECHECK_AFTER_MS);
+    else pending.current = null;
+  }, []);
+
+  useEffect(() => {
+    const onLeave = () => {
+      if (pending.current && document.visibilityState === "hidden") pending.current.left = true;
+    };
+    const onBlur = () => {
+      if (pending.current) pending.current.left = true;
+    };
+    const onBack = () => {
+      const p = pending.current;
+      if (p && p.left && p.tries === 0 && document.visibilityState === "visible") void recheck();
+    };
+    const onVisibility = () => (document.visibilityState === "hidden" ? onLeave() : onBack());
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onBack);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onBack);
+      if (pending.current?.timer) window.clearTimeout(pending.current.timer);
+      pending.current = null;
+    };
+  }, [recheck, plan]);
+
+  function watchLeg(idx: number) {
+    if (pending.current?.timer) window.clearTimeout(pending.current.timer);
+    pending.current = { idx, tries: 0, left: false, running: false };
+    setChecking(null);
+    setUpdated((x) => ({ ...x, [idx]: false }));
+  }
+
+  if (error)
+    return (
+      <div className="card empty" role="alert">
+        <Icon name="info" size={28} />
+        <p>No pudimos armar el viaje: {error}</p>
+        <button className="secondary" onClick={() => setAttempt((a) => a + 1)}>
+          Reintentar
+        </button>
+      </div>
+    );
+
+  const flights = legs.filter((l) => l.kind === "flight");
   const flightsTotal = flights.reduce((s, l) => s + (l.price ? Math.round(l.price * units) : 0), 0);
   const missingFlights = flights.filter((l) => l.price == null).length;
   const approxFlights = flights.some((l) => l.priceKind === "mes");
-  const staysTotal = Object.values(stays).reduce((s, x) => s + x.total, 0);
-  const groundLegs = plan?.legs.filter((l) => l.kind === "ground" && l.ground) ?? [];
+  const staysTotal = Object.values(stays).reduce((s, x) => s + (x?.total ?? 0), 0);
+  const groundLegs = legs.filter((l) => l.kind === "ground" && l.ground);
   const groundUSD = groundTotal(groundLegs, party);
   const total = flightsTotal + staysTotal + (withGround ? groundUSD : 0);
   const single = stops.length === 1 && stops[0].destinationId;
+  // Cada parada tiene que tener un hotel elegido o el estimado a la vista antes de guardar.
+  const staysReady = plan != null && plan.stops.every((_, i) => stays[i] != null);
 
   function save() {
-    if (!plan) return;
+    if (!plan || !staysReady) return;
+    const flightNote = (l: TripLeg) => (l.price == null ? " (sin precio)" : l.priceKind === "manual" ? " (precio que cargaste)" : l.priceKind === "mes" ? " (referencia del mes)" : "");
     const items: TripPackage["items"] = [
-      ...flights.map((l) => ({ kind: "vuelo" as const, label: `${l.label}${l.price == null ? " (sin precio)" : ""}`, amountUSD: l.price ? Math.round(l.price * units) : 0, link: l.link ?? undefined })),
-      ...plan.stops.map((st, i) => ({
-        kind: "alojamiento" as const,
-        label: `${st.name}: ${stays[i]?.label ?? "alojamiento"} · ${st.nights} noches${stays[i]?.real ? "" : " (estimado)"}`,
-        amountUSD: stays[i]?.total ?? 0,
-        link: stays[i]?.link,
-      })),
+      ...flights.map((l) => ({ kind: "vuelo" as const, label: `${l.label}${flightNote(l)}`, amountUSD: l.price ? Math.round(l.price * units) : 0, link: l.link ?? undefined })),
+      ...plan.stops.map((st, i) => {
+        const pick = stays[i]!;
+        return {
+          kind: "alojamiento" as const,
+          label: `${st.name}: ${pick.label} · ${st.nights} noches${pick.real ? "" : " (estimado)"}`,
+          amountUSD: pick.total,
+          link: pick.link,
+        };
+      }),
       ...(withGround
         ? groundLegs.map((l) => ({
             kind: "extra" as const,
@@ -927,9 +1049,32 @@ function TripResults() {
   }
 
   // El recorrido intercala vuelos/traslados con las paradas.
-  const outbound = plan?.legs.find((l) => l.role === "out");
-  const inbound = plan?.legs.find((l) => l.role === "back");
-  const after = (i: number) => plan?.legs.find((l) => l.role === "between" && l.after === i);
+  const legCard = (idx: number) => {
+    const leg = legs[idx];
+    if (!leg) return null;
+    return (
+      <LegCard
+        leg={leg}
+        units={units}
+        money={money}
+        seats={groundSeats(party)}
+        checking={checking === idx}
+        updated={Boolean(updated[idx])}
+        onLive={() => watchLeg(idx)}
+        onManual={(usd) =>
+          setManual((m) => {
+            const next = { ...m };
+            if (usd == null) delete next[idx];
+            else next[idx] = usd;
+            return next;
+          })
+        }
+      />
+    );
+  };
+  const outbound = legs.findIndex((l) => l.role === "out");
+  const inbound = legs.findIndex((l) => l.role === "back");
+  const after = (i: number) => legs.findIndex((l) => l.role === "between" && l.after === i);
 
   return (
     <div className="package-layout">
@@ -947,21 +1092,22 @@ function TripResults() {
         {!plan && Array.from({ length: 3 }, (_, i) => <div key={i} className="card skeleton flight-skeleton" aria-hidden="true" />)}
         {plan && (
           <ol className="timeline">
-            {outbound && <LegCard leg={outbound} units={units} money={money} seats={groundSeats(party)} />}
+            {outbound >= 0 && legCard(outbound)}
             {plan.stops.map((st, i) => (
-              <li key={i} className="timeline-stop">
+              <li key={`${key}-${i}`} className="timeline-stop">
                 <StopCard
                   stop={st}
                   index={i}
                   travelers={headcount(party)}
+                  rooms={rooms}
                   style={profile.style}
                   money={money}
                   onPick={(pick) => setStays((x) => ({ ...x, [i]: pick }))}
                 />
-                {after(i) && <LegCard leg={after(i)!} units={units} money={money} seats={groundSeats(party)} />}
+                {after(i) >= 0 && legCard(after(i))}
               </li>
             ))}
-            {inbound && <LegCard leg={inbound} units={units} money={money} seats={groundSeats(party)} />}
+            {inbound >= 0 && legCard(inbound)}
           </ol>
         )}
       </div>
@@ -983,9 +1129,9 @@ function TripResults() {
               <span className="label">
                 <Icon name="bed" size={16} />
                 {st.name} · {st.nights} {st.nights === 1 ? "noche" : "noches"}
-                {stays[i] && !stays[i].real ? " (estimado)" : ""}
+                {stays[i] && !stays[i]!.real ? " (estimado)" : ""}
               </span>
-              <span>{stays[i] ? money(stays[i].total) : "—"}</span>
+              <span>{stays[i] ? money(stays[i]!.total) : "—"}</span>
             </li>
           ))}
           {groundLegs.length > 0 && (
@@ -1009,7 +1155,7 @@ function TripResults() {
           <span className="price">{money(total)}</span>
         </div>
         <p className="small muted">
-          {missingFlights ? "Hay tramos sin precio visto: buscalos en vivo y sumalos. " : ""}
+          {missingFlights ? "Hay tramos sin precio: buscalos en Aviasales o cargá el precio que viste. " : ""}
           {groundLegs.length > 0
             ? withGround
               ? "Traslados por tierra: pasaje de micro o tren estimado. "
@@ -1017,16 +1163,49 @@ function TripResults() {
             : ""}
           Precios de referencia; se reservan por separado.
         </p>
-        <button className="primary full" disabled={!plan} onClick={save}>
+        <button className="primary full" disabled={!staysReady} onClick={save}>
           <Icon name="bookmark" size={18} />
           Guardar en Mis viajes
         </button>
+        {plan && !staysReady && <p className="small muted">Falta el alojamiento de alguna parada: esperá a que cargue o reintentá.</p>}
       </aside>
     </div>
   );
 }
 
-function LegCard({ leg, units, money, seats }: { leg: TripLeg; units: number; money: (n: number) => string; seats: number }) {
+function legDetail(leg: TripLeg): string {
+  if (leg.price == null) return " · todavía sin precio para esa fecha";
+  switch (leg.priceKind) {
+    case "manual":
+      return " · precio que cargaste";
+    case "exacto":
+      return leg.priceSource === "google" ? " · precio de hoy en Google Flights" : ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")}`;
+    case "cercano":
+      return ` · precio real saliendo el ${shortDate(leg.priceDate!)}`;
+    default:
+      return leg.priceDate ? ` · lo más barato del mes, saliendo el ${shortDate(leg.priceDate)}` : " · precio de referencia del mes";
+  }
+}
+
+function LegCard({
+  leg,
+  units,
+  money,
+  seats,
+  checking = false,
+  updated = false,
+  onLive,
+  onManual,
+}: {
+  leg: TripLeg;
+  units: number;
+  money: (n: number) => string;
+  seats: number;
+  checking?: boolean;
+  updated?: boolean;
+  onLive?: () => void;
+  onManual?: (usd: number | null) => void;
+}) {
   if (leg.kind === "ground") {
     const g = leg.ground;
     return (
@@ -1067,6 +1246,8 @@ function LegCard({ leg, units, money, seats }: { leg: TripLeg; units: number; mo
       </div>
     );
   }
+  const google = leg.priceSource === "google" && leg.priceKind === "exacto";
+  const href = (leg.priceKind === "exacto" ? leg.link : leg.liveUrl) ?? leg.liveUrl ?? "#";
   return (
     <div className="card trip-leg">
       <Icon name="plane" size={18} />
@@ -1075,16 +1256,19 @@ function LegCard({ leg, units, money, seats }: { leg: TripLeg; units: number; mo
         <span className="small muted">
           {capitalize(shortDate(leg.date))}
           {leg.returnDate ? ` al ${shortDate(leg.returnDate)}` : ""}
-          {leg.price == null
-            ? " · todavía sin precio para esa fecha"
-            : leg.priceKind === "exacto"
-              ? leg.priceSource === "google"
-                ? " · precio de hoy en Google Flights"
-                : ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")}`
-              : leg.priceKind === "cercano"
-                ? ` · precio real saliendo el ${shortDate(leg.priceDate!)}`
-                : " · precio de referencia del mes"}
+          {legDetail(leg)}
         </span>
+        {checking && (
+          <span className="leg-note small muted" role="status">
+            Mirando si ya aparece el precio de Aviasales
+          </span>
+        )}
+        {updated && !checking && leg.priceKind !== "manual" && (
+          <span className="leg-note small" role="status">
+            <Icon name="check" size={14} />
+            Actualizado con el precio de Aviasales
+          </span>
+        )}
       </span>
       <span className="trip-leg-price">
         {leg.price != null && (
@@ -1093,18 +1277,100 @@ function LegCard({ leg, units, money, seats }: { leg: TripLeg; units: number; mo
             <span className="small muted">{money(leg.price)} por adulto</span>
           </>
         )}
-        <a className="button secondary" href={(leg.priceKind === "exacto" ? leg.link : leg.liveUrl) ?? "#"} target="_blank" rel="noreferrer sponsored">
-          {leg.priceSource === "google" ? "Ver en Google Flights" : "Ver en Aviasales"} <Icon name="external" size={14} />
+        <a className="button secondary" href={href} target="_blank" rel="noreferrer sponsored" onClick={google ? undefined : onLive}>
+          {google ? "Ver en Google Flights" : "Ver en Aviasales"} <Icon name="external" size={14} />
         </a>
+        {google && leg.liveUrl && (
+          <a className="leg-action" href={leg.liveUrl} target="_blank" rel="noreferrer sponsored" onClick={onLive}>
+            Comparar en Aviasales
+          </a>
+        )}
+        {onManual && <ManualPrice leg={leg} onManual={onManual} />}
       </span>
     </div>
   );
 }
 
+/** "254", "254,50", "254.50", "350.000" o "350.000,50" a número (la coma siempre es decimal). */
+function parseAmount(raw: string): number {
+  const s = raw.trim();
+  if (!s) return NaN;
+  if (s.includes(",")) return Number(s.replace(/\./g, "").replace(",", "."));
+  // Solo puntos: con 1 o 2 decimales es un decimal ("254.5"); si no, separador de miles ("350.000").
+  return /\.\d{1,2}$/.test(s) && (s.match(/\./g) ?? []).length === 1 ? Number(s) : Number(s.replace(/\./g, ""));
+}
+
+/** "Cargar el precio que viste": el usuario anota el precio por adulto en la moneda que está viendo. */
+function ManualPrice({ leg, onManual }: { leg: TripLeg; onManual: (usd: number | null) => void }) {
+  const { profile, toUSD, fromUSD } = useApp();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const unit = profile.currency === "ARS" ? "$" : "USD";
+  const manual = leg.priceKind === "manual";
+
+  if (manual && !open) {
+    return (
+      <span className="leg-actions">
+        <button type="button" className="leg-action" onClick={() => (setValue(String(fromUSD(leg.price!))), setOpen(true))}>
+          Cambiar
+        </button>
+        <button type="button" className="leg-action" onClick={() => onManual(null)}>
+          Quitar el precio cargado
+        </button>
+      </span>
+    );
+  }
+  if (!open) {
+    return (
+      <button type="button" className="leg-action" onClick={() => (setValue(leg.price != null ? String(fromUSD(leg.price)) : ""), setOpen(true))}>
+        Cargar el precio que viste
+      </button>
+    );
+  }
+  const amount = parseAmount(value);
+  const valid = Number.isFinite(amount) && amount > 0;
+  return (
+    <form
+      className="manual-price"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!valid) return;
+        onManual(Math.max(1, Math.round(toUSD(amount))));
+        setOpen(false);
+      }}
+    >
+      <label className="field">
+        Precio por adulto
+        <span className="manual-price-input">
+          <span aria-hidden="true">{unit}</span>
+          <input
+            autoFocus
+            inputMode="decimal"
+            aria-label={`Precio por adulto en ${unit === "$" ? "pesos" : "dólares"}`}
+            value={value}
+            onChange={(e) => setValue(e.target.value.replace(/[^\d.,]/g, ""))}
+          />
+        </span>
+      </label>
+      <span className="leg-actions">
+        <button type="submit" className="primary" disabled={!valid}>
+          Usar este precio
+        </button>
+        <button type="button" className="ghost" onClick={() => setOpen(false)}>
+          Cancelar
+        </button>
+      </span>
+    </form>
+  );
+}
+
+type TripHotels = Awaited<ReturnType<typeof api.tripHotels>>;
+
 function StopCard({
   stop,
   index,
   travelers,
+  rooms,
   style,
   money,
   onPick,
@@ -1112,32 +1378,40 @@ function StopCard({
   stop: TripPlan["stops"][number];
   index: number;
   travelers: number;
+  rooms: number;
   style: string;
   money: (n: number) => string;
-  onPick: (p: StayPick) => void;
+  onPick: (p: StayPick | null) => void;
 }) {
-  const [data, setData] = useState<Awaited<ReturnType<typeof api.tripHotels>> | null>(null);
+  const [data, setData] = useState<TripHotels | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
-  const load = () => api.tripHotels({ name: stop.name, country: stop.country, lat: stop.lat, lon: stop.lon, checkin: stop.checkin, nights: stop.nights, travelers, style });
 
   useEffect(() => {
+    let alive = true;
     setData(null);
-    load()
-      .then(setData)
-      .catch(() => setData(null));
+    setFailed(false);
+    onPick(null);
+    api
+      .tripHotels({ name: stop.name, country: stop.country, lat: stop.lat, lon: stop.lon, checkin: stop.checkin, nights: stop.nights, travelers, rooms, style })
+      .then((d) => alive && setData(d))
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stop.name, stop.checkin, stop.nights, travelers]);
+  }, [stop.name, stop.checkin, stop.nights, travelers, rooms, attempt]);
 
   const hotels = (data?.hotels ?? []).slice(0, 6);
   const choice = hotels.find((h) => h.name === picked) ?? hotels[Math.floor(hotels.length / 3)];
-  const rooms = data?.rooms ?? 1;
 
   useEffect(() => {
     if (!data) return;
-    if (choice) onPick({ label: choice.name, total: choice.totalUSD * rooms, real: true, link: choice.link ?? undefined });
+    if (choice) onPick({ label: choice.name, total: choice.totalUSD * rooms, real: true, link: choice.link ?? choice.tripadvisorUrl ?? undefined });
     else onPick({ label: "alojamiento", total: data.estimateNight * stop.nights * rooms, real: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, choice?.name]);
+  }, [data, choice?.name, rooms]);
 
   return (
     <section className="card trip-stop" aria-label={`Parada ${index + 1}: ${stop.name}`}>
@@ -1164,16 +1438,26 @@ function StopCard({
         <EntryLine country={stop.country} />
       </div>
 
-      {!data && <div className="sk" style={{ width: "100%", height: 72 }} />}
+      {!data && !failed && <div className="sk" style={{ width: "100%", height: 72 }} aria-hidden="true" />}
+      {failed && (
+        <div className="trip-estimate" role="alert">
+          <p className="small muted">No pudimos traer los alojamientos de {stop.name}.</p>
+          <button className="secondary" onClick={() => setAttempt((a) => a + 1)}>
+            <Icon name="refresh" size={16} />
+            Reintentar
+          </button>
+        </div>
+      )}
       {data && hotels.length > 0 && (
         <p className="small muted">
-          Precios reales {data.source === "google" ? "de Google Hotels" : "comparados entre Booking, Agoda, Expedia y más"} para tus fechas. Elegí uno:
+          Precios reales {data.source === "google" ? "de Google Hotels" : "comparados entre Booking, Agoda, Expedia y más"} para tus fechas
+          {rooms > 1 ? `, ${rooms} habitaciones` : ""}. Elegí uno:
         </p>
       )}
       {data && hotels.length > 0 && (
         <div className="hotel-results">
           {hotels.map((h) => (
-            <HotelCard key={h.name} h={h} rooms={rooms} money={money} selected={choice === h} onSelect={() => setPicked(h.name)} />
+            <TripHotelCard key={h.name} h={h} stop={stop} rooms={rooms} money={money} selected={choice === h} onSelect={() => setPicked(h.name)} />
           ))}
         </div>
       )}
@@ -1199,5 +1483,79 @@ function StopCard({
         </div>
       )}
     </section>
+  );
+}
+
+const kmLabel = (km: number) => (km < 1 ? `${Math.round(km * 1000 / 50) * 50} m` : `${(km < 10 ? Math.round(km * 10) / 10 : Math.round(km)).toLocaleString("es-AR")} km`);
+
+/** Hotel del selector de cada parada: datos para decidir y links a TripAdvisor, sitio oficial y mapa. */
+function TripHotelCard({
+  h,
+  stop,
+  rooms,
+  money,
+  selected,
+  onSelect,
+}: {
+  h: RealHotel;
+  stop: TripPlan["stops"][number];
+  rooms: number;
+  money: (n: number) => string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const links = hotelLinks(h, [stop.name, stop.country].filter(Boolean).join(" "));
+  const km = hotelDistanceKm(h, stop.lat, stop.lon);
+  const nights = stop.nights;
+  const kind = h.stars ? `${h.stars} ${h.stars === 1 ? "estrella" : "estrellas"}` : h.type;
+  return (
+    <article className={`card hotel-card trip-hotel ${selected ? "on" : ""}`}>
+      {h.thumbnail ? (
+        <img
+          src={h.thumbnail}
+          alt=""
+          width={320}
+          height={140}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={(e) => e.currentTarget.replaceWith(Object.assign(document.createElement("div"), { className: "hotel-card-img" }))}
+        />
+      ) : (
+        <div className="hotel-card-img" aria-hidden="true" />
+      )}
+      <div className="stack-sm grow">
+        <strong>{h.name}</strong>
+        {(kind || km != null) && (
+          <span className="small muted">{[kind && capitalize(kind), km != null ? `a ${kmLabel(km)} de ${stop.name}` : null].filter(Boolean).join(" · ")}</span>
+        )}
+        {h.rating != null && (
+          <span className="small muted">
+            <Icon name="star" size={12} /> {h.rating.toLocaleString("es-AR")} de 5
+            {h.reviews ? ` · ${h.reviews.toLocaleString("es-AR")} opiniones` : ""}
+          </span>
+        )}
+        <span className="price">{money(h.totalUSD * rooms)}</span>
+        <span className="small muted">
+          {money(h.nightlyUSD)} por noche · {nights} {nights === 1 ? "noche" : "noches"}
+          {rooms > 1 ? ` · ${rooms} habitaciones` : ""}
+          {h.site ? ` · en ${h.site}` : ""}
+        </span>
+      </div>
+      <nav className="hotel-links" aria-label={`Más sobre ${h.name}`}>
+        <a href={links.tripadvisor} target="_blank" rel="noreferrer">
+          TripAdvisor <Icon name="external" size={12} />
+        </a>
+        <a href={links.official} target="_blank" rel="noreferrer">
+          {links.officialIsSearch ? "Buscar sitio oficial" : "Sitio oficial"} <Icon name="external" size={12} />
+        </a>
+        <a href={links.maps} target="_blank" rel="noreferrer">
+          Ver en el mapa <Icon name="external" size={12} />
+        </a>
+      </nav>
+      <button className={selected ? "primary" : "secondary"} onClick={onSelect} aria-pressed={selected}>
+        {selected ? "Elegido" : "Elegir"}
+      </button>
+    </article>
   );
 }

@@ -49,7 +49,7 @@ import { escapes } from "./escapes.ts";
 import { crossAndFly } from "./cross.ts";
 import { partnerLinks } from "./partner-links.ts";
 import { searchFlights, searchMulti, searchPlaces } from "./search.ts";
-import { geocode, nearestCatalog, planTrip } from "./trip.ts";
+import { geocode, nearestCatalog, planTrip, refreshLeg } from "./trip.ts";
 import { canUseGoogle } from "./google-budget.ts";
 import { BY_CODE } from "./radar.ts";
 import { stayLinks } from "../shared/links.ts";
@@ -492,6 +492,16 @@ app.post("/trip/plan", async (c) => {
   return c.json(await planTrip(e.TRAVELPAYOUTS_TOKEN, body, e.TRAVELPAYOUTS_MARKER, google));
 });
 
+// Vuelve a mirar un tramo (solo el día exacto, sin la caché de 3 h) después de
+// que el usuario lo buscó en Aviasales. No usa Google ni escribe en KV.
+app.post("/trip/leg", async (c) => {
+  const body = z
+    .object({ from: iata, to: iata, date: isoDate, returnDate: isoDate.nullable().optional() })
+    .parse(await c.req.json());
+  const e = env(c);
+  return c.json(await refreshLeg(e.TRAVELPAYOUTS_TOKEN, e.TRAVELPAYOUTS_MARKER, body.from, body.to, body.date, body.returnDate ?? null));
+});
+
 // Alojamiento de una parada: precios reales si está en el catálogo (o con Google, a pedido); si no, estimado y links.
 app.get("/trip/hotels", async (c) => {
   const q = z
@@ -505,9 +515,11 @@ app.get("/trip/hotels", async (c) => {
       travelers: travelersQ,
       style: z.enum(["low", "mid", "high"]).default("mid"),
       google: z.string().optional(),
+      // Habitaciones según el grupo (roomsForParty: los chicos comparten).
+      rooms: z.coerce.number().int().min(1).max(12).optional(),
     })
     .parse(c.req.query());
-  const rooms = Math.max(1, Math.ceil(q.travelers / 2));
+  const rooms = q.rooms ?? Math.max(1, Math.ceil(q.travelers / 2));
   const near = nearestCatalog(q.lat, q.lon);
   const inCatalog = near.km < 40 ? near.dest : null;
   let quote = inCatalog ? await xoteloHotels(inCatalog, q.checkin, q.nights).catch(() => null) : null;

@@ -4,6 +4,7 @@ import type {
   GeoPlace,
   TripPlan,
   TripPlanRequest,
+  TripLeg,
   FlightResult,
   LegResult,
   Place,
@@ -91,7 +92,13 @@ export const api = {
     }>(`/api/search/hotels?${qs(p)}`),
   geo: (q: string) => request<GeoPlace[]>(`/api/geo?${qs({ q })}`),
   planTrip: (body: TripPlanRequest) => request<TripPlan>("/api/trip/plan", { method: "POST", body: JSON.stringify(body) }),
-  tripHotels: (p: { name: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; style: string }) =>
+  /** Vuelve a mirar el precio de un tramo (día exacto, sin caché larga). */
+  tripLeg: (body: { from: string; to: string; date: string; returnDate: string | null }) =>
+    request<Pick<TripLeg, "from" | "to" | "price" | "priceKind" | "priceDate" | "priceSource" | "airline" | "stops" | "link">>("/api/trip/leg", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  tripHotels: (p: { name: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; rooms: number; style: string }) =>
     request<{
       destinationId: string | null;
       hotels: RealHotel[];
