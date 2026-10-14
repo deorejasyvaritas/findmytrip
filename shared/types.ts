@@ -122,6 +122,11 @@ export interface ExploreRequest {
   directOnly?: boolean;
   /** Solo salidas dentro de los próximos fines de semana largos. */
   longWeekendsOnly?: boolean;
+  /**
+   * Presupuesto en USD para destinos de Argentina cuando el usuario lo puso en
+   * pesos: se convierte al dólar oficial (allá se paga en pesos, sin percepciones).
+   */
+  domesticBudgetUSD?: number;
 }
 
 export interface CostBreakdown {
@@ -157,7 +162,7 @@ export interface Suggestion {
   direct?: boolean;
   /** Fin de semana largo de esta opción (búsqueda "Fines de semana largos"). */
   longWeekend?: LongWeekendInfo;
-  /** Noches de esta opción cuando no son las de la búsqueda (fin de semana largo). */
+  /** Noches de esta opción cuando no son las de la búsqueda (fin de semana largo o fechas del precio real). */
   nights?: number;
 }
 
@@ -211,7 +216,8 @@ export interface FlightDay {
   date: string; // YYYY-MM-DD (salida)
   returnDate: string;
   priceUSD: number; // ida y vuelta por persona
-  source: "estimado" | "en vivo";
+  /** visto = precio que vieron usuarios de Aviasales en los últimos días (no es en vivo). */
+  source: "estimado" | "visto";
   airline?: string;
   stops?: number;
 }
@@ -353,8 +359,12 @@ export interface Meta {
   agent: boolean;
   /** Qué IA usa el agente: Claude (pago) o Workers AI de Cloudflare (gratis). */
   agentProvider: "claude" | "workers-ai" | null;
+  /** Dólar tarjeta: para viajes al exterior (con percepciones). */
   usdArsRate: number;
   usdArsSource: string;
+  /** Dólar oficial: para viajes dentro de Argentina (se pagan en pesos, sin percepciones). */
+  usdArsOfficialRate?: number;
+  usdArsOfficialSource?: string;
   /** ID de afiliado de Travelpayouts para los links de Aviasales. */
   marker: string | null;
   /** Hay bot de Telegram configurado para las alertas. */

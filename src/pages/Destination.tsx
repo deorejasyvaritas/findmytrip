@@ -24,11 +24,12 @@ import {
   fareUnits,
   headcount,
   partyFromParams,
+  partyToParams,
   roomsForParty,
 } from "../../shared/pricing.ts";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { STYLE_LABEL, capitalize, formatDate, formatRange, monthName, monthShort } from "../lib/format.ts";
+import { STYLE_LABEL, capitalize, formatDate, formatRange, isDomestic, monthName, monthShort } from "../lib/format.ts";
 import { INTEREST_ICON } from "../lib/icons.ts";
 import Icon from "../components/Icon.tsx";
 import CrossAndFly from "../components/CrossAndFly.tsx";
@@ -74,7 +75,7 @@ export default function DestinationPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const app = useApp();
-  const { profile, money, meta, photos } = app;
+  const { profile, meta, photos } = app;
   const google = Boolean(meta?.googleQuotes);
 
   const [nights, setNights] = useState(Number(params.get("nights")) || 7);
@@ -84,6 +85,8 @@ export default function DestinationPage() {
   const [editParty, setEditParty] = useState(false);
   // Para las APIs alcanza con la cantidad de personas; el detalle (edades, equipaje) se calcula acá.
   const travelers = headcount(party);
+  const partyQuery = partyToParams(party);
+  const partyKey = `${partyQuery.adults}|${partyQuery.kids}`;
   const [style, setStyle] = useState<Style>(profile.style);
   const [dest, setDest] = useState<Destination | null>(null);
   const [months, setMonths] = useState<MonthPrice[]>([]);
@@ -107,14 +110,15 @@ export default function DestinationPage() {
 
   useEffect(() => {
     api
-      .destination(id, { origin: profile.origin, nights, travelers, style })
+      .destination(id, { origin: profile.origin, nights, travelers, style, ...partyQuery })
       .then((r) => {
         setDest(r.destination);
         setMonths(r.months);
         setMonth((m) => m ?? monthKey(r.months.find((x) => x.best) ?? r.months[0]));
       })
       .catch((e) => setError(e.message));
-  }, [id, profile.origin, nights, travelers, style]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, profile.origin, nights, partyKey, style]);
 
   useEffect(() => {
     if (!month) return;
@@ -132,7 +136,7 @@ export default function DestinationPage() {
         const inRange = from && to ? c.days.filter((d) => d.date >= from && d.date <= to) : [];
         const bestInRange = inRange.reduce<FlightDay | undefined>((acc, d) => {
           if (!acc) return d;
-          if (d.source !== acc.source) return d.source === "en vivo" ? d : acc;
+          if (d.source !== acc.source) return d.source === "visto" ? d : acc;
           return d.priceUSD < acc.priceUSD ? d : acc;
         }, undefined);
         const first = fromParam ?? bestInRange ?? c.cheapest;
@@ -145,6 +149,12 @@ export default function DestinationPage() {
   }, [id, month, nights, profile.origin]);
 
   const dayKey = day ? `${day.date}_${day.returnDate}` : null;
+  // El calendario acepta precios reales con hasta 2 noches de diferencia: la
+  // estadía (hotel, comidas, paquete) es la de las fechas del vuelo elegido.
+  const stayNights = day ? Math.max(1, nightsBetween(day.date, day.returnDate)) : nights;
+  // Viaje dentro de Argentina: en pesos se cotiza al oficial (sin percepciones).
+  const domestic = isDomestic(dest?.region);
+  const money = (usd: number) => app.money(usd, { domestic });
 
   // Precio de hoy en Google Flights: automático para el primer día del mes;
   // para los demás días, solo si ya está en caché (no gasta cuota).
@@ -188,7 +198,7 @@ export default function DestinationPage() {
     if (!hotelsCheckin) return;
     const checkin = hotelsCheckin;
     api
-      .stays({ dest: id, checkin, nights, travelers })
+      .stays({ dest: id, checkin, nights: stayNights, travelers, ...partyQuery })
       .then((r) => setStays(r.options))
       .catch((e) => setError(e.message));
     let cancelled = false;
@@ -196,12 +206,12 @@ export default function DestinationPage() {
     const t = setTimeout(() => {
       setLoading((l) => ({ ...l, hotels: true }));
       api
-        .stays({ dest: id, checkin, nights, travelers, real: 1, ...(allowGoogle ? { google: 1 as const } : {}) })
+        .stays({ dest: id, checkin, nights: stayNights, travelers, ...partyQuery, real: 1, ...(allowGoogle ? { google: 1 as const } : {}) })
         .then((r) => {
           if (cancelled) return;
           setHotels(r.hotels);
           setHotelsSource(r.source);
-          setHotelsFor(`${checkin}_${nights}`);
+          setHotelsFor(`${checkin}_${stayNights}`);
         })
         .catch(() => !cancelled && setHotels([]))
         .finally(() => !cancelled && setLoading((l) => ({ ...l, hotels: false })));
@@ -211,14 +221,14 @@ export default function DestinationPage() {
       clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hotelsCheckin, nights, travelers, google, id]);
+  }, [hotelsCheckin, stayNights, partyKey, google, id]);
 
   const priceBands = useMemo(() => {
     const prices = (calendar?.days ?? []).map((d) => d.priceUSD).sort((a, b) => a - b);
     return { low: prices[Math.floor(prices.length / 3)] ?? 0, high: prices[Math.floor((prices.length * 2) / 3)] ?? 0 };
   }, [calendar]);
 
-  const realHotels = hotelsCheckin && hotelsFor === `${hotelsCheckin}_${nights}` ? hotels : [];
+  const realHotels = hotelsCheckin && hotelsFor === `${hotelsCheckin}_${stayNights}` ? hotels : [];
   const tiers = useMemo(() => pickTiers(realHotels), [realHotels]);
 
   if (error && !dest) return <p className="error">{error}</p>;
@@ -234,7 +244,7 @@ export default function DestinationPage() {
   const rooms = roomsForParty(party);
   const quoteOk = quote && day && quote.depart === day.date && quote.returnDate === day.returnDate;
   const flightPP = quoteOk ? quote.lowestUSD : (day?.priceUSD ?? 0);
-  const flightSource = quoteOk ? "Google Flights, hoy" : day?.source === "en vivo" ? "visto en los últimos días" : "estimado";
+  const flightSource = quoteOk ? "Google Flights, hoy" : day?.source === "visto" ? "visto en los últimos días" : "estimado";
   const flights = Math.round(flightPP * fareUnits(party));
   const bags = bagsCost(party, dest.region);
 
@@ -242,7 +252,7 @@ export default function DestinationPage() {
   const estStay = stays.find((s) => s.tier === tier);
   const lodging = realPick ? realPick.totalUSD * rooms : (estStay?.totalUSD ?? 0);
   const lodgingLabel = realPick ? realPick.name : estStay ? `${estStay.label} (estimado)` : "";
-  const daily = Math.round(dest.dailyUSD[style] * (nights + 1) * dailyUnits(party));
+  const daily = Math.round(dest.dailyUSD[style] * (stayNights + 1) * dailyUnits(party));
   const includeDaily = profile.includeDaily ?? false;
   const total = flights + bags + lodging + (includeDaily ? daily : 0);
   const maxMonth = Math.max(...months.map((m) => m.totalPerPersonUSD), 1);
@@ -277,7 +287,7 @@ export default function DestinationPage() {
           : []),
         {
           kind: "alojamiento",
-          label: `${lodgingLabel} · ${nights} noches${rooms > 1 ? ` · ${rooms} hab.` : ""}${realPick ? " (precio real)" : ""}`,
+          label: `${lodgingLabel} · ${stayNights} noches${rooms > 1 ? ` · ${rooms} hab.` : ""}${realPick ? " (precio real)" : ""}`,
           amountUSD: lodging,
           link: realPick?.link ?? estStay?.links[0].url,
         },
@@ -302,7 +312,7 @@ export default function DestinationPage() {
   function follow() {
     if (!dest) return;
     const m = month ? Number(month.slice(5, 7)) : null;
-    app.addWatch({ destinationId: dest.id, targetUSD: Math.round(total), month: m, nights }, { party, style });
+    app.addWatch({ destinationId: dest.id, targetUSD: Math.round(total), month: m, nights: stayNights }, { party, style });
     setSaved("watch");
   }
 
@@ -313,7 +323,7 @@ export default function DestinationPage() {
   const byDate = new Map((calendar?.days ?? []).map((d) => [d.date, d]));
 
   const stayStart = hotelsCheckin ?? day?.date;
-  const stayEnd = stayStart ? addDays(stayStart, nights) : "";
+  const stayEnd = stayStart ? addDays(stayStart, stayNights) : "";
 
   return (
     <div className="dest-layout">
@@ -493,7 +503,7 @@ export default function DestinationPage() {
                     Salida <strong>{formatDate(day.date, { weekday: "short", day: "numeric", month: "short" })}</strong>, vuelta{" "}
                     <strong>{formatDate(day.returnDate, { weekday: "short", day: "numeric", month: "short" })}</strong>
                     {nightsBetween(day.date, day.returnDate) !== nights && (
-                      <> · {nightsBetween(day.date, day.returnDate)} noches (el precio real más cercano a {nights})</>
+                      <> · {stayNights} noches (el precio real más cercano a {nights}; el alojamiento se calcula por {stayNights})</>
                     )}
                   </span>
                 </div>
@@ -569,7 +579,8 @@ export default function DestinationPage() {
             <div className="section-head">
               <h2>Dónde dormir</h2>
               <span className="small muted">
-                {formatRange(stayStart ?? day.date, stayEnd)} · {rooms} {rooms === 1 ? "habitación" : "habitaciones"}
+                {formatRange(stayStart ?? day.date, stayEnd)} · {stayNights} {stayNights === 1 ? "noche" : "noches"} · {rooms}{" "}
+                {rooms === 1 ? "habitación" : "habitaciones"}
                 {realHotels.length
                   ? hotelsSource === "google"
                     ? " · precios reales de Google Hotels"
@@ -768,6 +779,7 @@ export default function DestinationPage() {
             <p className="small muted">
               {money(Math.round(total / travelers))} por persona
               {includeDaily ? "" : " · sin comidas ni paseos"}
+              {app.moneyHint(domestic) ? ` · ${app.moneyHint(domestic).toLowerCase()}` : ""}
             </p>
             <button className="primary full" onClick={savePackage}>
               <Icon name="bookmark" size={18} />

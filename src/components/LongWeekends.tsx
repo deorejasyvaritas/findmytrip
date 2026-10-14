@@ -3,22 +3,28 @@ import { Link } from "react-router-dom";
 import type { EscapeWeekend } from "../../shared/types.ts";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { capitalize, formatDate, formatRange } from "../lib/format.ts";
+import { capitalize, formatDate, formatRange, isDomestic } from "../lib/format.ts";
+import { partyToParams } from "../../shared/pricing.ts";
 import Icon from "./Icon.tsx";
 
 /** Escapadas con precio real para los próximos fines de semana largos. */
 export default function LongWeekends() {
-  const { profile, meta, money, photos } = useApp();
+  const { profile, meta, money, photos, destinations } = useApp();
+  // Alojamiento por persona según el grupo del perfil (los chicos comparten habitación).
+  const party = partyToParams({ adults: profile.travelers, childAges: profile.childAges ?? [], bags: profile.bags ?? "cabin" });
+  const partyKey = `${party.adults}|${party.kids}`;
+  const domestic = (id: string) => isDomestic(destinations.find((d) => d.id === id)?.region);
   const [weekends, setWeekends] = useState<EscapeWeekend[] | null>(null);
 
   useEffect(() => {
     if (!meta?.liveFlights) return;
     setWeekends(null);
     api
-      .escapes(profile.origin)
+      .escapes(profile.origin, party)
       .then(setWeekends)
       .catch(() => setWeekends([]));
-  }, [meta?.liveFlights, profile.origin]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.liveFlights, profile.origin, partyKey]);
 
   if (!meta?.liveFlights || (weekends && weekends.length === 0)) return null;
 
@@ -67,10 +73,10 @@ export default function LongWeekends() {
                     <span className="grow stack-sm" style={{ gap: 0 }}>
                       <span className="lw-name">{o.name}</span>
                       <span className="small muted">
-                        {formatRange(o.depart, o.ret)} · vuelo {money(o.flightUSD)}
+                        {formatRange(o.depart, o.ret)} · vuelo {money(o.flightUSD, { domestic: domestic(o.destinationId) })}
                       </span>
                     </span>
-                    <span className="lw-price">{money(o.totalPerPersonUSD)}</span>
+                    <span className="lw-price">{money(o.totalPerPersonUSD, { domestic: domestic(o.destinationId) })}</span>
                     <Icon name="chevronRight" size={16} />
                   </Link>
                 ))}

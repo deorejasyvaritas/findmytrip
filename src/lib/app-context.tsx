@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Destination, Meta, Party, Profile, Style, TripPackage, WatchItem } from "../../shared/types.ts";
 import { api } from "./api.ts";
-import { formatMoney } from "./format.ts";
+import { formatMoney, pesoHint, pesoRate } from "./format.ts";
 import { useStored } from "./storage.ts";
 import { localOwner } from "./local-data.ts";
 import { useSharedTrips, type SharedTripsState } from "./shared-trips.ts";
@@ -37,9 +37,12 @@ interface AppState extends SharedTripsState {
   watchlist: WatchItem[];
   addWatch: (w: Omit<WatchItem, "id" | "createdAt">, extra?: { party: Party; style: Style }) => void;
   removeWatch: (id: string) => void;
-  money: (usd: number) => string;
+  /** Formatea en la moneda del perfil. `domestic`: viaje dentro de Argentina (pesos al oficial). */
+  money: (usd: number, opts?: { domestic?: boolean }) => string;
+  /** "En pesos, sin percepciones" / "En pesos, con dólar tarjeta" (vacío en dólares). */
+  moneyHint: (domestic: boolean) => string;
   /** Convierte un monto ingresado en la moneda del perfil a USD. */
-  toUSD: (amount: number) => number;
+  toUSD: (amount: number, opts?: { domestic?: boolean }) => number;
   fromUSD: (usd: number) => number;
 }
 
@@ -91,6 +94,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const profile = { ...DEFAULT_PROFILE, ...storedProfile };
   const rate = meta?.usdArsRate ?? 1450;
+  const rateFor = (domestic?: boolean) => pesoRate({ card: rate, official: meta?.usdArsOfficialRate }, Boolean(domestic));
 
   const value = useMemo<AppState>(
     () => ({
@@ -131,8 +135,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (item) api.deleteAlert(item.destinationId).catch(() => {});
           return prev.filter((x) => x.id !== id);
         }),
-      money: (usd) => formatMoney(usd, profile.currency, rate),
-      toUSD: (amount) => (profile.currency === "ARS" ? amount / rate : amount),
+      money: (usd, opts) => formatMoney(usd, profile.currency, rateFor(opts?.domestic)),
+      moneyHint: (domestic) => pesoHint(profile.currency, domestic),
+      toUSD: (amount, opts) => (profile.currency === "ARS" ? amount / rateFor(opts?.domestic) : amount),
       fromUSD: (usd) => (profile.currency === "ARS" ? Math.round(usd * rate) : Math.round(usd)),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

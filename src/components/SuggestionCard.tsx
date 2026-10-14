@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { LongWeekendInfo, Party, PriceSource, Style, Suggestion } from "../../shared/types.ts";
 import { partyToParams } from "../../shared/pricing.ts";
 import { useApp } from "../lib/app-context.tsx";
-import { capitalize, formatDate, formatRange, monthName } from "../lib/format.ts";
+import { capitalize, formatDate, formatRange, isDomestic, monthName } from "../lib/format.ts";
 import { CompareToggle } from "./Compare.tsx";
 import Icon from "./Icon.tsx";
 import WatchButton from "./WatchButton.tsx";
@@ -34,8 +34,13 @@ export default function SuggestionCard({
   /** Alojamiento de la búsqueda (para la alerta). */
   style?: Style;
 }) {
-  const { money, photos } = useApp();
+  const app = useApp();
+  const { photos } = app;
   const d = s.destination;
+  // Dentro de Argentina se paga en pesos al oficial; afuera, con dólar tarjeta.
+  const domestic = isDomestic(d.region);
+  const money = (usd: number) => app.money(usd, { domestic });
+  const hint = app.moneyHint(domestic);
   // Fin de semana largo: las noches son las de esa opción.
   const optNights = s.nights ?? nights;
   const q = new URLSearchParams({
@@ -81,6 +86,7 @@ export default function SuggestionCard({
           <div className="small muted">
             {s.cost.dailyIncluded ? "Total" : "Vuelo y alojamiento"} · {money(s.cost.perPerson)} por persona
           </div>
+          {hint && <div className="small muted">{hint}</div>}
         </div>
         <div className="breakdown">
           <span className={s.flightSource !== "estimado" ? "real" : ""}>
@@ -112,7 +118,7 @@ export default function SuggestionCard({
       )}
       <div className="card-foot">
         <span className={`source ${s.flightSource !== "estimado" ? "live" : ""}`}>
-          {SOURCE_LABEL[s.flightSource]}
+          {s.flightSource === "aviasales" && !s.depart ? "Mínimo del mes, visto en los últimos días" : SOURCE_LABEL[s.flightSource]}
           {s.airline ? ` · ${s.airline}` : ""}
           {s.direct ? " · directo" : ""}
         </span>

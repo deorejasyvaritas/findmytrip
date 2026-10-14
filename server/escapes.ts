@@ -1,4 +1,5 @@
-import type { Escape, EscapeWeekend } from "../shared/types.ts";
+import type { Escape, EscapeWeekend, Party } from "../shared/types.ts";
+import { DEFAULT_PARTY, headcount, roomsForParty } from "../shared/pricing.ts";
 import { cached, fetchJSON } from "./cache.ts";
 import { addDays, isSameCity, lodgingNightly, toISO } from "./engine.ts";
 import { longWeekends } from "./holidays.ts";
@@ -54,7 +55,13 @@ export async function offersFor(token: string, origin: string, depart: string, r
   return out;
 }
 
-export async function escapes(token: string | undefined, origin: string, today = new Date()): Promise<EscapeWeekend[]> {
+export async function escapes(
+  token: string | undefined,
+  origin: string,
+  today = new Date(),
+  /** Grupo que viaja: el alojamiento por persona depende de cuántas habitaciones hacen falta. */
+  party: Party = DEFAULT_PARTY,
+): Promise<EscapeWeekend[]> {
   const weekends = longWeekends(toISO(today), 4);
   if (!token) return weekends.map((w) => ({ ...w, options: [] }));
   return Promise.all(
@@ -70,8 +77,8 @@ export async function escapes(token: string | undefined, origin: string, today =
         if (!dest || dest.flightHours > MAX_FLIGHT_HOURS || isSameCity(origin, dest)) continue;
         const nights = Math.max(1, Math.round((Date.parse(o.ret) - Date.parse(o.depart)) / 86400000));
         const month = Number(o.depart.slice(5, 7));
-        // Alojamiento económico compartido de a dos, por persona.
-        const lodgingPP = Math.round((lodgingNightly(dest, "low", month) * nights) / 2);
+        // Alojamiento económico por persona según las habitaciones del grupo.
+        const lodgingPP = Math.round((lodgingNightly(dest, "low", month) * nights * roomsForParty(party)) / headcount(party));
         const prev = best.get(dest.id);
         if (!prev || o.price < prev.flightUSD) {
           best.set(dest.id, {

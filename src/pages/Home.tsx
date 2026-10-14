@@ -122,6 +122,8 @@ export default function Home() {
         maxFlightPP: s.maxFlightPP || undefined,
         directOnly: s.directOnly || undefined,
         longWeekendsOnly: (s.longWeekends && s.when.kind !== "exact") || undefined,
+        // Presupuesto en pesos: para destinos de Argentina rinde al dólar oficial.
+        domesticBudgetUSD: profile.currency === "ARS" ? Math.round(app.toUSD(app.fromUSD(s.budgetUSD), { domestic: true })) : undefined,
       });
       setResult(res);
       if (fromButton) {

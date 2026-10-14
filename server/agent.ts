@@ -39,7 +39,7 @@ Tu trabajo es ayudarlo a viajar lo mejor posible con su presupuesto:
 - Armar paquetes (vuelo + alojamiento + gastos diarios) que el usuario pueda guardar.
 
 Cómo trabajar:
-- Usá las herramientas para obtener precios; no inventes números. Los precios son estimaciones en USD salvo que la herramienta diga "en vivo"; aclaralo brevemente.
+- Usá las herramientas para obtener precios; no inventes números. Ningún precio es en vivo: los marcados "visto en los últimos días" son reales pero los vio otra gente en Aviasales hace poco (pueden cambiar); "Google Flights hoy" es la cotización del día; el resto son estimaciones en USD. Aclaralo brevemente y nunca digas "en vivo".
 - Si falta un dato clave (presupuesto, cantidad de noches), asumí algo razonable a partir del perfil y decilo, en vez de frenar la conversación con preguntas.
 - Cuando el usuario muestre interés concreto en un destino y fechas, proponé un paquete con la herramienta proponer_paquete para que pueda guardarlo.
 - Respondé breve y escaneable: listas cortas, montos redondeados, y siempre una recomendación clara. Nada de relleno.
@@ -47,6 +47,12 @@ Cómo trabajar:
 
 Catálogo de destinos disponibles (id: nombre · intereses):
 ${catalog}`;
+
+const FLIGHT_SOURCE = {
+  google: "Google Flights hoy",
+  aviasales: "visto en los últimos días",
+  estimado: "estimado",
+} as const;
 
 export interface AgentMessage {
   role: "user" | "assistant";
@@ -136,7 +142,7 @@ export async function runAgent(
           gastosUSD: s.cost.daily,
           encaje: s.fit,
           motivos: s.reasons,
-          fuenteVuelo: s.flightSource,
+          fuenteVuelo: FLIGHT_SOURCE[s.flightSource],
           fuenteHotel: s.lodgingSource,
           fechas: s.depart ? `${s.depart} a ${s.ret ?? "?"}` : undefined,
           docs: s.destination.docs,
@@ -161,7 +167,8 @@ export async function runAgent(
       run: async (input) => {
         const dest = getDestination(input.destinationId);
         if (!dest) return `Destino desconocido: ${input.destinationId}`;
-        const rows = monthOverview(origin, dest, input.nights, input.travelers ?? profile.travelers, input.style ?? profile.style, today);
+        const party = input.travelers ? { ...baseParty, adults: input.travelers } : baseParty;
+        const rows = monthOverview(origin, dest, input.nights, party, input.style ?? profile.style, today);
         return json(rows.map((r) => ({ mes: `${monthName(r.month)} ${r.year}`, vueloPP: r.flightUSD, totalPP: r.totalPerPersonUSD, recomendado: r.best })));
       },
     }),
@@ -178,7 +185,10 @@ export async function runAgent(
         if (!dest) return `Destino desconocido: ${input.destinationId}`;
         const cal = await flightCalendar(tpToken, origin, dest, input.month, input.nights);
         const top = [...cal.days].sort((a, b) => a.priceUSD - b.priceUSD).slice(0, 5);
-        return json({ enVivo: cal.live, masBaratos: top });
+        return json({
+          fuente: cal.live ? "precios vistos en Aviasales en los últimos días (no en vivo) y estimados donde no hay datos" : "estimado",
+          masBaratos: top.map((d) => ({ ...d, source: d.source === "visto" ? "visto en los últimos días" : "estimado" })),
+        });
       },
     }),
     tool({
@@ -193,41 +203,53 @@ export async function runAgent(
       run: async (input) => {
         const dest = getDestination(input.destinationId);
         if (!dest) return `Destino desconocido: ${input.destinationId}`;
-        const stays = stayOptions(dest, input.checkin, input.nights, input.travelers ?? profile.travelers);
+        const stays = stayOptions(dest, input.checkin, input.nights, input.travelers ? { ...baseParty, adults: input.travelers } : baseParty);
         return json(stays.map(({ links: _links, ...s }) => s));
       },
     }),
     tool({
       name: "proponer_paquete",
       description:
-        "Arma un paquete concreto (vuelo + alojamiento + gastos) para un destino y fecha de salida. El usuario lo verá como tarjeta y podrá guardarlo en 'Mis viajes'.",
+        "Arma un paquete concreto (vuelo + equipaje + alojamiento; comidas y paseos aparte salvo que el usuario los sume) para un destino y fecha de salida. El usuario lo verá como tarjeta y podrá guardarlo en 'Mis viajes'.",
       inputSchema: z.object({
         destinationId: z.string(),
         departDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         nights: z.number().int().min(1).max(60),
-        travelers: z.number().int().min(1).max(12).optional(),
+        adults: z.number().int().min(1).max(12).optional(),
+        childAges: z.array(z.number().int().min(0).max(17)).optional().describe("Edad de cada menor"),
+        bags: z.enum(BAGS).optional().describe("Equipaje por persona"),
         style: z.enum(STYLES).optional(),
         notes: z.string().optional().describe("Tips o comentarios para el usuario"),
       }),
       run: async (input) => {
         const dest = getDestination(input.destinationId);
         if (!dest) return `Destino desconocido: ${input.destinationId}`;
-        const travelers = input.travelers ?? profile.travelers;
+        const party = partyFrom(input);
         const style = input.style ?? profile.style;
         const cal = await flightCalendar(tpToken, origin, dest, input.departDate.slice(0, 7), input.nights);
         const day = cal.days.find((d) => d.date === input.departDate);
+        // El precio visto puede ser de una estadía un poco distinta: usamos sus fechas.
+        const nights = day ? Math.max(1, Math.round((Date.parse(day.returnDate) - Date.parse(day.date)) / 86400000)) : input.nights;
         const pkg = buildPackage({
           dest,
           origin,
           departDate: input.departDate,
-          nights: input.nights,
-          travelers,
+          nights,
+          party,
           style,
           flightPP: day?.priceUSD,
+          includeDaily: profile.includeDaily ?? false,
           notes: input.notes,
         });
         proposals.push(pkg);
-        return json({ ok: true, totalUSD: pkg.totalUSD, items: pkg.items.map((i) => `${i.label}: USD ${i.amountUSD}`) });
+        return json({
+          ok: true,
+          fechas: `${pkg.departDate} a ${pkg.returnDate} (${nights} noches)`,
+          fuenteVuelo: day?.source === "visto" ? "visto en los últimos días" : "estimado",
+          totalUSD: pkg.totalUSD,
+          items: pkg.items.map((i) => `${i.label}: USD ${i.amountUSD}`),
+          nota: pkg.notes,
+        });
       },
     }),
   ];
