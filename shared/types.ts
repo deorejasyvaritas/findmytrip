@@ -249,7 +249,8 @@ export interface StayOption {
   area: string;
   description: string;
   links: { label: string; url: string }[];
-  source: "estimado" | "en vivo";
+  /** real = tarifas de hoteles reales (Xotelo o Google, con caché de horas); nunca "en vivo". */
+  source: "estimado" | "real";
 }
 
 export interface PackageItem {
@@ -257,6 +258,32 @@ export interface PackageItem {
   label: string;
   amountUSD: number;
   link?: string;
+  /** Qué precio es y cuándo se vio: para mostrarlo y volver a revisarlo (Mis viajes). */
+  quote?: ItemQuote;
+}
+
+/**
+ * Tipo de precio: exacto = para esas fechas · cercano = otro día cerca ·
+ * mes = lo más barato del mes · estimado = cálculo nuestro · manual = lo cargó el usuario.
+ */
+export type PriceKind = "exacto" | "cercano" | "mes" | "estimado" | "manual";
+export type QuoteSource = "aviasales" | "google" | "xotelo" | "estimado" | "manual";
+
+/** Precio de un ítem guardado, con lo necesario para volver a consultarlo. */
+export interface ItemQuote {
+  kind: PriceKind;
+  source: QuoteSource;
+  /** Cuándo vimos este precio (ISO). */
+  at: string;
+  /** Precio unitario: por pasaje de adulto (vuelo) o por noche y habitación (hotel). */
+  unitUSD: number;
+  /** Cuántas unidades suma el ítem (pasajes equivalentes, o noches × habitaciones). */
+  units: number;
+  /** Salida del precio cuando no es el día pedido. */
+  priceDate?: string | null;
+  flight?: { from: string; to: string; depart: string; ret: string | null };
+  /** Hotel de Xotelo (clave de TripAdvisor) y fechas. */
+  hotel?: { key: string; checkin: string; checkout: string };
 }
 
 export interface TripPackage {
@@ -287,11 +314,16 @@ export interface ChecklistItem {
 export type SharedTrip = Pick<
   TripPackage,
   "destinationId" | "destinationName" | "origin" | "departDate" | "returnDate" | "travelers" | "style" | "items" | "totalUSD"
->;
+> & {
+  /** Cuándo se vio el precio más viejo del viaje (no cuándo se compartió). */
+  pricedAt?: string;
+};
 
 /** Respuesta pública de GET /api/share/:id. */
 export interface SharedTripResponse {
   trip: SharedTrip;
+  /** Viaje dentro de Argentina: allá se paga en pesos. */
+  domestic?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -323,6 +355,8 @@ export interface FlightQuote {
   typicalRangeUSD: [number, number] | null;
   priceLevel: string | null; // "low" | "typical" | "high"
   url: string | null;
+  /** Cuándo se consultó a Google (la cotización queda en caché unas horas). */
+  fetchedAt?: string;
 }
 
 export interface RealHotel {
@@ -337,6 +371,8 @@ export interface RealHotel {
   link: string | null;
   /** Sitio con el precio más barato (Booking.com, Agoda, ...). */
   site?: string | null;
+  /** Clave del hotel en Xotelo: sirve para volver a mirar su tarifa. */
+  key?: string | null;
   /** Página del hotel en TripAdvisor (Xotelo). */
   tripadvisorUrl?: string | null;
   /** Sitio oficial del hotel (Google Hotels). */
@@ -595,6 +631,8 @@ export interface TripLeg {
   priceKind: "exacto" | "cercano" | "mes" | "manual" | null;
   /** Fecha de salida del precio "cercano". */
   priceDate: string | null;
+  /** Cuándo se consultó el precio de Google (queda en caché unas horas). */
+  priceAt?: string | null;
   /** De dónde salió el precio: lo visto en Aviasales o Google Flights de hoy. */
   priceSource: "aviasales" | "google" | null;
   airline: string | null;

@@ -238,6 +238,7 @@ export async function runAgent(
           party,
           style,
           flightPP: day?.priceUSD,
+          flightSource: day?.source === "visto" ? "aviasales" : "estimado",
           includeDaily: profile.includeDaily ?? false,
           notes: input.notes,
         });

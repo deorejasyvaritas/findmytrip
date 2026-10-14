@@ -66,6 +66,7 @@ export function shareSnapshot(raw: unknown): SharedTrip | null {
   if (!items.length) return null;
   const travelers = Math.min(12, Math.max(1, Math.round(Number(p.travelers) || 1)));
   const totalUSD = money(p.totalUSD) ?? items.reduce((s, i) => s + i.amountUSD, 0);
+  const pricedAt = oldestPrice(p);
   return {
     destinationId: text(p.destinationId, 60),
     destinationName,
@@ -76,5 +77,16 @@ export function shareSnapshot(raw: unknown): SharedTrip | null {
     style: p.style === "low" || p.style === "high" ? p.style : "mid",
     items,
     totalUSD,
+    ...(pricedAt ? { pricedAt } : {}),
   };
+}
+
+/** Cuándo se vio el precio más viejo del viaje (o cuándo se guardó, si no hay datos). */
+function oldestPrice(p: Partial<TripPackage>): string | null {
+  const stamps = (Array.isArray(p.items) ? p.items : [])
+    .map((i) => (i && typeof i === "object" ? Date.parse(String((i as PackageItem).quote?.at ?? "")) : NaN))
+    .filter((t) => Number.isFinite(t));
+  const created = Date.parse(String(p.createdAt ?? ""));
+  const t = stamps.length ? Math.min(...stamps) : created;
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }

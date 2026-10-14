@@ -10,6 +10,8 @@ import TripDetail from "../components/TripDetail.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { copyText, shareOrCopy, shareUrl, type ShareOutcome } from "../lib/share.ts";
+import { usePriceCheck } from "../lib/price-check.ts";
+import { isDomestic, pesoRate } from "../lib/format.ts";
 
 const STATUS: { value: TripPackage["status"]; label: string }[] = [
   { value: "idea", label: "Idea" },
@@ -35,8 +37,14 @@ export default function Trips() {
       .then((r) => setShares(r.shares ?? {}))
       .catch(() => setShares({}));
   }, []);
-  const { money } = useApp();
-  const pending = packages.filter((p) => p.status !== "reservado").reduce((s, p) => s + p.totalUSD, 0);
+  const { money, meta, destinations, profile } = useApp();
+  // Los viajes por Argentina se muestran en pesos al oficial: para sumarlos con el resto
+  // (dólar tarjeta) los pasamos a su equivalente en dólares tarjeta.
+  const rates = { card: meta?.usdArsRate ?? 1450, official: meta?.usdArsOfficialRate };
+  const domesticFactor = profile.currency === "ARS" ? pesoRate(rates, true) / pesoRate(rates, false) : 1;
+  const pending = packages
+    .filter((p) => p.status !== "reservado")
+    .reduce((s, p) => s + p.totalUSD * (isDomestic(destinations.find((d) => d.id === p.destinationId)?.region) ? domesticFactor : 1), 0);
 
   const notice = sharedNotice ? (
     <p className="error small" role="alert">
@@ -144,6 +152,8 @@ function TripCard({
   // Mismos cambios que en un viaje propio; si es compartido, se guarda para todos.
   const update = (patch: Partial<TripPackage>) =>
     ctrip ? updateSharedTrip(ctrip.id, patch, defaultChecklist(abroad)) : updatePackage(p.id, patch);
+  // Revisar precios: a mano o, si los precios tienen más de un día, una vez al abrir Mis viajes.
+  const check = usePriceCheck(p, update, true);
 
   const flash = (n: Notice) => {
     setNotice(n);
@@ -225,6 +235,7 @@ function TripCard({
   return (
     <PackageCard
       pkg={p}
+      check={check}
       badge={
         shareId || others ? (
           <span className="pkg-badge">

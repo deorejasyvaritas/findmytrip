@@ -129,15 +129,33 @@ async function bestRate(key: string, checkin: string, checkout: string): Promise
       "xotelo-rates",
       HEADERS,
     );
-    const rates = (r && !r.error ? r.result?.rates : null) ?? [];
-    let best: { nightly: number; site: string } | null = null;
-    for (const x of rates) {
-      if (!x.rate || x.rate <= 0) continue;
-      const nightly = Math.round(x.rate + (x.tax ?? 0));
-      if (!best || nightly < best.nightly) best = { nightly, site: x.name ?? x.code ?? "" };
-    }
-    return best;
+    return cheapestRate((r && !r.error ? r.result?.rates : null) ?? []);
   });
+}
+
+/**
+ * Tarifa de un hotel para revisar un viaje guardado: caché de borde de 1 hora
+ * (sin KV), un solo subpedido.
+ */
+export async function hotelRate(key: string, checkin: string, checkout: string): Promise<{ nightly: number; site: string } | null> {
+  return edgeCached(`xr1h:${key}-${checkin}-${checkout}`, 3600, async () => {
+    const r = await fetchJSON<XoteloResponse<{ rates?: XoteloRate[] }>>(
+      `${API}/rates?${new URLSearchParams({ hotel_key: key, chk_in: checkin, chk_out: checkout, currency: "USD" })}`,
+      "xotelo-rates",
+      HEADERS,
+    );
+    return cheapestRate((r && !r.error ? r.result?.rates : null) ?? []);
+  });
+}
+
+function cheapestRate(rates: XoteloRate[]): { nightly: number; site: string } | null {
+  let best: { nightly: number; site: string } | null = null;
+  for (const x of rates) {
+    if (!x.rate || x.rate <= 0) continue;
+    const nightly = Math.round(x.rate + (x.tax ?? 0));
+    if (!best || nightly < best.nightly) best = { nightly, site: x.name ?? x.code ?? "" };
+  }
+  return best;
 }
 
 /** Elige hasta `n` hoteles repartidos entre baratos, medios y caros. */
@@ -167,6 +185,7 @@ async function xoteloQuote(dest: Destination, checkin: string, nights: number): 
     .filter((p) => p.rate)
     .map(({ h, rate }) => ({
       name: h.name,
+      key: h.key,
       nightlyUSD: rate!.nightly,
       totalUSD: rate!.nightly * nights,
       rating: h.rating,

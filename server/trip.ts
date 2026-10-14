@@ -7,6 +7,7 @@ import { addDays } from "./engine.ts";
 import { cheapestAnywhere, googleFlights, monthDays, type DayPrice } from "./providers/flights.ts";
 import { canUseGoogle } from "./google-budget.ts";
 import { searchFlights } from "./search.ts";
+import { aviasalesSearchUrl } from "../shared/links.ts";
 
 // "Ya sé a dónde": un viaje con una o varias paradas en cualquier lugar del
 // mundo (también pueblos sin aeropuerto, como Maragogi o Porto de Galinhas).
@@ -98,16 +99,13 @@ export function pickAirport(near: NearAirport[], fares: Map<string, number>): Ne
   return priced[0] ?? options[0] ?? near[0];
 }
 
-const ddmm = (iso: string) => `${iso.slice(8, 10)}${iso.slice(5, 7)}`;
-const aviasalesUrl = (from: string, to: string, depart: string, ret: string | null, adults: number, marker?: string) =>
-  `https://www.aviasales.com/search/${from}${ddmm(depart)}${to}${ret ? ddmm(ret) : ""}${adults}${marker ? `?marker=${marker}` : ""}`;
 
 /** Ciudad del catálogo más cercana: sirve para estimar el alojamiento de lugares fuera del catálogo. */
 export function nearestCatalog(lat: number, lon: number): { dest: Destination; km: number } {
   return DESTINATIONS.map((dest) => ({ dest, km: distanceKm(lat, lon, dest.lat, dest.lon) })).sort((a, b) => a.km - b.km)[0];
 }
 
-type LegPrice = Pick<TripLeg, "from" | "to" | "price" | "priceKind" | "priceDate" | "priceSource" | "airline" | "stops" | "link">;
+type LegPrice = Pick<TripLeg, "from" | "to" | "price" | "priceKind" | "priceDate" | "priceAt" | "priceSource" | "airline" | "stops" | "link">;
 
 const gapDays = (a: string, b: string) => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86400000));
 
@@ -183,6 +181,7 @@ async function aviasalesLeg(p: LegPriceInput, from: string, to: string, primary:
         price: google.lowestUSD,
         priceKind: "exacto",
         priceDate: null,
+        priceAt: google.fetchedAt ?? null,
         priceSource: "google",
         airline: null,
         stops: google.offers[0]?.stops ?? null,
@@ -313,7 +312,8 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
     alt: { from?: string[]; to?: string[] } = {},
   ): Promise<TripLeg> => {
     const p = await priceLeg({ token, googleKey, marker, from, to, date, back, origin: req.origin, fares, altFrom: alt.from, altTo: alt.to });
-    const liveUrl = aviasalesUrl(p.from, p.to, date, back, 1, marker);
+    // Precio por adulto: el cliente cambia los pasajeros del link por los del grupo (aviasalesForParty).
+    const liveUrl = aviasalesSearchUrl({ from: p.from, to: p.to, depart: date, ret: back, party: 1, marker });
     return {
       kind: "flight",
       role,

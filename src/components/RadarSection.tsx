@@ -191,7 +191,14 @@ export default function RadarSection() {
             </div>
           ))}
         {visible.map((item) => (
-          <RadarCard key={item.destinationId} item={item} photo={photos[item.destinationId]} money={money} onBuy={setBuying} />
+          <RadarCard
+            key={item.destinationId}
+            item={item}
+            photo={photos[item.destinationId]}
+            money={(n) => money(n, { domestic: regionOf.get(item.destinationId) === "Argentina" })}
+            // El radar guarda lo visto en Aviasales; la edad es la del último barrido.
+            onBuy={(t) => setBuying({ ...t, stamp: { kind: "exacto", source: "aviasales", at: snap?.updatedAt } })}
+          />
         ))}
       </div>
       {snap && snap.items.length > 0 && list.length === 0 && (
@@ -293,7 +300,6 @@ function RadarCard({
                 typicalUSD: item.typicalUSD,
                 airline: item.airline,
                 flightNumber: item.flightNumber,
-                seenAt: "radar",
               })
             }
           >

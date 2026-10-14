@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CrossResult, FlightDay } from "../../shared/types.ts";
-import { flightLinks } from "../../shared/links.ts";
+import { flightLinks, type PartyLike } from "../../shared/links.ts";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import Icon from "./Icon.tsx";
@@ -9,7 +9,7 @@ import Icon from "./Icon.tsx";
 const MIN_SAVING = 40;
 
 /** "Cruzá y volá": solo aparece si salir desde otra ciudad ahorra de verdad. */
-export default function CrossAndFly({ destId, iata, month, day, travelers }: { destId: string; iata: string; month: string; day: FlightDay | null; travelers: number }) {
+export default function CrossAndFly({ destId, iata, month, day, travelers }: { destId: string; iata: string; month: string; day: FlightDay | null; travelers: PartyLike }) {
   const { profile, money, meta } = useApp();
   const [data, setData] = useState<CrossResult | null>(null);
 

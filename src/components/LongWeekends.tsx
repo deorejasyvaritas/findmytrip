@@ -32,7 +32,7 @@ export default function LongWeekends() {
     <section className="stack" aria-labelledby="lw-title">
       <div className="section-head">
         <h2 id="lw-title">Fines de semana largos</h2>
-        <span className="small muted">Vuelo real ida y vuelta + alojamiento económico, por persona</span>
+        <span className="small muted">Vuelo ida y vuelta visto en Aviasales en los últimos días + alojamiento económico estimado, por persona</span>
       </div>
       <div className="lw-grid">
         {!weekends &&

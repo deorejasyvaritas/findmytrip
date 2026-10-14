@@ -1301,3 +1301,11 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   .leg-actions { justify-content: flex-start; }
   .manual-price { max-width: none; }
 }
+
+/* Precios reales: revisar un viaje guardado y avisos antes de comprar. */
+.price-check { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 4px; }
+.price-check .link { min-height: var(--control); }
+.price-up { color: var(--orange); }
+.price-down { color: var(--green); }
+.buy-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: var(--r-md); background: var(--orange-soft); color: var(--label); }
+.buy-note .link { min-height: var(--control); }

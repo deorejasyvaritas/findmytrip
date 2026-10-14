@@ -9,7 +9,7 @@ import { Photo } from "../components/SuggestionCard.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { COMPARE_MAX, useCompare } from "../lib/compare.ts";
-import { capitalize, formatDate, monthName, monthShort, STYLE_LABEL } from "../lib/format.ts";
+import { capitalize, formatDate, isDomestic, monthName, monthShort, pesoRate, STYLE_LABEL } from "../lib/format.ts";
 import { load } from "../lib/storage.ts";
 
 // Comparar 2 o 3 destinos lado a lado: vuelo (real si lo vieron en Aviasales
@@ -45,7 +45,13 @@ const monthKey = (m: { month: number; year: number }) => `${m.year}-${String(m.m
 
 export default function ComparePage() {
   const [params, setParams] = useSearchParams();
-  const { destinations, profile, money } = useApp();
+  const { destinations, profile, money, meta, moneyHint } = useApp();
+  // Por Argentina se paga en pesos al oficial y afuera con dólar tarjeta: cada columna con su cambio.
+  const domesticOf = (d: Destination) => isDomestic(d.region);
+  const colMoney = (d: Destination, usd: number) => money(usd, { domestic: domesticOf(d) });
+  const rates = { card: meta?.usdArsRate ?? 1450, official: meta?.usdArsOfficialRate };
+  // Para elegir "Más barato" comparamos lo que se paga en pesos.
+  const payFactor = (d: Destination) => (profile.currency === "ARS" && domesticOf(d) ? pesoRate(rates, true) / pesoRate(rates, false) : 1);
   const compare = useCompare();
   const last = useMemo(lastSearch, []);
   const party: Party = last.party ?? { adults: profile.travelers, childAges: profile.childAges ?? [], bags: profile.bags ?? "cabin" };
@@ -229,10 +235,10 @@ export default function ComparePage() {
 
   const ok = columns.map((c) => (c.status === "ok" ? c : null));
   const best = {
-    flight: lowest(ok.map((c) => c?.flightPP)),
-    lodging: lowest(ok.map((c) => (c?.when ? lodgingFor(c.dest, style, c.when.month) : null))),
-    daily: lowest(columns.map((c) => c.dest.dailyUSD[style])),
-    total: lowest(ok.map((c) => c?.trip?.total)),
+    flight: lowest(ok.map((c) => (c?.flightPP != null ? c.flightPP * payFactor(c.dest) : null))),
+    lodging: lowest(ok.map((c) => (c?.when ? lodgingFor(c.dest, style, c.when.month) * payFactor(c.dest) : null))),
+    daily: lowest(columns.map((c) => c.dest.dailyUSD[style] * payFactor(c.dest))),
+    total: lowest(ok.map((c) => (c?.trip?.total != null ? c.trip.total * payFactor(c.dest) : null))),
     hours: lowest(columns.map((c) => c.dest.flightHours)),
   };
   const BestTag = ({ show, children }: { show: boolean; children: ReactNode }) =>
@@ -253,7 +259,7 @@ export default function ComparePage() {
           pending(c)
         ) : (
           <div className="cmp-cell">
-            <strong className="cmp-num">{money(c.flightPP!)}</strong>
+            <strong className="cmp-num">{colMoney(c.dest, c.flightPP!)}</strong>
             <span className={`small ${c.real ? "cmp-real" : "muted"}`}>
               {c.real ? `Visto en Aviasales, saliendo el ${formatDate(c.real.date)}` : "Estimado"}
             </span>
@@ -272,7 +278,7 @@ export default function ComparePage() {
               {STYLES.map((st) => (
                 <li key={st} className={st === style ? "on" : ""}>
                   <span>{STYLE_LABEL[st]}</span>
-                  <span className="cmp-num">{money(lodgingFor(c.dest, st, m))}</span>
+                  <span className="cmp-num">{colMoney(c.dest, lodgingFor(c.dest, st, m))}</span>
                 </li>
               ))}
             </ul>
@@ -285,7 +291,7 @@ export default function ComparePage() {
       label: "Comidas y paseos por día, por persona",
       cells: columns.map((c, i) => (
         <div className="cmp-cell">
-          <strong className="cmp-num">{money(c.dest.dailyUSD[style])}</strong>
+          <strong className="cmp-num">{colMoney(c.dest, c.dest.dailyUSD[style])}</strong>
           <span className="small muted">Estimado, aparte del total</span>
           <BestTag show={best.daily.has(i)}>Más barato</BestTag>
         </div>
@@ -298,11 +304,12 @@ export default function ComparePage() {
           pending(c)
         ) : (
           <div className="cmp-cell">
-            <strong className="cmp-num cmp-total">{money(c.trip.total)}</strong>
+            <strong className="cmp-num cmp-total">{colMoney(c.dest, c.trip.total)}</strong>
             <span className="small muted">
-              {money(c.trip.perPerson)} por persona · vuelo, equipaje y alojamiento en {monthName(c.when!.month)}
+              {colMoney(c.dest, c.trip.perPerson)} por persona · vuelo, equipaje y alojamiento en {monthName(c.when!.month)}
             </span>
-            <span className="small muted">+ {money(c.trip.daily)} de comidas y paseos</span>
+            <span className="small muted">+ {colMoney(c.dest, c.trip.daily)} de comidas y paseos</span>
+            {moneyHint(domesticOf(c.dest)) && <span className="small muted">{moneyHint(domesticOf(c.dest))}</span>}
             <BestTag show={best.total.has(i)}>Más barato</BestTag>
           </div>
         ),

@@ -14,7 +14,7 @@ const FIT = {
   estirando: { label: "Un poco más", cls: "badge-warn" },
 };
 export const SOURCE_LABEL: Record<PriceSource, string> = {
-  google: "Precio real de hoy",
+  google: "Google Flights, últimas 24 h",
   aviasales: "Visto en los últimos días",
   estimado: "Precio estimado",
 };

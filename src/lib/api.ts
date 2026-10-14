@@ -29,6 +29,7 @@ import type {
   SharedTripResponse,
 } from "../../shared/types.ts";
 import type { CTrip, InvitePreview } from "../../shared/ctrip.ts";
+import type { RecheckItem, RecheckResponse } from "../../shared/recheck.ts";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -119,6 +120,9 @@ export const api = {
       estimateFrom: string | null;
       links: { label: string; url: string }[];
     }>(`/api/trip/hotels?${qs(p)}`),
+  /** Vuelve a consultar los precios de un viaje guardado (Google solo si `google`). */
+  recheck: (items: RecheckItem[], google = false) =>
+    request<RecheckResponse>("/api/packages/recheck", { method: "POST", body: JSON.stringify({ items, google }) }),
   // Compartir un viaje por link (solo lectura).
   myShares: () => request<{ shares: Record<string, string> }>("/api/me/shares"),
   share: (pkg: TripPackage) =>

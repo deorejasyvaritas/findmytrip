@@ -13,7 +13,8 @@ import type {
   Style,
   TripPackage,
 } from "../../shared/types.ts";
-import { flightLinks, stayLinks } from "../../shared/links.ts";
+import { flightLinks, flightPax, stayLinks } from "../../shared/links.ts";
+import { priceLabel } from "../../shared/price-age.ts";
 import LodgingPicker from "../components/LodgingPicker.tsx";
 import { PartyPicker } from "../components/TripPickers.tsx";
 import {
@@ -245,7 +246,9 @@ export default function DestinationPage() {
   const rooms = roomsForParty(party);
   const quoteOk = quote && day && quote.depart === day.date && quote.returnDate === day.returnDate;
   const flightPP = quoteOk ? quote.lowestUSD : (day?.priceUSD ?? 0);
-  const flightSource = quoteOk ? "Google Flights, hoy" : day?.source === "visto" ? "visto en los últimos días" : "estimado";
+  // Google queda en caché unas horas: decimos "de hoy" solo si lo es.
+  const googleLabel = quoteOk ? (quote.fetchedAt ? priceLabel({ kind: "exacto", source: "google", at: quote.fetchedAt }) : "Precio de las últimas horas") : "";
+  const flightSource = quoteOk ? `Google Flights, ${googleLabel.toLowerCase()}` : day?.source === "visto" ? "visto en los últimos días" : "estimado";
   const flights = Math.round(flightPP * fareUnits(party));
   const bags = bagsCost(party, dest.region);
 
@@ -267,6 +270,9 @@ export default function DestinationPage() {
 
   function savePackage() {
     if (!dest || !day || (!realPick && !estStay)) return;
+    const savedAt = new Date().toISOString();
+    const pax = flightPax(party);
+    const soloAdult = pax.adults === 1 && !pax.children && !pax.infants;
     const pkg: TripPackage = {
       id: `pkg_${Date.now().toString(36)}`,
       destinationId: dest.id,
@@ -281,7 +287,16 @@ export default function DestinationPage() {
           kind: "vuelo",
           label: `Vuelo ${profile.origin}–${dest.iata} ida y vuelta (${describeParty(party)}, USD ${flightPP} por adulto, ${flightSource})`,
           amountUSD: flights,
-          link: (quoteOk && quote.url) || flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers, meta?.marker)[0].url,
+          // El link de Google Flights abre para 1 adulto: con más gente, Aviasales con el grupo cargado.
+          link: (quoteOk && soloAdult && quote.url) || flightLinks(profile.origin, dest.iata, day.date, day.returnDate, party, meta?.marker)[0].url,
+          quote: {
+            kind: quoteOk || day.source === "visto" ? "exacto" : "estimado",
+            source: quoteOk ? "google" : day.source === "visto" ? "aviasales" : "estimado",
+            at: (quoteOk && quote.fetchedAt) || savedAt,
+            unitUSD: flightPP,
+            units: fareUnits(party),
+            flight: { from: profile.origin, to: dest.iata, depart: day.date, ret: day.returnDate },
+          },
         },
         ...(bags > 0
           ? [{ kind: "extra" as const, label: `Equipaje: ${BAGS_LABEL[party.bags].toLowerCase()} por persona, ida y vuelta (estimado)`, amountUSD: bags }]
@@ -291,6 +306,16 @@ export default function DestinationPage() {
           label: `${lodgingLabel} · ${stayNights} noches${rooms > 1 ? ` · ${rooms} hab.` : ""}${realPick ? " (precio real)" : ""}`,
           amountUSD: lodging,
           link: realPick?.link ?? estStay?.links[0].url,
+          quote: realPick
+            ? {
+                kind: "exacto",
+                source: hotelsSource === "google" ? "google" : "xotelo",
+                at: savedAt,
+                unitUSD: realPick.nightlyUSD,
+                units: stayNights * rooms,
+                ...(realPick.key && stayStart ? { hotel: { key: realPick.key, checkin: stayStart, checkout: stayEnd } } : {}),
+              }
+            : { kind: "estimado", source: "estimado", at: savedAt, unitUSD: estStay?.nightlyUSD ?? 0, units: stayNights * (estStay?.rooms ?? rooms) },
         },
         ...(includeDaily
           ? [
@@ -516,7 +541,7 @@ export default function DestinationPage() {
                     <Icon name="search" size={16} />
                     Buscar en vivo, sin límite
                   </a>
-                  {flightLinks(profile.origin, dest.iata, day.date, day.returnDate, travelers, meta?.marker).map((l) => (
+                  {flightLinks(profile.origin, dest.iata, day.date, day.returnDate, party, meta?.marker).map((l) => (
                     <a key={l.label} href={l.url} target="_blank" rel="noreferrer" className="pill-link">
                       {l.label}
                       <Icon name="external" size={14} />
@@ -534,7 +559,7 @@ export default function DestinationPage() {
                 {quoteOk && (
                   <div className="card quote">
                     <div className="section-head" style={{ marginBottom: 0 }}>
-                      <h3>Precio real de hoy en Google Flights</h3>
+                      <h3>{googleLabel} en Google Flights</h3>
                       {quote.typicalRangeUSD && (
                         <span className="small muted">
                           Habitual USD {quote.typicalRangeUSD[0]}–{quote.typicalRangeUSD[1]}
@@ -573,7 +598,7 @@ export default function DestinationPage() {
           </section>
         )}
 
-        {month && <CrossAndFly destId={dest.id} iata={dest.iata} month={month} day={day} travelers={travelers} />}
+        {month && <CrossAndFly destId={dest.id} iata={dest.iata} month={month} day={day} travelers={party} />}
 
         {day && (
           <section>
@@ -670,7 +695,7 @@ export default function DestinationPage() {
             {!loading.hotels && realHotels.length > 0 && stayStart && (
               <div className="date-line">
                 <span className="small muted">Compará en:</span>
-                {stayLinks(dest.name, stayStart, stayEnd, travelers, rooms).map((l) => (
+                {stayLinks(dest.name, stayStart, stayEnd, party, rooms).map((l) => (
                   <a key={l.label} className="pill-link" href={l.url} target="_blank" rel="noreferrer">
                     {l.label} <Icon name="external" size={14} />
                   </a>
