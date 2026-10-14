@@ -12,13 +12,26 @@ const KIND_ICON: Record<TripPackage["items"][number]["kind"], IconName> = {
   extra: "plus",
 };
 
-export default function PackageCard({ pkg, actions }: { pkg: TripPackage; actions?: ReactNode }) {
+export default function PackageCard({
+  pkg,
+  actions,
+  badge,
+  children,
+}: {
+  pkg: TripPackage;
+  actions?: ReactNode;
+  /** Etiqueta junto al título (por ejemplo "Compartido"). */
+  badge?: ReactNode;
+  /** Contenido extra debajo de las acciones (detalle del viaje). */
+  children?: ReactNode;
+}) {
   const { money } = useApp();
   return (
     <article className="card package">
       <div className="suggestion-head">
         <div>
           <h3>{pkg.destinationName}</h3>
+          {badge}
           <p className="small muted">
             {formatDate(pkg.departDate)} – {formatDate(pkg.returnDate, { day: "numeric", month: "short", year: "numeric" })} ·{" "}
             {pkg.travelers} {pkg.travelers === 1 ? "viajero" : "viajeros"} · alojamiento {STYLE_LABEL[pkg.style].toLowerCase()}
@@ -46,6 +59,7 @@ export default function PackageCard({ pkg, actions }: { pkg: TripPackage; action
       {pkg.notes && <p className="note">{pkg.notes}</p>}
       <p className="small muted">{money(Math.round(pkg.totalUSD / pkg.travelers))} por persona</p>
       {actions && <div className="actions">{actions}</div>}
+      {children}
     </article>
   );
 }

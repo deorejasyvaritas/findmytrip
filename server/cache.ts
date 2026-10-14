@@ -6,6 +6,7 @@
 export interface KVStore {
   get(key: string, type: "json"): Promise<unknown>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+  delete?(key: string): Promise<void>;
 }
 
 let store: KVStore | null = null;
@@ -91,4 +92,14 @@ export async function saveJSON(key: string, value: unknown): Promise<void> {
     return;
   }
   await store.put(key, JSON.stringify(value));
+}
+
+/** Borra un dato persistente (si el KV no permite borrar, lo deja en null). */
+export async function deleteJSON(key: string): Promise<void> {
+  if (!store) {
+    persistent.delete(key);
+    return;
+  }
+  if (store.delete) await store.delete(key);
+  else await store.put(key, "null");
 }

@@ -166,5 +166,11 @@ function cleanPackages(list: unknown): TripPackage[] {
       totalUSD: Number(p.totalUSD) || 0,
       status: p.status === "idea" || p.status === "reservado" ? p.status : "armando",
       style: p.style ?? "mid",
+      // Checklist del viaje: se conserva solo si tiene el formato esperado.
+      checklist: Array.isArray(p.checklist)
+        ? p.checklist
+            .filter((t) => t && typeof t.id === "string" && typeof t.label === "string")
+            .map((t) => ({ id: t.id, label: t.label, done: Boolean(t.done) }))
+        : undefined,
     }));
 }

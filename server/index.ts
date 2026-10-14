@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { Destination, Meta } from "../shared/types.ts";
+import type { Destination, Meta, SharedTripResponse } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
 import { addDays, baseFlightFrom, explore, lodgingNightly, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
-import { fetchJSON, loadJSON, saveJSON, useCacheStore } from "./cache.ts";
+import { deleteJSON, fetchJSON, loadJSON, saveJSON, useCacheStore } from "./cache.ts";
 import {
   changePassword,
   clearCookie,
@@ -55,6 +55,7 @@ import { BY_CODE } from "./radar.ts";
 import { stayLinks } from "../shared/links.ts";
 import { extrasFor } from "../shared/extras.ts";
 import { buildPackage } from "./packages.ts";
+import { newShareId, shareKey, sharePath, shareSnapshot, userSharesKey, validShareId, type ShareRecord } from "./share.ts";
 
 // API de FindMyTrip. Corre como Cloudflare Worker (gratis); el frontend se
 // sirve como archivos estáticos desde el mismo Worker.
@@ -524,6 +525,63 @@ app.get("/trip/hotels", async (c) => {
     estimateFrom: near.km < 40 ? null : near.dest.name,
     links: stayLinks(`${q.name}, ${q.country}`, q.checkin, addDays(q.checkin, q.nights), q.travelers, rooms),
   });
+});
+
+// ---------------------------------------------------------------------------
+// Compartir un viaje por link (solo lectura). Crear y borrar pide sesión; ver
+// el link es público (ver requireAuth en auth.ts).
+// ---------------------------------------------------------------------------
+
+/** Viajes que compartió el usuario: id del paquete -> id del link. */
+const userShares = async (u: string) => (await loadJSON<Record<string, string>>(userSharesKey(u))) ?? {};
+
+app.get("/me/shares", async (c) => c.json({ shares: await userShares(userId(c)) }));
+
+app.post("/share", async (c) => {
+  const raw = await c.req.text();
+  if (raw.length > 50_000) return c.json({ error: "El viaje tiene demasiados datos para compartir." }, 413);
+  let body: { package?: { id?: unknown } } = {};
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    // Cuerpo inválido: cae en el error de abajo.
+  }
+  const packageId = typeof body?.package?.id === "string" ? body.package.id.slice(0, 80) : "";
+  const trip = shareSnapshot(body?.package);
+  if (!packageId || !trip) return c.json({ error: "No pudimos compartir este viaje. Revisá que tenga vuelo o alojamiento." }, 400);
+  const u = userId(c);
+  const shares = await userShares(u);
+  const now = new Date().toISOString();
+  // Si ya estaba compartido se actualiza la copia y el link sigue siendo el mismo.
+  const prevId = shares[packageId];
+  const prev = prevId ? await loadJSON<ShareRecord>(shareKey(prevId)) : null;
+  const id = prev && prev.user === u ? prev.id : newShareId();
+  const record: ShareRecord = { id, user: u, packageId, createdAt: prev?.createdAt ?? now, updatedAt: now, trip };
+  await saveJSON(shareKey(id), record);
+  if (shares[packageId] !== id) await saveJSON(userSharesKey(u), { ...shares, [packageId]: id });
+  return c.json({ id, path: sharePath(id) });
+});
+
+app.get("/share/:id", async (c) => {
+  const id = c.req.param("id");
+  const record = validShareId(id) ? await loadJSON<ShareRecord>(shareKey(id)) : null;
+  c.header("X-Robots-Tag", "noindex");
+  if (!record) return c.json({ error: "Este link ya no está disponible." }, 404);
+  const out: SharedTripResponse = { trip: record.trip, createdAt: record.createdAt, updatedAt: record.updatedAt };
+  return c.json(out);
+});
+
+app.delete("/share/:id", async (c) => {
+  const id = c.req.param("id");
+  const u = userId(c);
+  const record = validShareId(id) ? await loadJSON<ShareRecord>(shareKey(id)) : null;
+  if (!record) return c.json({ error: "Este link ya no está disponible." }, 404);
+  if (record.user !== u) return c.json({ error: "Solo quien compartió el viaje puede dejar de compartirlo." }, 403);
+  await deleteJSON(shareKey(id));
+  const shares = await userShares(u);
+  const rest = Object.fromEntries(Object.entries(shares).filter(([, v]) => v !== id));
+  await saveJSON(userSharesKey(u), rest);
+  return c.json({ ok: true, shares: rest });
 });
 
 // Extras opcionales del viaje (traslado, eSIM, excursiones, seguro) con links de afiliado.

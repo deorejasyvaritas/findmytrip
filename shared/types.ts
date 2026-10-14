@@ -254,6 +254,27 @@ export interface TripPackage {
   notes?: string;
   createdAt: string;
   status: "idea" | "armando" | "reservado";
+  /** Tareas antes de viajar (Mis viajes > Ver detalle). */
+  checklist?: ChecklistItem[];
+}
+
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  done: boolean;
+}
+
+/** Copia pública (solo lectura) de un viaje compartido por link. */
+export type SharedTrip = Pick<
+  TripPackage,
+  "destinationId" | "destinationName" | "origin" | "departDate" | "returnDate" | "travelers" | "style" | "items" | "totalUSD"
+>;
+
+/** Respuesta pública de GET /api/share/:id. */
+export interface SharedTripResponse {
+  trip: SharedTrip;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WatchItem {

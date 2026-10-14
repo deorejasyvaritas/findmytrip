@@ -171,9 +171,14 @@ export const clearFails = (ip: string) => saveJSON(`auth:fails:${ip}`, { n: 0 })
 // ---------------------------------------------------------------------------
 
 const PUBLIC = new Set(["/api/login", "/api/logout", "/api/session", "/api/register"]);
+// Prefijos públicos solo para leer: los viajes compartidos por link.
+const PUBLIC_GET_PREFIXES = ["/api/share/"];
+
+export const isPublic = (method: string, path: string) =>
+  PUBLIC.has(path) || (method === "GET" && PUBLIC_GET_PREFIXES.some((p) => path.startsWith(p) && path.length > p.length));
 
 export async function requireAuth(c: Context, next: Next) {
-  if (PUBLIC.has(new URL(c.req.url).pathname)) return next();
+  if (isPublic(c.req.method, new URL(c.req.url).pathname)) return next();
   const account = await readSession(cookieToken(c.req.header("Cookie")));
   if (!account) return c.json({ error: "Iniciá sesión para continuar.", auth: true }, 401);
   c.set("user" as never, account.user as never);

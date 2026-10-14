@@ -23,6 +23,7 @@ import type {
   StayOption,
   Style,
   TripPackage,
+  SharedTripResponse,
 } from "../../shared/types.ts";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -99,6 +100,12 @@ export const api = {
       estimateFrom: string | null;
       links: { label: string; url: string }[];
     }>(`/api/trip/hotels?${qs(p)}`),
+  // Compartir un viaje por link (solo lectura).
+  myShares: () => request<{ shares: Record<string, string> }>("/api/me/shares"),
+  share: (pkg: TripPackage) =>
+    request<{ id: string; path: string }>("/api/share", { method: "POST", body: JSON.stringify({ package: pkg }) }),
+  unshare: (id: string) => request<{ ok: boolean; shares: Record<string, string> }>(`/api/share/${id}`, { method: "DELETE" }),
+  sharedTrip: (id: string) => request<SharedTripResponse>(`/api/share/${encodeURIComponent(id)}`),
   extras: (dest: string) => request<{ extras: Extra[]; partner: boolean }>(`/api/extras?dest=${dest}`),
   cross: (p: { origin: string; dest: string; month: string }) => request<CrossResult>(`/api/cross?${qs(p)}`),
   escapes: (origin: string) => request<EscapeWeekend[]>(`/api/escapes?origin=${origin}`),

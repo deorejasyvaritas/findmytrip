@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import type { Extra } from "../../shared/extras.ts";
 import { api } from "../lib/api.ts";
+import type { IconName } from "../lib/icons.ts";
 import Icon from "./Icon.tsx";
 
-const ICON: Record<Extra["kind"], "plane" | "globe" | "star" | "info"> = {
+const ICON: Record<Extra["kind"], IconName> = {
   traslado: "plane",
+  auto: "car",
   esim: "globe",
   excursiones: "star",
-  seguro: "info",
+  entradas: "ticket",
+  seguro: "shield",
 };
 
 /** Extras opcionales: no se suman al total, se reservan aparte. */
