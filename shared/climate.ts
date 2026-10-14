@@ -67,8 +67,12 @@ export function climateSummary(c: Pick<ClimateMonth, "tmax" | "tmin" | "rainMm" 
   if (c.tmax <= 8 && c.tmin <= 0) return { label: "Frío, puede nevar", tone: "snow" };
   if (c.tmax < 14) return { label: c.tmin <= 0 ? "Frío, con heladas" : "Frío", tone: "cold" };
   // Por milímetros y no solo por días: los modelos marcan muchos días de llovizna en el trópico.
-  if (c.rainMm >= 150 || (c.rainDays >= 18 && c.rainMm >= 100))
+  // "Temporada de lluvias" solo cuando llueve mucho de verdad (monzón, trópico húmedo);
+  // un verano de playa con chaparrones (Florianópolis en enero) es "calor con lluvias".
+  if (c.rainMm >= 220 || (c.rainDays >= 20 && c.rainMm >= 170))
     return c.tmax >= 24 ? { label: "Temporada de lluvias", tone: "rain" } : { label: "Lluvioso", tone: "rain" };
+  if (c.rainMm >= 120 || (c.rainDays >= 16 && c.rainMm >= 90))
+    return c.tmax >= 26 ? { label: "Calor con lluvias", tone: "rain" } : { label: "Lluvioso", tone: "rain" };
   if (c.tmax >= 33) return { label: "Mucho calor", tone: "hot" };
   if (c.tmax >= 27 && c.tmin >= 20) return { label: "Calor de playa", tone: "beach" };
   if (c.tmax >= 27) return { label: "Caluroso", tone: "warm" };
