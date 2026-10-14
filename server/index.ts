@@ -198,6 +198,8 @@ const exploreSchema = z.object({
   known: z.array(z.string()).optional(),
   maxFlightHours: z.number().nullable().optional(),
   includeDaily: z.boolean().optional(),
+  maxFlightPP: z.number().positive().nullable().optional(),
+  directOnly: z.boolean().optional(),
   party: z
     .object({
       adults: z.number().int().min(1).max(12),

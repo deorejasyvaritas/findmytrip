@@ -94,6 +94,7 @@ export default function SuggestionCard({
         <span className={`source ${s.flightSource !== "estimado" ? "live" : ""}`}>
           {SOURCE_LABEL[s.flightSource]}
           {s.airline ? ` · ${s.airline}` : ""}
+          {s.direct ? " · directo" : ""}
         </span>
         <span>{d.docs}</span>
       </div>

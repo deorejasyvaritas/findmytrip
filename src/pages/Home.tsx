@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { Bags, ExploreResponse, Interest, Party, Region, Style, WatchItem, When } from "../../shared/types.ts";
+import type { Bags, ExploreResponse, Interest, Party, Profile, Region, Style, WatchItem, When } from "../../shared/types.ts";
 import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
@@ -22,9 +22,15 @@ interface Search {
   style: Style;
   interests: Interest[];
   regions: Region[];
+  /** Tope del vuelo ida y vuelta por persona, en USD (0 = sin tope). */
+  maxFlightPP: number;
+  directOnly: boolean;
 }
 
 type Sheet = "when" | "party" | null;
+
+// Topes de vuelo por persona (USD) para el filtro de la búsqueda.
+const FLIGHT_CAPS = [200, 300, 500, 800, 1200];
 
 /** Búsquedas guardadas con el formato anterior (mes + viajeros) se adaptan al nuevo. */
 function migrate(s: (Partial<Search> & { month?: number | null; travelers?: number }) | null, fallback: Search): Search | null {
@@ -55,6 +61,8 @@ export default function Home() {
     style: profile.style,
     interests: profile.interests,
     regions: [],
+    maxFlightPP: 0,
+    directOnly: false,
   };
   const lastSearch = migrate(rawLast, defaults);
   const [form, setForm] = useState<Search>(lastSearch ?? defaults);
@@ -96,6 +104,8 @@ export default function Home() {
         known,
         maxFlightHours: profile.maxFlightHours,
         includeDaily: profile.includeDaily ?? false,
+        maxFlightPP: s.maxFlightPP || undefined,
+        directOnly: s.directOnly || undefined,
       });
       setResult(res);
       if (fromButton) {
@@ -116,6 +126,15 @@ export default function Home() {
     run(lastSearch ?? defaults);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.origin, profile.includeDaily]);
+
+  // Cambia la moneda en el momento (sin ir a Perfil) y convierte el presupuesto escrito.
+  function setCurrency(currency: Profile["currency"]) {
+    if (currency === profile.currency) return;
+    const usd = app.toUSD(Number(budgetInput) || 0);
+    const rate = meta?.usdArsRate ?? 1450;
+    if (budgetInput) setBudgetInput(String(Math.round(currency === "ARS" ? usd * rate : usd)));
+    app.setProfile({ ...profile, currency });
+  }
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -279,6 +298,27 @@ export default function Home() {
                   <option key={r}>{r}</option>
                 ))}
               </select>
+              <select
+                className="inline"
+                aria-label="Precio máximo de vuelo por persona"
+                value={form.maxFlightPP}
+                onChange={(e) => setForm({ ...form, maxFlightPP: Number(e.target.value) })}
+              >
+                <option value={0}>Sin tope de vuelo</option>
+                {FLIGHT_CAPS.map((p) => (
+                  <option key={p} value={p}>
+                    Vuelo hasta {app.money(p)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className={`chip ${form.directOnly ? "on" : ""}`}
+                aria-pressed={form.directOnly}
+                onClick={() => setForm({ ...form, directOnly: !form.directOnly })}
+              >
+                Solo directos
+              </button>
             </div>
             {meta && <InterestPicker options={meta.interests} value={form.interests} onChange={(interests) => setForm({ ...form, interests })} />}
             <button className="search-cta" disabled={loading}>
@@ -366,10 +406,24 @@ export default function Home() {
           <section>
             <div className="section-head">
               <h2>{lastSearch ? "Mejores opciones para vos" : "Ideas para vos"}</h2>
-              <span className="small muted">
-                {result.suggestions.length} de {result.considered} destinos entran en {app.money(shown.budgetUSD)} · {describeParty(shown.party)}
-              </span>
+              <div className="section-tools">
+                <span className="small muted">
+                  {result.suggestions.length} de {result.considered} destinos entran en {app.money(shown.budgetUSD)} · {describeParty(shown.party)}
+                </span>
+                <Segmented
+                  label="Moneda"
+                  value={profile.currency}
+                  onChange={setCurrency}
+                  options={[
+                    { value: "USD", label: "USD" },
+                    { value: "ARS", label: "ARS" },
+                  ]}
+                />
+              </div>
             </div>
+            {profile.currency === "ARS" && (
+              <p className="small muted fx-note">Pesos al dólar tarjeta. Pagando con dólares propios no hay percepción del 30 %.</p>
+            )}
             {result.suggestions.length === 0 ? (
               <div className="card empty">
                 <Icon name="search" size={28} />

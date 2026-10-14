@@ -1,3 +1,4 @@
+import { withRadarScore } from "../shared/radar-score.ts";
 import type { Destination, RadarItem, RadarSnapshot } from "../shared/types.ts";
 import { fetchJSON, loadJSON, saveJSON } from "./cache.ts";
 import { DESTINATIONS } from "./data/destinations.ts";
@@ -102,7 +103,7 @@ export async function runRadar(token: string, origin: string, now = new Date()):
     if (isMinimum) stats.minimums++;
     if (isDeal) stats.deals++;
 
-    items.push({
+    items.push(withRadarScore({
       destinationId: dest.id,
       name: dest.name,
       iata: dest.iata,
@@ -118,7 +119,7 @@ export async function runRadar(token: string, origin: string, now = new Date()):
       airline: offer.airline,
       flightNumber: offer.flight_number != null ? `${offer.airline ?? ""}${offer.flight_number}` : undefined,
       score: discountPct + (isMinimum ? 10 : 0) + (dest.hiddenGem ? 3 : 0) + (trend === "down" ? 2 : 0),
-    });
+    }));
     history[dest.id] = [...past, { t: now.toISOString(), p: price }].slice(-HISTORY_POINTS);
   }
 

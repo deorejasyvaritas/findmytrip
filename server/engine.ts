@@ -213,7 +213,11 @@ export function explore(
     // Con ventana o fechas exactas, solo sirven precios reales dentro del rango.
     const inRange = (p: RealPrice) =>
       !window.from || !p.depart || (p.depart >= window.from && p.depart <= (window.to ?? window.from));
-    const googleOk = google.filter(inRange);
+    const googleInRange = google.filter(inRange);
+    // "Solo directos": descartamos lo que Google sabe que tiene escalas. Si
+    // Google solo ve vuelos con escalas a ese destino, el destino no va.
+    const googleOk = req.directOnly ? googleInRange.filter((p) => (p.stops ?? 0) === 0) : googleInRange;
+    if (googleInRange.length && !googleOk.length) continue;
     const realList = googleOk.length ? googleOk : realKnown.filter((p) => p.source !== "google");
     const options = realList.length
       ? realList.flatMap((p) => {
@@ -222,6 +226,9 @@ export function explore(
         })
       : months.map((m) => ({ ...m, live: undefined as RealPrice | undefined }));
     for (const { month, year, live } of options) {
+      // Tope de vuelo por persona (precio real si lo hay; si no, el estimado).
+      if (req.maxFlightPP && (live?.flightPP ?? flightEstimate(req.origin, dest, month)) > req.maxFlightPP) continue;
+      const direct = live?.stops === 0;
       const cost = tripCost(req.origin, dest, month, nights, party, req.style, live?.flightPP, live?.hotelNight, req.includeDaily);
       const ratio = cost.total / budget;
       if (ratio > 1.15) continue;
@@ -262,6 +269,7 @@ export function explore(
       }
       if (dest.hiddenGem) score += 5;
       if (live) score += 10; // preferimos lo que tiene precio real comprobado
+      if (req.directOnly && direct) score += 10; // y si pidió directos, lo comprobado primero
 
       const fit: Suggestion["fit"] = ratio <= 0.85 ? "dentro" : ratio <= 1 ? "ajustado" : "estirando";
       const isAlternative =
@@ -282,6 +290,7 @@ export function explore(
         ret: live?.ret ?? (req.when?.kind === "exact" ? req.when.ret : undefined),
         airline: live?.airline,
         link: live?.link,
+        ...(direct && { direct }),
       };
       if (!best || s.score > best.score || (s.score === best.score && s.cost.total < best.cost.total)) {
         best = s;
@@ -302,6 +311,8 @@ export function explore(
 
   const extra = (real?.extra ?? [])
     .filter((e) => e.flightPP * fareUnits(party) <= budget)
+    .filter((e) => !req.maxFlightPP || e.flightPP <= req.maxFlightPP)
+    .filter((e) => !req.directOnly || (e.stops ?? 0) === 0)
     .filter((e) => !window.from || (e.depart >= window.from && e.depart <= (window.to ?? window.from)))
     .slice(0, 8);
   return { suggestions, alternatives, extra, considered: candidates.length };
