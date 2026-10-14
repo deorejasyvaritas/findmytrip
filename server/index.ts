@@ -28,7 +28,7 @@ import {
 } from "./auth.ts";
 import { config, has, type Env } from "./env.ts";
 import { realPrices } from "./providers/explore.ts";
-import { getRadar, runRadar } from "./radar.ts";
+import { getRadar, routeHistory, runRadar } from "./radar.ts";
 import {
   connectTelegram,
   evaluateAlerts,
@@ -584,6 +584,18 @@ app.delete("/share/:id", async (c) => {
   const rest = Object.fromEntries(Object.entries(shares).filter(([, v]) => v !== id));
   await saveJSON(userSharesKey(u), rest);
   return c.json({ ok: true, shares: rest });
+});
+
+// ---------------------------------------------------------------------------
+// Historial de precios por ruta (gráfico de la página del destino)
+// ---------------------------------------------------------------------------
+
+app.get("/radar/history", async (c) => {
+  const q = z.object({ origin: originCode, dest: z.string().regex(/^[a-z0-9-]{1,60}$/) }).parse(c.req.query());
+  const points = await routeHistory(q.origin, q.dest);
+  // Igual para todos y cambia con los barridos: se puede guardar un rato en el navegador.
+  c.header("Cache-Control", "private, max-age=600");
+  return c.json({ origin: q.origin, dest: q.dest, points });
 });
 
 // Extras opcionales del viaje (traslado, eSIM, excursiones, seguro) con links de afiliado.

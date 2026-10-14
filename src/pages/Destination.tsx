@@ -33,6 +33,7 @@ import { INTEREST_ICON } from "../lib/icons.ts";
 import Icon from "../components/Icon.tsx";
 import CrossAndFly from "../components/CrossAndFly.tsx";
 import TripExtras from "../components/TripExtras.tsx";
+import PriceHistory from "../components/PriceHistory.tsx";
 
 const WEEKDAYS = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
 const STYLES: Style[] = ["low", "mid", "high"];
@@ -421,6 +422,8 @@ export default function DestinationPage() {
             ))}
           </div>
         </section>
+
+        <PriceHistory destinationId={dest.id} />
 
         {month && (
           <section>

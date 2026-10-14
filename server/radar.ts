@@ -136,6 +136,7 @@ export async function runRadar(token: string, origin: string, now = new Date()):
   // Si Travelpayouts no devolvió nada, no pisamos el historial ni la última foto buena.
   if (items.length) {
     await saveJSON(histKey, history);
+    histMemo.delete(origin);
     await saveJSON(`radar:snap:${origin}`, snapshot);
   }
   return items.length ? snapshot : (prevSnap ?? snapshot);
@@ -147,4 +148,20 @@ export async function getRadar(token: string | undefined, origin: string): Promi
   const fresh = snap && Date.now() - Date.parse(snap.updatedAt) < RADAR_MAX_AGE_H * 3600000;
   if (fresh || !token) return snap;
   return runRadar(token, origin);
+}
+
+// Copia en memoria del historial para el gráfico de la página del destino:
+// así no se lee y parsea todo el historial de KV en cada visita (límite de CPU).
+const histMemo = new Map<string, { until: number; hist: History }>();
+const HIST_MEMO_MS = 10 * 60000;
+
+/** Observaciones del radar para una ruta, de la más vieja a la más nueva (máx. ~12 días). */
+export async function routeHistory(origin: string, destId: string, now = Date.now()): Promise<Obs[]> {
+  let memo = histMemo.get(origin);
+  if (!memo || memo.until < now) {
+    memo = { until: now + HIST_MEMO_MS, hist: (await loadJSON<History>(`radar:hist:${origin}`)) ?? {} };
+    histMemo.set(origin, memo);
+  }
+  // Fechas cortas (al minuto) para que la respuesta pese poco.
+  return (memo.hist[destId] ?? []).map((o) => ({ t: `${o.t.slice(0, 16)}Z`, p: o.p }));
 }

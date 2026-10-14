@@ -111,6 +111,8 @@ export const api = {
   escapes: (origin: string) => request<EscapeWeekend[]>(`/api/escapes?origin=${origin}`),
   radar: (origin: string) => request<RadarSnapshot>(`/api/radar?origin=${origin}`),
   radarRun: (origin: string) => request<RadarSnapshot>(`/api/radar/run?origin=${origin}`, { method: "POST" }),
+  radarHistory: (origin: string, dest: string) =>
+    request<{ origin: string; dest: string; points: { t: string; p: number }[] }>(`/api/radar/history?${qs({ origin, dest })}`),
   alerts: () => request<{ subs: AlertSub[]; settings: AlertSettings; telegram: boolean }>("/api/alerts"),
   saveAlert: (sub: Omit<AlertSub, "id" | "createdAt" | "lastNotifiedUSD" | "lastNotifiedAt">) =>
     request<{ subs: AlertSub[] }>("/api/alerts/subs", { method: "POST", body: JSON.stringify(sub) }),

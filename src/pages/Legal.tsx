@@ -112,6 +112,7 @@ const DOCS: Record<string, Doc> = {
             "Cloudflare: aloja el sitio y guarda los datos de las cuentas.",
             "Telegram: envía las alertas, solo si lo conectás.",
             "Inteligencia artificial del agente (Workers AI de Cloudflare o Claude de Anthropic): recibe los mensajes que escribís en el chat para poder responder.",
+            "OpenStreetMap: dibuja el mapa de vuelos baratos. Tu navegador le pide las imágenes del mapa, sin ningún dato de tu cuenta.",
             "Fuentes de precios (Travelpayouts/Aviasales, Google vía SerpApi, Xotelo, Wikipedia, dolarapi): reciben solo los datos de la búsqueda, como destino y fechas, nunca tu usuario ni tus datos de contacto.",
           ],
         ],
@@ -167,6 +168,7 @@ const DOCS: Record<string, Doc> = {
 };
 
 export const LEGAL_LINKS = [
+  { to: "/como-funciona", label: "Cómo funciona" },
   { to: "/legal/terminos", label: "Términos" },
   { to: "/legal/privacidad", label: "Privacidad" },
   { to: "/legal/cookies", label: "Cookies" },

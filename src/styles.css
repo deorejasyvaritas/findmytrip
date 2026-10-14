@@ -1038,3 +1038,180 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   .cmp-table th, .cmp-table td { padding: 12px; }
 }
 /* Fin del bloque agregado */
+/* ==========================================================================
+   Mapa de vuelos baratos · Historial de precios · Cómo funciona
+   ========================================================================== */
+
+/* ---------- Pie y acceso: con un link más, que bajen de línea en 320 px ---------- */
+.legal-footer nav, .auth-legal { flex-wrap: wrap; gap: 8px 16px; }
+
+/* ---------- Acceso al mapa desde Explorar ---------- */
+.map-teaser { display: flex; align-items: center; gap: 16px; padding: 16px; color: var(--label); font-weight: 400; }
+.map-teaser:hover { text-decoration: none; box-shadow: var(--shadow-md); }
+.map-teaser .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.map-teaser strong { font-size: 17px; }
+.map-teaser > .icon:last-child { color: var(--label-3); flex-shrink: 0; }
+.map-teaser-art {
+  width: 48px; height: 48px; border-radius: var(--r-md); flex-shrink: 0;
+  display: grid; place-items: center; background: var(--brand-soft); color: var(--brand-ink);
+}
+
+/* ---------- Página del mapa ---------- */
+.map-page { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.map-head h1 { margin: 8px 0 4px; }
+.map-wrap { position: relative; border-radius: var(--r-lg); overflow: hidden; background: var(--fill); box-shadow: var(--shadow-sm); }
+.map-canvas { height: min(68vh, 640px); min-height: 360px; width: 100%; }
+.map-loading { border-radius: var(--r-lg); background: var(--fill); }
+@media (prefers-reduced-motion: no-preference) {
+  .map-loading { animation: map-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes map-pulse { 50% { opacity: 0.6; } }
+.map-wrap .leaflet-container { font: inherit; background: var(--fill); }
+.map-wrap .leaflet-bar { border: 0; box-shadow: var(--shadow-md); border-radius: var(--r-md); overflow: hidden; }
+.map-wrap .leaflet-bar a { width: 40px; height: 40px; line-height: 40px; background: var(--surface); color: var(--label); border-color: var(--separator); }
+.map-wrap .leaflet-bar a:hover { background: var(--fill-2); text-decoration: none; }
+.map-wrap .leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 85%, transparent); color: var(--label-2); font-size: 11px; }
+.map-wrap .leaflet-control-attribution a { color: var(--label-2); }
+
+/* Pin: pastilla con el precio, centrada sobre el destino. */
+.map-pin-wrap { width: 0; height: 0; }
+.map-pin {
+  position: absolute; transform: translate(-50%, -50%); white-space: nowrap;
+  display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px;
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer;
+  background: var(--surface); color: var(--label);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--separator);
+}
+.map-pin.deal { background: var(--brand-strong); color: #fefefe; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.16); }
+.map-pin.on { background: var(--tint); color: var(--on-tint); box-shadow: 0 0 0 2px var(--surface), 0 4px 12px rgba(0, 0, 0, 0.24); }
+.leaflet-marker-icon:focus-visible { outline: none; }
+.leaflet-marker-icon:focus-visible .map-pin { outline: 3px solid var(--brand); outline-offset: 2px; }
+.map-pin.dot { width: 14px; height: 14px; padding: 0; font-size: 0; overflow: visible; }
+.map-pin.dot::after { content: ""; position: absolute; inset: -12px; } /* área táctil de 38 px */
+/* OpenStreetMap no tiene versión oscura: se invierte el mapa base (los pines no). */
+@media (prefers-color-scheme: dark) {
+  .map-wrap .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.5); }
+}
+.map-pin.static { position: static; transform: none; height: 22px; padding: 0 8px; font-size: 11px; cursor: default; }
+.map-origin { width: 0; height: 0; }
+.map-origin span {
+  position: absolute; transform: translate(-50%, -50%); white-space: nowrap;
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  background: var(--tint); color: var(--on-tint); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.map-legend .map-pin:not(:first-child) { margin-left: 8px; }
+
+.map-empty {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 500;
+  width: min(320px, calc(100% - 32px)); padding: 16px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-md);
+}
+.map-empty p { margin: 0; }
+
+/* Ficha del destino elegido: abajo, como una hoja de iOS. */
+.map-sheet {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 600; max-width: 400px;
+  display: flex; flex-direction: column; gap: 12px; padding: 16px;
+  background: var(--surface); color: var(--label); border-radius: var(--r-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+}
+@media (prefers-color-scheme: dark) { .map-sheet { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.08); } }
+@media (prefers-reduced-motion: no-preference) {
+  .map-sheet { animation: map-sheet-in 0.24s var(--ease-out); }
+}
+@keyframes map-sheet-in { from { opacity: 0; transform: translateY(16px); } }
+.map-sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.map-sheet-head h3 { font-size: 20px; margin: 0; }
+.map-sheet-head p { margin: 2px 0 0; }
+.map-sheet-close { min-height: 0; width: 36px; height: 36px; padding: 0; border-radius: 50%; background: var(--fill); color: var(--label-2); flex-shrink: 0; margin: -4px -4px 0 0; }
+.map-sheet-price { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.map-sheet-price strong { font-size: 28px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.map-sheet-badges { flex-wrap: wrap; }
+.map-sheet-badges .badge { gap: 4px; }
+.map-sheet p.small { display: flex; align-items: center; gap: 6px; margin: 0; }
+.map-sheet-cta { justify-content: center; }
+.map-sheet-cta:hover { text-decoration: none; }
+
+.map-list { list-style: none; margin: 0; padding: 0; }
+.map-list li + li { border-top: 1px solid var(--separator); }
+.map-list button {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 0;
+  text-align: left; font-weight: 400; color: var(--label);
+}
+.map-list button:hover { background: var(--fill-2); }
+.map-list .grow { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.map-list strong { font-size: 15px; font-weight: 600; }
+.map-list-price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+@media (max-width: 767px) {
+  .map-canvas { height: 62vh; min-height: 320px; }
+  .map-sheet { max-width: none; }
+}
+
+/* ---------- Historial de precios (página del destino) ---------- */
+.ph-card { display: flex; flex-direction: column; gap: 16px; }
+.ph-sentence { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 17px; font-weight: 600; }
+.ph-sentence .icon { flex-shrink: 0; }
+.ph-below { color: var(--green); }
+.ph-above { color: var(--orange); }
+.ph-figure { margin: 0; }
+.ph-plot { position: relative; height: 140px; touch-action: pan-y; cursor: crosshair; }
+.ph-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ph-line { stroke: var(--brand); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ph-typical { stroke: var(--label-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.ph-cross { stroke: var(--label-3); stroke-width: 1; }
+.ph-typical-label {
+  position: absolute; right: 0; transform: translateY(-100%); padding: 0 0 2px;
+  font-size: 11px; font-weight: 600; color: var(--label-2); pointer-events: none;
+}
+.ph-dot {
+  position: absolute; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px var(--surface); pointer-events: none;
+}
+.ph-dot.ph-now { background: var(--brand); }
+.ph-dot.ph-min { background: var(--surface); border: 2px solid var(--brand); }
+.ph-dot.ph-active { background: var(--label); }
+.ph-tip {
+  position: absolute; transform: translate(12px, -50%); pointer-events: none; white-space: nowrap;
+  display: flex; flex-direction: column; padding: 4px 8px; border-radius: var(--r-sm);
+  background: var(--label); color: var(--surface); font-size: 12px; line-height: 1.3;
+}
+.ph-tip.left { transform: translate(calc(-100% - 12px), -50%); }
+.ph-tip strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+.ph-axis { display: flex; justify-content: space-between; margin-top: 8px; }
+.ph-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.ph-stats div { background: var(--fill-2); border-radius: var(--r-md); padding: 8px 12px; min-width: 0; }
+.ph-stats dt { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--label-2); }
+.ph-stats dd { margin: 2px 0 0; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ph-key { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.ph-key-min { border: 2px solid var(--brand); }
+.ph-key-now { background: var(--brand); }
+.ph-key-typical { height: 0; border-radius: 0; border-top: 2px dashed var(--label-3); }
+.ph-empty { display: flex; align-items: center; gap: 12px; }
+.ph-empty .icon { color: var(--label-3); flex-shrink: 0; }
+.ph-empty p { margin: 0; }
+
+/* ---------- Cómo funciona ---------- */
+.how { padding: 32px 0 8px; display: flex; flex-direction: column; gap: 32px; }
+.how-hero h1 { margin: 0 0 8px; }
+.how-hero .lead { font-size: 17px; line-height: 1.5; color: var(--label-2); margin: 0; }
+.how-group { display: flex; flex-direction: column; }
+.how-list { list-style: none; margin: 0; padding: 0; }
+.how-list li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; }
+.how-list li + li { border-top: 1px solid var(--separator); }
+.how-list strong { font-size: 15px; font-weight: 600; display: block; }
+.how-list p, .how-money p { margin: 2px 0 0; font-size: 15px; line-height: 1.5; color: var(--label-2); }
+.how-money { display: flex; align-items: flex-start; gap: 12px; padding: 16px; }
+.how-money p:first-child { color: var(--label); margin: 0; }
+.how-icon {
+  width: 32px; height: 32px; border-radius: var(--r-sm); flex-shrink: 0;
+  display: grid; place-items: center; background: var(--tint); color: var(--on-tint);
+}
+.how-icon.brand { background: var(--brand-strong); color: #fefefe; }
+.how-icon.green { background: var(--green-soft); color: var(--green); }
+.how-icon.gray { background: var(--fill); color: var(--label-2); }
+.how-cta { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.how-cta .button:hover { text-decoration: none; }
+/* Fin: Mapa de vuelos baratos · Historial de precios · Cómo funciona */
