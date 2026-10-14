@@ -442,3 +442,56 @@ export interface CrossResult {
   baseUSD: number | null;
   options: CrossOption[];
 }
+
+// ---------------------------------------------------------------------------
+// Buscador completo (vuelos, hoteles, vuelo + hotel, multidestino)
+// ---------------------------------------------------------------------------
+
+export interface Place {
+  code: string; // IATA de ciudad o aeropuerto
+  name: string;
+  type: "city" | "airport";
+  city: string | null;
+  country: string;
+  airport: string | null;
+}
+
+export type Cabin = "economy" | "premium" | "business" | "first";
+
+export interface FlightSearch {
+  origin: string;
+  destination: string;
+  depart: string;
+  /** Vuelta; null = solo ida. */
+  ret: string | null;
+  direct?: boolean;
+}
+
+export interface FlightResult {
+  /** Precio por adulto, ida y vuelta (o solo ida), en USD. */
+  price: number;
+  airline: string | null;
+  flightNumber: string | null;
+  origin: string;
+  destination: string;
+  departAt: string; // fecha y hora local de salida
+  returnAt: string | null;
+  stops: number | null;
+  returnStops: number | null;
+  /** Duración en minutos. */
+  durationOut: number | null;
+  durationBack: number | null;
+  /** Link a Aviasales con ese vuelo (precio en vivo, con comisión). */
+  link: string | null;
+}
+
+export interface MultiSearch {
+  legs: { origin: string; destination: string; date: string }[];
+}
+
+export interface LegResult {
+  origin: string;
+  destination: string;
+  date: string;
+  options: FlightResult[];
+}

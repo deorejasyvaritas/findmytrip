@@ -48,6 +48,9 @@ import { xoteloHotels } from "./providers/xotelo.ts";
 import { escapes } from "./escapes.ts";
 import { crossAndFly } from "./cross.ts";
 import { partnerLinks } from "./partner-links.ts";
+import { searchFlights, searchMulti, searchPlaces } from "./search.ts";
+import { BY_CODE } from "./radar.ts";
+import { stayLinks } from "../shared/links.ts";
 import { extrasFor } from "../shared/extras.ts";
 import { buildPackage } from "./packages.ts";
 
@@ -403,6 +406,60 @@ app.get("/radar", async (c) => {
   const snap = await getRadar(env(c).TRAVELPAYOUTS_TOKEN, origin);
   if (!snap) return c.json({ error: "El radar necesita TRAVELPAYOUTS_TOKEN para funcionar." }, 503);
   return c.json(snap);
+});
+
+// ---------------------------------------------------------------------------
+// Buscador completo: lugares, vuelos, hoteles y multidestino.
+// ---------------------------------------------------------------------------
+
+const iata = z.string().regex(/^[A-Z]{3}$/);
+
+app.get("/places", async (c) => {
+  const { q } = z.object({ q: z.string().max(60) }).parse(c.req.query());
+  return c.json(await searchPlaces(q));
+});
+
+app.get("/search/flights", async (c) => {
+  const q = z
+    .object({ origin: iata, dest: iata, depart: isoDate, ret: isoDate.optional(), direct: z.string().optional() })
+    .parse(c.req.query());
+  const e = env(c);
+  const r = await searchFlights(
+    e.TRAVELPAYOUTS_TOKEN,
+    { origin: q.origin, destination: q.dest, depart: q.depart, ret: q.ret ?? null, direct: q.direct === "1" },
+    e.TRAVELPAYOUTS_MARKER,
+  );
+  // Si el destino está en el catálogo, la ficha suma hoteles, clima y paquete.
+  const dest = BY_CODE.get(q.dest);
+  return c.json({ ...r, destinationId: dest?.id ?? null });
+});
+
+app.post("/search/multi", async (c) => {
+  const body = z
+    .object({ legs: z.array(z.object({ origin: iata, destination: iata, date: isoDate })).min(2).max(5) })
+    .parse(await c.req.json());
+  const e = env(c);
+  return c.json(await searchMulti(e.TRAVELPAYOUTS_TOKEN, body, e.TRAVELPAYOUTS_MARKER));
+});
+
+// Hoteles por ciudad (código IATA): precios reales si es un destino del catálogo; si no, links con las fechas.
+app.get("/search/hotels", async (c) => {
+  const q = z
+    .object({ place: iata, name: z.string().max(80).optional(), checkin: isoDate, checkout: isoDate, travelers: travelersQ })
+    .parse(c.req.query());
+  const nights = Math.max(1, Math.round((Date.parse(q.checkout) - Date.parse(q.checkin)) / 86400000));
+  const rooms = Math.max(1, Math.ceil(q.travelers / 2));
+  const dest = BY_CODE.get(q.place);
+  const quote = dest ? await xoteloHotels(dest, q.checkin, nights).catch(() => null) : null;
+  return c.json({
+    destinationId: dest?.id ?? null,
+    name: dest?.name ?? q.name ?? q.place,
+    nights,
+    rooms,
+    hotels: quote?.hotels ?? [],
+    options: dest ? stayOptions(dest, q.checkin, nights, q.travelers, quote?.tiers) : [],
+    links: stayLinks(dest?.name ?? q.name ?? q.place, q.checkin, q.checkout, q.travelers, rooms),
+  });
 });
 
 // Extras opcionales del viaje (traslado, eSIM, excursiones, seguro) con links de afiliado.

@@ -1,5 +1,8 @@
 import type { Extra } from "../../shared/extras.ts";
 import type {
+  FlightResult,
+  LegResult,
+  Place,
   CrossResult,
   EscapeWeekend,
   AlertSettings,
@@ -64,6 +67,23 @@ export const api = {
     request<ExploreResponse>("/api/explore", { method: "POST", body: JSON.stringify(body) }),
   calendar: (p: { origin: string; dest: string; month: string; nights: number }) =>
     request<FlightCalendar>(`/api/flights/calendar?${qs(p)}`),
+  places: (q: string) => request<Place[]>(`/api/places?${qs({ q })}`),
+  searchFlights: (p: { origin: string; dest: string; depart: string; ret?: string; direct?: 1 }) =>
+    request<{ results: FlightResult[]; strip: { date: string; price: number }[]; live: boolean; destinationId: string | null }>(
+      `/api/search/flights?${qs(p)}`,
+    ),
+  searchMulti: (legs: { origin: string; destination: string; date: string }[]) =>
+    request<LegResult[]>("/api/search/multi", { method: "POST", body: JSON.stringify({ legs }) }),
+  searchHotels: (p: { place: string; name: string; checkin: string; checkout: string; travelers: number }) =>
+    request<{
+      destinationId: string | null;
+      name: string;
+      nights: number;
+      rooms: number;
+      hotels: RealHotel[];
+      options: StayOption[];
+      links: { label: string; url: string }[];
+    }>(`/api/search/hotels?${qs(p)}`),
   extras: (dest: string) => request<{ extras: Extra[]; partner: boolean }>(`/api/extras?dest=${dest}`),
   cross: (p: { origin: string; dest: string; month: string }) => request<CrossResult>(`/api/cross?${qs(p)}`),
   escapes: (origin: string) => request<EscapeWeekend[]>(`/api/escapes?origin=${origin}`),

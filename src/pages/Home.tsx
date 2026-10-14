@@ -5,6 +5,7 @@ import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import LongWeekends from "../components/LongWeekends.tsx";
+import { FlightForm, HotelForm, MultiForm } from "../components/FullSearch.tsx";
 import RadarSection from "../components/RadarSection.tsx";
 import Segmented from "../components/Segmented.tsx";
 import SuggestionCard, { Photo, SuggestionSkeleton } from "../components/SuggestionCard.tsx";
@@ -45,12 +46,22 @@ function migrate(s: (Partial<Search> & { month?: number | null; travelers?: numb
 
 const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 86400000));
 
+type HomeTab = "budget" | "destination" | "vuelos" | "hoteles" | "paquete" | "multi";
+const HOME_TABS: { id: HomeTab; label: string }[] = [
+  { id: "budget", label: "Presupuesto" },
+  { id: "destination", label: "Ya sé a dónde" },
+  { id: "vuelos", label: "Vuelos" },
+  { id: "hoteles", label: "Hoteles" },
+  { id: "paquete", label: "Vuelo + Hotel" },
+  { id: "multi", label: "Multidestino" },
+];
+
 export default function Home() {
   const app = useApp();
   const { profile, meta, destinations, packages, watchlist, photos } = app;
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const [tab, setTab] = useState<"budget" | "destination">(params.get("tab") === "destination" ? "destination" : "budget");
+  const [tab, setTab] = useState<HomeTab>(() => (HOME_TABS.some((t) => t.id === params.get("tab")) ? (params.get("tab") as HomeTab) : "budget"));
   const [rawLast, setLastSearch] = useStored<Search | null>("fmt.lastSearch", null);
 
   const defaults: Search = {
@@ -193,19 +204,20 @@ export default function Home() {
         </div>
 
         <div className="search-tabs" role="tablist" aria-label="Tipo de búsqueda">
-          <button role="tab" aria-selected={tab === "budget"} className={tab === "budget" ? "on" : ""} onClick={() => setTab("budget")}>
-            Presupuesto<span className="hide-sm"> y fechas</span>
-          </button>
-          <button role="tab" aria-selected={tab === "destination"} className={tab === "destination" ? "on" : ""} onClick={() => setTab("destination")}>
-            Ya sé a dónde
-          </button>
-          {/* El buscador de vuelos en vivo necesita una carga de página propia. */}
-          <a role="tab" aria-selected={false} href="/vuelos.html" className="search-tab-link">
-            Vuelos
-          </a>
+          {HOME_TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {tab === "budget" ? (
+        {tab === "vuelos" || tab === "paquete" ? (
+          <FlightForm key={tab} kind={tab} />
+        ) : tab === "hoteles" ? (
+          <HotelForm />
+        ) : tab === "multi" ? (
+          <MultiForm />
+        ) : tab === "budget" ? (
           <form className="stack" style={{ gap: 16 }} onSubmit={submit} noValidate>
             <div className="search-grid five">
               <label className="tile">

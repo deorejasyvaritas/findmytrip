@@ -8,6 +8,7 @@ import DestinationPage from "./pages/Destination.tsx";
 import Trips from "./pages/Trips.tsx";
 import Agent from "./pages/Agent.tsx";
 import ProfilePage from "./pages/Profile.tsx";
+import SearchPage from "./pages/Search.tsx";
 
 function TabLink({ tab, badge, withIcon }: { tab: (typeof TABS)[number]; badge?: number; withIcon: boolean }) {
   const content = (
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/viajes" element={<Trips />} />
           <Route path="/agente" element={<Agent />} />
           <Route path="/perfil" element={<ProfilePage />} />
+          <Route path="/buscar" element={<SearchPage />} />
         </Routes>
       </main>
       <LegalFooter />
