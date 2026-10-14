@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { NavLink, Route, Routes, useLocation } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import { LegalFooter } from "./pages/Legal.tsx";
@@ -10,6 +11,9 @@ import Trips from "./pages/Trips.tsx";
 import Agent from "./pages/Agent.tsx";
 import ProfilePage from "./pages/Profile.tsx";
 import SearchPage from "./pages/Search.tsx";
+
+// El mapa trae Leaflet: se baja solo cuando alguien lo abre.
+const FlightMapPage = lazy(() => import("./pages/FlightMap.tsx"));
 
 function TabLink({ tab, badge, withIcon }: { tab: (typeof TABS)[number]; badge?: number; withIcon: boolean }) {
   const content = (
@@ -56,6 +60,14 @@ export default function App() {
           <Route path="/agente" element={<Agent />} />
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/buscar" element={<SearchPage />} />
+          <Route
+            path="/mapa"
+            element={
+              <Suspense fallback={<div className="map-canvas map-loading" aria-busy="true" aria-label="Cargando el mapa" />}>
+                <FlightMapPage />
+              </Suspense>
+            }
+          />
         </Routes>
         </ErrorBoundary>
       </main>

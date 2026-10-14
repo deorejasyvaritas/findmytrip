@@ -1,5 +1,8 @@
 import "./styles.css";
 import { TABS, iconSvg } from "./lib/icons.ts";
+import { registerServiceWorker } from "./lib/pwa.ts";
+
+registerServiceWorker();
 
 // Si el sitio pide usuario y no hay sesión, volvemos al inicio (que muestra el ingreso).
 fetch("/api/session")

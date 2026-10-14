@@ -371,6 +371,19 @@ export default function Home() {
 
       <RadarSection />
 
+      {meta?.liveFlights && (
+        <Link to="/mapa" className="card map-teaser">
+          <span className="map-teaser-art" aria-hidden="true">
+            <Icon name="globe" size={28} />
+          </span>
+          <span className="grow">
+            <strong>Mapa de vuelos baratos</strong>
+            <span className="small muted">Mirá en el mapa cuánto sale volar a cada destino desde tu ciudad.</span>
+          </span>
+          <Icon name="chevronRight" size={18} />
+        </Link>
+      )}
+
       <LongWeekends />
 
       {watchlist.length > 0 && (

@@ -10,13 +10,13 @@ import PurchaseModal, { type PurchaseTarget } from "./PurchaseModal.tsx";
 import Segmented from "./Segmented.tsx";
 import { Photo } from "./SuggestionCard.tsx";
 
-const MAX_PRICES = [300, 500, 800, 1200, 2000];
+export const MAX_PRICES = [300, 500, 800, 1200, 2000];
 
-const monthLabel = (key: string) =>
+export const monthLabel = (key: string) =>
   capitalize(new Date(`${key}-15T12:00:00`).toLocaleDateString("es-AR", { month: "long", year: "numeric" }));
 
 /** Ofertas de un mes puntual, armadas con el mejor precio de cada destino en ese mes. */
-function itemsForMonth(snap: RadarSnapshot, month: string): RadarItem[] {
+export function itemsForMonth(snap: RadarSnapshot, month: string): RadarItem[] {
   const out: RadarItem[] = [];
   for (const item of snap.items) {
     const m = snap.byMonth[item.destinationId]?.[month];
