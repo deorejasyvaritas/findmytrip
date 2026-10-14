@@ -120,7 +120,10 @@ export default function ProfilePage() {
         </div>
         {meta && (
           <p className="grouped-note">
-            1 USD = ${meta.usdArsRate.toLocaleString("es-AR")} · {meta.usdArsSource}
+            1 USD = ${meta.usdArsRate.toLocaleString("es-AR")} · {meta.usdArsSource}, para viajes al exterior
+            {meta.usdArsOfficialRate
+              ? ` · Dentro de Argentina, en pesos sin percepciones: 1 USD = $${meta.usdArsOfficialRate.toLocaleString("es-AR")} (dólar oficial)`
+              : ""}
           </p>
         )}
       </section>

@@ -19,6 +19,7 @@ import type {
   FlightQuote,
   Meta,
   MonthPrice,
+  Party,
   Profile,
   RealHotel,
   StayOption,
@@ -39,8 +40,15 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-const qs = (params: Record<string, string | number>) =>
-  new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
+const qs = (params: Record<string, string | number | undefined>) =>
+  new URLSearchParams(
+    Object.entries(params)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, String(v)]),
+  ).toString();
+
+/** Grupo para las APIs (?adults=2&kids=5,8&bags=cabin): los chicos comparten habitación y pagan otra tarifa. */
+export type PartyQuery = Partial<Record<"adults" | "kids" | "bags", string | number>>;
 
 export const api = {
   session: () =>
@@ -64,7 +72,7 @@ export const api = {
   meta: () => request<Meta>("/api/meta"),
   destinations: () => request<Destination[]>("/api/destinations"),
   photos: () => request<Record<string, string>>("/api/photos"),
-  destination: (id: string, p: { origin: string; nights: number; travelers: number; style: Style }) =>
+  destination: (id: string, p: { origin: string; nights: number; travelers: number; style: Style } & PartyQuery) =>
     request<{ destination: Destination; baseFlightUSD: number; months: MonthPrice[] }>(
       `/api/destinations/${id}?${qs(p)}`,
     ),
@@ -79,7 +87,7 @@ export const api = {
     ),
   searchMulti: (legs: { origin: string; destination: string; date: string }[]) =>
     request<LegResult[]>("/api/search/multi", { method: "POST", body: JSON.stringify({ legs }) }),
-  searchHotels: (p: { place: string; name: string; checkin: string; checkout: string; travelers: number }) =>
+  searchHotels: (p: { place: string; name: string; checkin: string; checkout: string; travelers: number } & PartyQuery) =>
     request<{
       destinationId: string | null;
       name: string;
@@ -91,7 +99,9 @@ export const api = {
     }>(`/api/search/hotels?${qs(p)}`),
   geo: (q: string) => request<GeoPlace[]>(`/api/geo?${qs({ q })}`),
   planTrip: (body: TripPlanRequest) => request<TripPlan>("/api/trip/plan", { method: "POST", body: JSON.stringify(body) }),
-  tripHotels: (p: { name: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; style: string }) =>
+  tripHotels: (
+    p: { name: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; style: string } & PartyQuery,
+  ) =>
     request<{
       destinationId: string | null;
       hotels: RealHotel[];
@@ -110,7 +120,7 @@ export const api = {
   climate: (lat: number, lon: number) => request<{ months: ClimateMonth[] }>(`/api/climate?${qs({ lat, lon })}`),
   extras: (dest: string) => request<{ extras: Extra[]; partner: boolean }>(`/api/extras?dest=${dest}`),
   cross: (p: { origin: string; dest: string; month: string }) => request<CrossResult>(`/api/cross?${qs(p)}`),
-  escapes: (origin: string) => request<EscapeWeekend[]>(`/api/escapes?origin=${origin}`),
+  escapes: (origin: string, party?: PartyQuery) => request<EscapeWeekend[]>(`/api/escapes?${qs({ origin, ...party })}`),
   radar: (origin: string) => request<RadarSnapshot>(`/api/radar?origin=${origin}`),
   radarRun: (origin: string) => request<RadarSnapshot>(`/api/radar/run?origin=${origin}`, { method: "POST" }),
   radarHistory: (origin: string, dest: string) =>
@@ -126,7 +136,7 @@ export const api = {
   quota: () => request<{ left: number | null; total: number | null }>("/api/quota"),
   flightQuote: (p: { origin: string; dest: string; depart: string; ret: string; cacheOnly?: 1 }) =>
     request<FlightQuote>(`/api/flights/quote?${qs(p)}`),
-  stays: (p: { dest: string; checkin: string; nights: number; travelers: number; real?: 1; google?: 1 }) =>
+  stays: (p: { dest: string; checkin: string; nights: number; travelers: number; real?: 1; google?: 1 } & PartyQuery) =>
     request<{ options: StayOption[]; hotels: RealHotel[]; source: "xotelo" | "google" | null; live: boolean }>(`/api/stays?${qs(p)}`),
   buildPackage: (body: {
     destinationId: string;
@@ -134,6 +144,8 @@ export const api = {
     departDate: string;
     nights: number;
     travelers: number;
+    party?: Party;
+    includeDaily?: boolean;
     style: Style;
     flightPP?: number;
   }) => request<TripPackage>("/api/packages/build", { method: "POST", body: JSON.stringify(body) }),

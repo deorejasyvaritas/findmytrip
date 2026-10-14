@@ -108,7 +108,6 @@ export function flightEstimateForDate(originCode: string, dest: Destination, iso
   return Math.round(baseFlightFrom(originCode, dest) * dest.season[month - 1] * weekdayFactor * leadFactor * jitter);
 }
 
-export const roomsFor = (travelers: number) => Math.max(1, Math.ceil(travelers / 2));
 
 export function lodgingNightly(dest: Destination, style: Style, month: number): number {
   // El alojamiento varía menos con la temporada que los vuelos.
@@ -310,18 +309,22 @@ export function explore(
   const scored: Suggestion[] = [];
   for (const dest of candidates) {
     let best: Suggestion | null = null;
+    // En Argentina se paga en pesos al oficial: el presupuesto en pesos rinde más.
+    const destBudget = dest.region === "Argentina" && req.domesticBudgetUSD ? Math.max(1, req.domesticBudgetUSD) : budget;
     // Si hay precios reales para este destino, solo consideramos esos meses.
     const realKnown = real?.forDest(dest) ?? [];
     const google = realKnown.filter((p) => p.source === "google");
-    // Con ventana o fechas exactas, solo sirven precios reales dentro del rango.
+    // Con ventana o fechas exactas, solo sirven precios reales con fecha dentro
+    // del rango: los mínimos mensuales de Aviasales (sin fecha, de cualquier
+    // estadía) no son el precio de esas fechas, así que ahí se estima.
     const inRange = (p: RealPrice) =>
-      !window.from || !p.depart || (p.depart >= window.from && p.depart <= (window.to ?? window.from));
+      !window.from || (Boolean(p.depart) && p.depart! >= window.from && p.depart! <= (window.to ?? window.from));
     const googleInRange = google.filter(inRange);
     // "Solo directos": descartamos lo que Google sabe que tiene escalas. Si
     // Google solo ve vuelos con escalas a ese destino, el destino no va.
     const googleOk = req.directOnly ? googleInRange.filter((p) => (p.stops ?? 0) === 0) : googleInRange;
     if (googleInRange.length && !googleOk.length) continue;
-    const realList = googleOk.length ? googleOk : realKnown.filter((p) => p.source !== "google");
+    const realList = googleOk.length ? googleOk : realKnown.filter((p) => p.source !== "google" && inRange(p));
     let options: TripOption[];
     if (window.weekends) {
       if (dest.flightHours > LONG_WEEKEND_MAX_HOURS) continue;
@@ -330,7 +333,9 @@ export function explore(
       options = realList.length
         ? realList.flatMap((p) => {
             const m = months.find((x) => x.month === p.month);
-            return m ? [{ ...m, nights, live: p }] : [];
+            // Si el precio real trae fechas, las noches son las de esas fechas.
+            const n = p.depart && p.ret ? nightsBetween(p.depart, p.ret) : nights;
+            return m ? [{ ...m, nights: n, live: p }] : [];
           })
         : months.map((m) => ({ ...m, nights }));
     }
@@ -340,7 +345,7 @@ export function explore(
       if (req.maxFlightPP && (live?.flightPP ?? opt.flightPP ?? flightEstimate(req.origin, dest, month)) > req.maxFlightPP) continue;
       const direct = live?.stops === 0;
       const cost = tripCost(req.origin, dest, month, opt.nights, party, req.style, live?.flightPP ?? opt.flightPP, live?.hotelNight, req.includeDaily);
-      const ratio = cost.total / budget;
+      const ratio = cost.total / destBudget;
       if (ratio > 1.15) continue;
 
       const reasons: string[] = [];
@@ -356,7 +361,7 @@ export function explore(
 
       if (ratio <= 1) {
         score += 30 - Math.abs(0.8 - ratio) * 20;
-        const left = budget - cost.total;
+        const left = destBudget - cost.total;
         if (ratio < 0.7) reasons.push(`Te sobran ~USD ${left.toLocaleString("es-AR")} del presupuesto`);
       } else {
         score += 5;
@@ -401,7 +406,8 @@ export function explore(
         airline: live?.airline,
         link: live?.link,
         ...(direct && { direct }),
-        ...(opt.weekend && { longWeekend: opt.weekend, nights: opt.nights }),
+        ...(opt.weekend && { longWeekend: opt.weekend }),
+        ...((opt.weekend || opt.nights !== nights) && { nights: opt.nights }),
       };
       if (!best || s.score > best.score || (s.score === best.score && s.cost.total < best.cost.total)) {
         best = s;
@@ -439,12 +445,13 @@ export function monthOverview(
   originCode: string,
   dest: Destination,
   nights: number,
-  travelers: number,
+  who: Party | number,
   style: Style,
   today = new Date(),
 ): MonthPrice[] {
+  const party = toParty(who);
   const rows = upcomingMonths(today).map(({ month, year }) => {
-    const cost = tripCost(originCode, dest, month, nights, travelers, style);
+    const cost = tripCost(originCode, dest, month, nights, party, style);
     return {
       month,
       year,
@@ -497,13 +504,16 @@ export function stayOptions(
   dest: Destination,
   checkin: string,
   nights: number,
-  travelers: number,
+  /** Grupo (los chicos comparten habitación) o cantidad de adultos. */
+  who: Party | number,
   /** Precio real por noche por estilo (Google Hotels), si se consultó. */
   realTiers?: Record<Style, number>,
 ): StayOption[] {
+  const party = toParty(who);
+  const travelers = headcount(party);
   const month = Number(checkin.slice(5, 7));
   const checkout = addDays(checkin, nights);
-  const rooms = roomsFor(travelers);
+  const rooms = roomsForParty(party);
   return (["low", "mid", "high"] as Style[]).map((tier, i) => {
     const nightlyUSD = realTiers?.[tier] ?? lodgingNightly(dest, tier, month);
     const area = dest.areas[i % dest.areas.length];

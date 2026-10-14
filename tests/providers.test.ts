@@ -31,8 +31,8 @@ describe("Travelpayouts", () => {
     const cal = await flightCalendar("tok", "BUE", rio, "2027-03", 7);
     const day = cal.days.find((d) => d.date === "2027-03-10")!;
     expect(cal.live).toBe(true);
-    expect(day).toMatchObject({ priceUSD: 310, source: "en vivo", airline: "G3" }); // la estadía de 20 noches se descarta
-    expect(cal.cheapest?.source).toBe("en vivo");
+    expect(day).toMatchObject({ priceUSD: 310, source: "visto", airline: "G3" }); // la estadía de 20 noches se descarta
+    expect(cal.cheapest?.source).toBe("visto");
     expect(cal.days.some((d) => d.source === "estimado")).toBe(true);
   });
 
@@ -45,9 +45,9 @@ describe("Travelpayouts", () => {
       return { success: true, data: [] };
     });
     const cal = await flightCalendar("tok", "BUE", rio, "2027-05", 7);
-    expect(cal.days.find((d) => d.date === "2027-05-12")).toMatchObject({ priceUSD: 280, source: "en vivo", airline: "AR" });
+    expect(cal.days.find((d) => d.date === "2027-05-12")).toMatchObject({ priceUSD: 280, source: "visto", airline: "AR" });
     // Sin precio para 7 noches ese día: usa el de 8 noches con su fecha de vuelta real.
-    expect(cal.days.find((d) => d.date === "2027-05-20")).toMatchObject({ priceUSD: 260, returnDate: "2027-05-28", source: "en vivo" });
+    expect(cal.days.find((d) => d.date === "2027-05-20")).toMatchObject({ priceUSD: 260, returnDate: "2027-05-28", source: "visto" });
   });
 
   it("sin token usa estimaciones y no llama a la API", async () => {

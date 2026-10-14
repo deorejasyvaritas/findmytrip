@@ -99,6 +99,36 @@ const money = (n: number) => `USD ${Math.round(n).toLocaleString("es-AR")}`;
 const shortDate = (iso?: string) =>
   iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-AR", { day: "numeric", month: "short", timeZone: "UTC" }) : "";
 
+type MonthOffer = RadarSnapshot["byMonth"][string][string];
+/** Diferencia de noches aceptada entre la oferta y lo que pidió el usuario (como el calendario). */
+export const ALERT_NIGHTS_TOLERANCE = 2;
+
+/**
+ * La oferta más barata que sirve para un destino seguido: del mes elegido,
+ * sin salidas pasadas y con una estadía parecida a la pedida. Las noches
+ * son las de las fechas de la oferta (si las tiene), así el total y el
+ * mensaje cuentan lo mismo.
+ */
+export function pickAlertOffer(
+  sub: Pick<AlertSub, "month" | "nights">,
+  months: Record<string, MonthOffer>,
+  today = new Date(),
+): { monthKey: string; offer: MonthOffer; nights: number } | null {
+  const todayISO = today.toISOString().slice(0, 10);
+  let best: { monthKey: string; offer: MonthOffer; nights: number } | null = null;
+  for (const [monthKey, offer] of Object.entries(months)) {
+    if (sub.month && Number(monthKey.slice(5, 7)) !== sub.month) continue;
+    if (offer.dep && offer.dep <= todayISO) continue;
+    let nights = sub.nights;
+    if (offer.dep && offer.ret) {
+      nights = Math.max(1, Math.round((Date.parse(offer.ret) - Date.parse(offer.dep)) / 86400000));
+      if (Math.abs(nights - sub.nights) > ALERT_NIGHTS_TOLERANCE) continue;
+    }
+    if (!best || offer.p < best.offer.p) best = { monthKey, offer, nights };
+  }
+  return best;
+}
+
 export async function evaluateAlerts(
   user: string,
   snap: RadarSnapshot,
@@ -118,10 +148,10 @@ export async function evaluateAlerts(
     const dest = getDestination(sub.destinationId);
     const months = snap.byMonth[sub.destinationId];
     if (!dest || !months) continue;
-    const candidates = Object.entries(months).filter(([key]) => !sub.month || Number(key.slice(5, 7)) === sub.month);
-    if (!candidates.length) continue;
-    const [monthKey, offer] = candidates.reduce((a, b) => (b[1].p < a[1].p ? b : a));
-    const total = tripCost(sub.origin, dest, Number(monthKey.slice(5, 7)), sub.nights, sub.party, sub.style, offer.p).total;
+    const pick = pickAlertOffer(sub, months);
+    if (!pick) continue;
+    const { monthKey, offer, nights } = pick;
+    const total = tripCost(sub.origin, dest, Number(monthKey.slice(5, 7)), nights, sub.party, sub.style, offer.p).total;
     const improved = sub.lastNotifiedUSD == null || total < sub.lastNotifiedUSD * 0.97;
     if (total <= sub.targetUSD && improved) {
       messages.push(
@@ -129,8 +159,8 @@ export async function evaluateAlerts(
           `${dest.name} entró en tu presupuesto`,
           `Total estimado: ${money(total)} (tu objetivo: ${money(sub.targetUSD)})`,
           `Vuelo: ${money(offer.p)} por persona${offer.dep ? `, ${shortDate(offer.dep)} – ${shortDate(offer.ret)}` : ""}`,
-          `${describeParty(sub.party)}, ${sub.nights} noches`,
-          site ? `${site}/destino/${dest.id}?month=${monthKey}&nights=${sub.nights}` : "",
+          `${describeParty(sub.party)}, ${nights} noches`,
+          site ? `${site}/destino/${dest.id}?month=${monthKey}&nights=${nights}${offer.dep ? `&depart=${offer.dep}` : ""}` : "",
         ]
           .filter(Boolean)
           .join("\n"),
@@ -145,7 +175,8 @@ export async function evaluateAlerts(
   // 2) Ofertas del radar (como mucho 3 por barrido, sin repetir el mismo precio).
   if (settings.radarDeals && (settings.origin ?? "BUE") === snap.origin) {
     const sent = (await loadJSON<Record<string, number>>(sentKey(user))) ?? {};
-    const deals = snap.items.filter((i) => i.isDeal && i.discountPct >= settings.minDiscount && !(sent[i.destinationId] <= i.priceUSD * 1.03));
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const deals = snap.items.filter((i) => (!i.depart || i.depart > todayISO) && i.isDeal && i.discountPct >= settings.minDiscount && !(sent[i.destinationId] <= i.priceUSD * 1.03));
     for (const d of deals.slice(0, 3)) {
       messages.push(
         [

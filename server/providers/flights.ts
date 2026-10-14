@@ -107,7 +107,7 @@ export async function flightCalendar(
     if (!prev || off < prev.off || (off === prev.off && price < prev.day.priceUSD)) {
       byDay.set(date, {
         off,
-        day: { date, returnDate, priceUSD: price, source: "en vivo", airline: item.airline, stops: item.transfers },
+        day: { date, returnDate, priceUSD: price, source: "visto", airline: item.airline, stops: item.transfers },
       });
     }
   }
@@ -117,7 +117,7 @@ export async function flightCalendar(
   const cheapest = days.reduce<FlightDay | null>((acc, d) => {
     // Preferimos precios reales al elegir el día más barato.
     if (!acc) return d;
-    if (d.source !== acc.source) return d.source === "en vivo" ? d : acc;
+    if (d.source !== acc.source) return d.source === "visto" ? d : acc;
     return d.priceUSD < acc.priceUSD ? d : acc;
   }, null);
   return { ...estimated, days, cheapest, live: true };

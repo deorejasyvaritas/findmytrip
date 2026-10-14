@@ -146,8 +146,21 @@ export async function runRadar(token: string, origin: string, now = new Date()):
 export async function getRadar(token: string | undefined, origin: string): Promise<RadarSnapshot | null> {
   const snap = await loadJSON<RadarSnapshot>(`radar:snap:${origin}`);
   const fresh = snap && Date.now() - Date.parse(snap.updatedAt) < RADAR_MAX_AGE_H * 3600000;
-  if (fresh || !token) return snap;
-  return runRadar(token, origin);
+  if (fresh || !token) return snap && withoutPastDepartures(snap);
+  return withoutPastDepartures(await runRadar(token, origin));
+}
+
+/** Al servir una foto vieja, saca las ofertas cuya salida ya pasó (solo lectura). */
+export function withoutPastDepartures(snap: RadarSnapshot, today = new Date()): RadarSnapshot {
+  const todayISO = today.toISOString().slice(0, 10);
+  const future = (dep?: string) => !dep || dep > todayISO;
+  const items = snap.items.filter((i) => future(i.depart));
+  const byMonth: RadarSnapshot["byMonth"] = {};
+  for (const [id, months] of Object.entries(snap.byMonth ?? {})) {
+    const kept = Object.entries(months).filter(([, o]) => future(o.dep));
+    if (kept.length) byMonth[id] = Object.fromEntries(kept);
+  }
+  return { ...snap, items, byMonth, routes: items.length };
 }
 
 // Copia en memoria del historial para el gráfico de la página del destino:

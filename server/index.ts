@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { Destination, Meta, SharedTripResponse } from "../shared/types.ts";
+import type { Destination, Meta, Party, SharedTripResponse } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
 import { addDays, baseFlightFrom, explore, lodgingNightly, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
@@ -28,7 +28,7 @@ import {
 } from "./auth.ts";
 import { config, has, type Env } from "./env.ts";
 import { realPrices } from "./providers/explore.ts";
-import { getRadar, routeHistory, runRadar } from "./radar.ts";
+import { getRadar, routeHistory, runRadar, withoutPastDepartures } from "./radar.ts";
 import {
   connectTelegram,
   evaluateAlerts,
@@ -42,7 +42,7 @@ import {
 } from "./alerts.ts";
 import { destinationPhotos } from "./providers/photos.ts";
 import { flightCalendar, googleFlights } from "./providers/flights.ts";
-import { usdArsRate } from "./providers/fx.ts";
+import { usdArsOfficialRate, usdArsRate } from "./providers/fx.ts";
 import { googleHotels } from "./providers/hotels.ts";
 import { xoteloHotels } from "./providers/xotelo.ts";
 import { escapes } from "./escapes.ts";
@@ -53,6 +53,7 @@ import { geocode, nearestCatalog, planTrip } from "./trip.ts";
 import { canUseGoogle } from "./google-budget.ts";
 import { BY_CODE } from "./radar.ts";
 import { stayLinks } from "../shared/links.ts";
+import { headcount, partyFromParams, roomsForParty } from "../shared/pricing.ts";
 import { extrasFor } from "../shared/extras.ts";
 import { buildPackage } from "./packages.ts";
 import { newShareId, shareKey, sharePath, shareSnapshot, userSharesKey, validShareId, type ShareRecord } from "./share.ts";
@@ -178,6 +179,11 @@ const originCode = z.string().regex(/^[A-Z]{3}$/).default("BUE");
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const nightsQ = z.coerce.number().int().min(1).max(60).default(7);
 const travelersQ = z.coerce.number().int().min(1).max(12).default(2);
+/** Grupo desde la query (?adults=2&kids=5,8&bags=cabin); sin eso, `travelers` adultos (compatibilidad). */
+function partyQ(query: Record<string, string>, travelers: number): Party {
+  const p = partyFromParams(new URLSearchParams(query), { adults: travelers, childAges: [], bags: "cabin" });
+  return { ...p, adults: Math.min(12, Math.max(1, Math.round(p.adults))), childAges: p.childAges.slice(0, 10) };
+}
 
 const profileSchema = z.object({
   name: z.string().max(80).default(""),
@@ -194,6 +200,7 @@ const profileSchema = z.object({
 const exploreSchema = z.object({
   origin: originCode,
   budgetUSD: z.coerce.number().positive(),
+  domesticBudgetUSD: z.number().positive().optional(),
   travelers: z.coerce.number().int().min(1).max(12),
   nights: z.coerce.number().int().min(1).max(60),
   month: z.number().int().min(1).max(12).nullable(),
@@ -229,7 +236,8 @@ const notFound = { error: "Destino no encontrado" };
 const env = (c: { env: Env }) => config(c.env);
 
 app.get("/meta", async (c) => {
-  const fx = await usdArsRate(Number(env(c).USD_ARS_RATE) || 1450);
+  const fallback = Number(env(c).USD_ARS_RATE) || 1450;
+  const [fx, official] = await Promise.all([usdArsRate(fallback), usdArsOfficialRate(fallback)]);
   const meta: Meta = {
     origins: ORIGINS,
     interests: [...INTERESTS],
@@ -240,6 +248,8 @@ app.get("/meta", async (c) => {
     agentProvider: has(env(c).ANTHROPIC_API_KEY) ? "claude" : c.env.AI ? "workers-ai" : null,
     usdArsRate: fx.rate,
     usdArsSource: fx.source,
+    usdArsOfficialRate: official.rate,
+    usdArsOfficialSource: official.source,
     marker: env(c).TRAVELPAYOUTS_MARKER ?? null,
     telegram: has(env(c).TELEGRAM_BOT_TOKEN),
   };
@@ -260,12 +270,16 @@ app.get("/destinations/:id", (c) => {
   return c.json({
     destination: dest,
     baseFlightUSD: baseFlightFrom(q.origin, dest),
-    months: monthOverview(q.origin, dest, q.nights, q.travelers, q.style),
+    months: monthOverview(q.origin, dest, q.nights, partyQ(c.req.query(), q.travelers), q.style),
   });
 });
 
 app.post("/explore", async (c) => {
   const body = exploreSchema.parse(await c.req.json());
+  // Fechas pasadas: se corre la salida a hoy (no hay precios para el pasado).
+  const todayISO = new Date().toISOString().slice(0, 10);
+  if (body.when?.kind === "window" && body.when.from < todayISO) body.when = { ...body.when, from: todayISO, to: body.when.to < todayISO ? todayISO : body.when.to };
+  if (body.when?.kind === "exact" && body.when.depart < todayISO) return c.json({ error: "La fecha de ida ya pasó." }, 400);
   const { months, weekends } = resolveWhen(body);
   const keys = env(c);
   // Si fallan las fuentes de precios, igual devolvemos resultados (estimados).
@@ -337,7 +351,7 @@ app.get("/stays", async (c) => {
     }
   }
   return c.json({
-    options: stayOptions(dest, q.checkin, q.nights, q.travelers, quote?.tiers),
+    options: stayOptions(dest, q.checkin, q.nights, partyQ(c.req.query(), q.travelers), quote?.tiers),
     hotels: quote?.hotels ?? [],
     source: quote?.source ?? null,
     live: Boolean(quote),
@@ -363,6 +377,8 @@ app.post("/packages/build", async (c) => {
       departDate: isoDate,
       nights: z.number().int().min(1).max(60),
       travelers: z.number().int().min(1).max(12),
+      party: exploreSchema.shape.party,
+      includeDaily: z.boolean().optional(),
       style,
       flightPP: z.number().positive().optional(),
       notes: z.string().max(500).optional(),
@@ -456,7 +472,9 @@ app.get("/search/hotels", async (c) => {
     .object({ place: iata, name: z.string().max(80).optional(), checkin: isoDate, checkout: isoDate, travelers: travelersQ })
     .parse(c.req.query());
   const nights = Math.max(1, Math.round((Date.parse(q.checkout) - Date.parse(q.checkin)) / 86400000));
-  const rooms = Math.max(1, Math.ceil(q.travelers / 2));
+  const party = partyQ(c.req.query(), q.travelers);
+  const travelers = headcount(party);
+  const rooms = roomsForParty(party);
   const dest = BY_CODE.get(q.place);
   const quote = dest ? await xoteloHotels(dest, q.checkin, nights).catch(() => null) : null;
   return c.json({
@@ -465,8 +483,8 @@ app.get("/search/hotels", async (c) => {
     nights,
     rooms,
     hotels: quote?.hotels ?? [],
-    options: dest ? stayOptions(dest, q.checkin, nights, q.travelers, quote?.tiers) : [],
-    links: stayLinks(dest?.name ?? q.name ?? q.place, q.checkin, q.checkout, q.travelers, rooms),
+    options: dest ? stayOptions(dest, q.checkin, nights, party, quote?.tiers) : [],
+    links: stayLinks(dest?.name ?? q.name ?? q.place, q.checkin, q.checkout, travelers, rooms),
   });
 });
 
@@ -507,7 +525,9 @@ app.get("/trip/hotels", async (c) => {
       google: z.string().optional(),
     })
     .parse(c.req.query());
-  const rooms = Math.max(1, Math.ceil(q.travelers / 2));
+  const party = partyQ(c.req.query(), q.travelers);
+  const travelers = headcount(party);
+  const rooms = roomsForParty(party);
   const near = nearestCatalog(q.lat, q.lon);
   const inCatalog = near.km < 40 ? near.dest : null;
   let quote = inCatalog ? await xoteloHotels(inCatalog, q.checkin, q.nights).catch(() => null) : null;
@@ -526,7 +546,7 @@ app.get("/trip/hotels", async (c) => {
     rooms,
     estimateNight,
     estimateFrom: near.km < 40 ? null : near.dest.name,
-    links: stayLinks(`${q.name}, ${q.country}`, q.checkin, addDays(q.checkin, q.nights), q.travelers, rooms),
+    links: stayLinks(`${q.name}, ${q.country}`, q.checkin, addDays(q.checkin, q.nights), travelers, rooms),
   });
 });
 
@@ -632,8 +652,8 @@ app.get("/cross", async (c) => {
 
 // Escapadas para los próximos fines de semana largos.
 app.get("/escapes", async (c) => {
-  const { origin } = z.object({ origin: originCode }).parse(c.req.query());
-  return c.json(await escapes(env(c).TRAVELPAYOUTS_TOKEN, origin));
+  const { origin, travelers } = z.object({ origin: originCode, travelers: travelersQ }).parse(c.req.query());
+  return c.json(await escapes(env(c).TRAVELPAYOUTS_TOKEN, origin, new Date(), partyQ(c.req.query(), travelers)));
 });
 
 // Barrido manual (además de los automáticos). Limitado para no abusar de la API.
@@ -646,7 +666,7 @@ app.post("/radar/run", async (c) => {
   const snap = await runRadar(token, origin);
   const e = env(c);
   await evaluateAlerts(userId(c), snap, { token: e.TELEGRAM_BOT_TOKEN, siteUrl: e.SITE_URL ?? new URL(c.req.url).origin });
-  return c.json(snap);
+  return c.json(withoutPastDepartures(snap));
 });
 
 // ---------------------------------------------------------------------------
