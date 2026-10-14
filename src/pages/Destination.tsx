@@ -33,6 +33,8 @@ import { INTEREST_ICON } from "../lib/icons.ts";
 import Icon from "../components/Icon.tsx";
 import CrossAndFly from "../components/CrossAndFly.tsx";
 import TripExtras from "../components/TripExtras.tsx";
+import { ClimateBlock } from "../components/Climate.tsx";
+import { EntryCard } from "../components/EntryRequirements.tsx";
 
 const WEEKDAYS = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
 const STYLES: Style[] = ["low", "mid", "high"];
@@ -420,6 +422,9 @@ export default function DestinationPage() {
               </button>
             ))}
           </div>
+          {months.length > 0 && (
+            <ClimateBlock lat={dest.lat} lon={dest.lon} order={months.map((m) => m.month)} month={month ? Number(month.slice(5, 7)) : null} />
+          )}
         </section>
 
         {month && (
@@ -684,6 +689,7 @@ export default function DestinationPage() {
             )}
           </section>
         )}
+        <EntryCard country={dest.country} />
         <TripExtras destId={dest.id} />
 
         {error && (

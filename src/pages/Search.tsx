@@ -6,6 +6,8 @@ import { DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams } f
 import { FlightForm, HotelForm, MultiForm, TripForm, readPlace, readStop, type SearchKind } from "../components/FullSearch.tsx";
 import Icon from "../components/Icon.tsx";
 import Segmented from "../components/Segmented.tsx";
+import { ClimateLine } from "../components/Climate.tsx";
+import { EntryLine } from "../components/EntryRequirements.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { capitalize, formatDate } from "../lib/format.ts";
@@ -1060,6 +1062,11 @@ function StopCard({
             </p>
           )}
         </div>
+      </div>
+
+      <div className="stop-info">
+        <ClimateLine lat={stop.lat} lon={stop.lon} date={stop.checkin} />
+        <EntryLine country={stop.country} />
       </div>
 
       {!data && <div className="sk" style={{ width: "100%", height: 72 }} />}

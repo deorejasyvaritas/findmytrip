@@ -847,3 +847,45 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .search-panel .lodging-label { color: #fefefe; }
 .search-panel .lodging-hint { color: rgba(254, 254, 254, 0.86); }
 .search-panel .search-row .lodging-picker { flex: 1 1 auto; }
+
+/* ==========================================================================
+   Clima esperado y requisitos de entrada
+   ========================================================================== */
+.climate { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; min-width: 0; }
+.climate.skeleton { gap: 12px; }
+.climate-error { margin-top: 8px; }
+/* Misma grilla que .month-bars: cada columna queda debajo de su mes. */
+.climate-strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; align-items: end; }
+.climate-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 4px 0;
+  border-radius: var(--r-sm); font-size: 11px; line-height: 1.2; font-variant-numeric: tabular-nums; overflow: hidden;
+}
+.climate-cell .hi { color: var(--label); font-weight: 600; letter-spacing: -0.02em; white-space: nowrap; }
+.climate-cell .lo { color: var(--label-3); letter-spacing: -0.02em; white-space: nowrap; }
+.climate-cell .rain { display: block; width: 60%; max-width: 20px; margin-top: 2px; border-radius: 2px; background: var(--fill); }
+.climate-cell.on { background: var(--fill-2); }
+.climate-cell.on .rain { background: var(--tint); }
+.climate-now { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-sm); }
+.climate-now .grow { display: flex; flex-direction: column; gap: 2px; }
+.climate-icon { display: inline-grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--fill-2); color: var(--label-2); }
+.climate-icon.hot, .climate-icon.beach, .climate-icon.warm { background: var(--orange-soft); color: var(--orange); }
+.climate-icon.snow, .climate-icon.cold { background: var(--tint-soft); color: var(--tint-ink); }
+.climate-icon.rain { background: var(--brand-soft); color: var(--brand-ink); }
+
+.entry { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.entry-card .section-head { margin-bottom: 8px; align-items: center; }
+.entry-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.entry-list li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; min-width: 0; }
+.entry-list li + li { border-top: 1px solid var(--separator); }
+.entry-list li > .icon { flex-shrink: 0; color: var(--brand); margin-top: 1px; }
+.entry-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.entry-source { display: flex; align-items: flex-start; gap: 8px; }
+.entry-source .icon { flex-shrink: 0; margin-top: 2px; }
+
+/* Paradas del viaje: clima y requisitos en una línea cada uno. */
+.stop-info { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.info-line { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.info-line > .icon { flex-shrink: 0; margin-top: 1px; color: var(--label-2); }
+.info-line > span { min-width: 0; }
+.info-line button.link { flex-shrink: 0; min-height: 0; padding: 12px 0; margin: -12px 0; }
+.entry-pop { margin-top: 8px; padding: 4px 16px 16px; border-radius: var(--r-md); background: var(--fill-2); }
