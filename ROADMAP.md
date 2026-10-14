@@ -7,9 +7,9 @@ Ordenadas por impacto para el viajero. Las marcadas con (gratis) no suman costos
 2. **Radar de ofertas** (hecho, con filtros por mes, región y precio): barrido programado (por ejemplo 4-5 veces por día) de rutas desde tu ciudad con Travelpayouts, comparando contra la mediana de los últimos 30 días para marcar "precio muy bajo" o "posible error de tarifa".
 3. **Historial de precios por ruta** (en parte: el radar guarda historial; falta mostrar el gráfico por ruta): guardar cada precio visto en KV/D1 para mostrar "hoy está 18 % más barato que lo habitual".
 4. **Aeropuertos cercanos** (hecho, "Cruzá y volá"): comparar con salir desde Montevideo, Santiago o San Pablo sumando el cruce.
-5. **Vuelos directos o con escalas**, horarios preferidos y aerolíneas a evitar.
+5. **Vuelos directos o con escalas** (hecho en el buscador: escalas, aerolíneas, horario y precio).
 6. **Impuestos argentinos**: mostrar el precio en pesos con dólar tarjeta y percepciones, y comparar con pagar en dólares.
-7. **Multi-destino** ("Lisboa + Madrid en 12 días") y tramos con tren o bus.
+7. **Multi-destino** (hecho: Multidestino y "Ya sé a dónde" con paradas y traslados por tierra; falta precio de micros y trenes).
 8. **Fin de semana largo** (hecho): feriados calculados según la ley y escapadas con precio real en Explorar.
 
 ## Paquete y viaje
