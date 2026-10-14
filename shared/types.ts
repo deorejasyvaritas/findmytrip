@@ -120,6 +120,8 @@ export interface ExploreRequest {
   maxFlightPP?: number | null;
   /** Solo vuelos directos (descarta lo que sabemos que tiene escalas). */
   directOnly?: boolean;
+  /** Solo salidas dentro de los próximos fines de semana largos. */
+  longWeekendsOnly?: boolean;
 }
 
 export interface CostBreakdown {
@@ -153,6 +155,17 @@ export interface Suggestion {
   link?: string;
   /** Vuelo directo comprobado (Google). Si no se sabe, queda sin marcar. */
   direct?: boolean;
+  /** Fin de semana largo de esta opción (búsqueda "Fines de semana largos"). */
+  longWeekend?: LongWeekendInfo;
+  /** Noches de esta opción cuando no son las de la búsqueda (fin de semana largo). */
+  nights?: number;
+}
+
+export interface LongWeekendInfo {
+  from: string; // primer día libre
+  to: string; // último día libre
+  days: number;
+  reason: string;
 }
 
 export type PriceSource = "google" | "aviasales" | "estimado";
@@ -572,6 +585,19 @@ export interface TripLeg {
   km: number | null;
   hours: number | null;
   mapsUrl: string | null;
+  /** Por tierra: costo estimado (shared/ground.ts). */
+  ground?: GroundEstimate | null;
+}
+
+export interface GroundEstimate {
+  /** Medio más común para ese tramo. */
+  mode: "micro" | "tren" | "micro o tren";
+  /** Pasaje aproximado por persona, en USD. */
+  perPerson: number;
+  /** Transfer privado (por vehículo, hasta 3 personas) para tramos cortos; null si es largo. */
+  transfer: number | null;
+  /** Búsqueda en Rome2Rio con horarios y empresas. */
+  rome2rioUrl: string;
 }
 
 export interface TripPlan {

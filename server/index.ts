@@ -206,6 +206,7 @@ const exploreSchema = z.object({
   includeDaily: z.boolean().optional(),
   maxFlightPP: z.number().positive().nullable().optional(),
   directOnly: z.boolean().optional(),
+  longWeekendsOnly: z.boolean().optional(),
   party: z
     .object({
       adults: z.number().int().min(1).max(12),
@@ -264,7 +265,7 @@ app.get("/destinations/:id", (c) => {
 
 app.post("/explore", async (c) => {
   const body = exploreSchema.parse(await c.req.json());
-  const { months } = resolveWhen(body);
+  const { months, weekends } = resolveWhen(body);
   const keys = env(c);
   // Si fallan las fuentes de precios, igual devolvemos resultados (estimados).
   const real = await realPrices(
@@ -272,6 +273,7 @@ app.post("/explore", async (c) => {
     body.origin,
     months,
     months.length === 1 ? months[0].month : null,
+    weekends,
   ).catch((err) => {
     console.error("explore: precios reales", err);
     return undefined;

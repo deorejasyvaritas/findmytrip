@@ -17,6 +17,7 @@ import type {
 import { flightLinks, stayLinks } from "../shared/links.ts";
 import { DESTINATIONS, ORIGINS, getOrigin } from "./data/destinations.ts";
 import { bagsCost, dailyUnits, fareUnits, headcount, roomsForParty } from "../shared/pricing.ts";
+import { longWeekends, type LongWeekend } from "./holidays.ts";
 export { headcount };
 
 // ---------------------------------------------------------------------------
@@ -147,12 +148,39 @@ export function tripCost(
 
 /** Meses a considerar y fechas límite según lo que eligió el usuario. */
 export function resolveWhen(
-  req: { when?: When; month?: number | null; year?: number; nights: number },
+  req: { when?: When; month?: number | null; year?: number; nights: number; longWeekendsOnly?: boolean },
   today = new Date(),
-): { months: { month: number; year: number }[]; from?: string; to?: string; nights: number } {
+): { months: { month: number; year: number }[]; from?: string; to?: string; nights: number; weekends?: LongWeekend[] } {
   const when: When =
     req.when ?? (req.month ? { kind: "months", months: [{ month: req.month, year: req.year ?? yearFor(req.month, today) }] } : { kind: "flexible" });
-  const nights = Math.max(1, req.nights);
+  const plain = resolvePlain(when, Math.max(1, req.nights), today);
+  if (!req.longWeekendsOnly || when.kind === "exact") return plain;
+
+  // "Fines de semana largos": los próximos 4 que caen dentro de lo elegido
+  // (meses o ventana). Se sale la noche anterior o durante el finde.
+  const fits = (w: LongWeekend) =>
+    plain.from
+      ? w.to >= plain.from && addDays(w.from, -1) <= (plain.to ?? plain.from)
+      : when.kind === "months"
+        ? plain.months.some((m) => [addDays(w.from, -1), w.to].some((d) => Number(d.slice(5, 7)) === m.month && Number(d.slice(0, 4)) === m.year))
+        : true;
+  const weekends = longWeekends(toISO(today), 8, 300).filter(fits).slice(0, LONG_WEEKENDS);
+  const months: { month: number; year: number }[] = [];
+  for (const w of weekends) {
+    for (const d of [addDays(w.from, -1), addDays(w.to, -1)]) {
+      const m = { month: Number(d.slice(5, 7)), year: Number(d.slice(0, 4)) };
+      if (!months.some((x) => x.month === m.month && x.year === m.year)) months.push(m);
+    }
+  }
+  const longest = Math.max(1, ...weekends.map((w) => w.days));
+  return { months, nights: Math.min(plain.nights, longest), weekends };
+}
+
+function resolvePlain(
+  when: When,
+  nights: number,
+  today: Date,
+): { months: { month: number; year: number }[]; from?: string; to?: string; nights: number } {
   if (when.kind === "months" && when.months.length) return { months: when.months, nights };
   if (when.kind === "window" || when.kind === "exact") {
     const from = when.kind === "window" ? when.from : when.depart;
@@ -167,6 +195,81 @@ export function resolveWhen(
     return { months, from, to, nights: n };
   }
   return { months: upcomingMonths(today), nights };
+}
+
+// ---------------------------------------------------------------------------
+// Fines de semana largos
+// ---------------------------------------------------------------------------
+
+/** Cuántos fines de semana largos se consideran. */
+export const LONG_WEEKENDS = 4;
+/** Escapada corta: destinos a no más de estas horas de vuelo (como en escapes.ts). */
+export const LONG_WEEKEND_MAX_HOURS = 6;
+/** Los fines largos se llenan: la estimación sin precio real sube ~10 %. */
+const HOLIDAY_DEMAND = 1.1;
+
+interface TripOption {
+  month: number;
+  year: number;
+  nights: number;
+  live?: RealPrice;
+  /** Vuelo por persona estimado para esta opción (si no hay precio real). */
+  flightPP?: number;
+  depart?: string;
+  ret?: string;
+  weekend?: LongWeekend;
+}
+
+const nightsBetween = (a: string, b: string) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / 86400000));
+
+/**
+ * La mejor salida para un fin de semana largo: el precio real más barato que
+ * sale entre el día anterior y el anteúltimo día libre (y vuelve a tiempo);
+ * si no hay, una estimación volviendo el último día.
+ */
+export function weekendOption(
+  originCode: string,
+  dest: Destination,
+  w: LongWeekend,
+  real: RealPrice[],
+  wantedNights: number,
+  directOnly = false,
+  today = new Date(),
+): TripOption {
+  const first = addDays(w.from, -1);
+  const lastDepart = addDays(w.to, -1);
+  const fits = real.filter(
+    (p) =>
+      p.depart &&
+      p.depart >= first &&
+      p.depart <= lastDepart &&
+      (!p.ret || p.ret <= w.to) &&
+      (!directOnly || p.source !== "google" || (p.stops ?? 0) === 0),
+  );
+  const best = fits.reduce<RealPrice | null>((a, b) => (!a || b.flightPP < a.flightPP ? b : a), null);
+  if (best?.depart) {
+    const nights = best.ret ? nightsBetween(best.depart, best.ret) : Math.max(1, Math.min(wantedNights, w.days));
+    return {
+      month: Number(best.depart.slice(5, 7)),
+      year: Number(best.depart.slice(0, 4)),
+      nights,
+      live: best,
+      depart: best.depart,
+      ret: best.ret ?? addDays(best.depart, nights),
+      weekend: w,
+    };
+  }
+  const nights = Math.max(1, Math.min(wantedNights, w.days));
+  const depart = addDays(w.to, -nights);
+  return {
+    month: Number(depart.slice(5, 7)),
+    year: Number(depart.slice(0, 4)),
+    nights,
+    flightPP: Math.round(flightEstimateForDate(originCode, dest, depart, today) * HOLIDAY_DEMAND),
+    depart,
+    ret: w.to,
+    weekend: w,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -219,17 +322,24 @@ export function explore(
     const googleOk = req.directOnly ? googleInRange.filter((p) => (p.stops ?? 0) === 0) : googleInRange;
     if (googleInRange.length && !googleOk.length) continue;
     const realList = googleOk.length ? googleOk : realKnown.filter((p) => p.source !== "google");
-    const options = realList.length
-      ? realList.flatMap((p) => {
-          const m = months.find((x) => x.month === p.month);
-          return m ? [{ ...m, live: p }] : [];
-        })
-      : months.map((m) => ({ ...m, live: undefined as RealPrice | undefined }));
-    for (const { month, year, live } of options) {
+    let options: TripOption[];
+    if (window.weekends) {
+      if (dest.flightHours > LONG_WEEKEND_MAX_HOURS) continue;
+      options = window.weekends.map((w) => weekendOption(req.origin, dest, w, realKnown, req.nights, req.directOnly, today));
+    } else {
+      options = realList.length
+        ? realList.flatMap((p) => {
+            const m = months.find((x) => x.month === p.month);
+            return m ? [{ ...m, nights, live: p }] : [];
+          })
+        : months.map((m) => ({ ...m, nights }));
+    }
+    for (const opt of options) {
+      const { month, year, live } = opt;
       // Tope de vuelo por persona (precio real si lo hay; si no, el estimado).
-      if (req.maxFlightPP && (live?.flightPP ?? flightEstimate(req.origin, dest, month)) > req.maxFlightPP) continue;
+      if (req.maxFlightPP && (live?.flightPP ?? opt.flightPP ?? flightEstimate(req.origin, dest, month)) > req.maxFlightPP) continue;
       const direct = live?.stops === 0;
-      const cost = tripCost(req.origin, dest, month, nights, party, req.style, live?.flightPP, live?.hotelNight, req.includeDaily);
+      const cost = tripCost(req.origin, dest, month, opt.nights, party, req.style, live?.flightPP ?? opt.flightPP, live?.hotelNight, req.includeDaily);
       const ratio = cost.total / budget;
       if (ratio > 1.15) continue;
 
@@ -264,7 +374,7 @@ export function explore(
 
       // Destinos muy lejanos no rinden en viajes cortos.
       const travelDays = (dest.flightHours * 2) / 24;
-      if (travelDays > nights * 0.2) {
+      if (travelDays > opt.nights * 0.2) {
         score -= 15;
       }
       if (dest.hiddenGem) score += 5;
@@ -286,11 +396,12 @@ export function explore(
         isAlternative,
         flightSource: live?.source ?? "estimado",
         lodgingSource: live?.hotelNight ? "google" : "estimado",
-        depart: live?.depart ?? (req.when?.kind === "exact" ? req.when.depart : undefined),
-        ret: live?.ret ?? (req.when?.kind === "exact" ? req.when.ret : undefined),
+        depart: opt.depart ?? live?.depart ?? (req.when?.kind === "exact" ? req.when.depart : undefined),
+        ret: opt.ret ?? live?.ret ?? (req.when?.kind === "exact" ? req.when.ret : undefined),
         airline: live?.airline,
         link: live?.link,
         ...(direct && { direct }),
+        ...(opt.weekend && { longWeekend: opt.weekend, nights: opt.nights }),
       };
       if (!best || s.score > best.score || (s.score === best.score && s.cost.total < best.cost.total)) {
         best = s;

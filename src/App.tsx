@@ -10,6 +10,8 @@ import Trips from "./pages/Trips.tsx";
 import Agent from "./pages/Agent.tsx";
 import ProfilePage from "./pages/Profile.tsx";
 import SearchPage from "./pages/Search.tsx";
+import ComparePage from "./pages/Compare.tsx";
+import { CompareBar } from "./components/Compare.tsx";
 
 function TabLink({ tab, badge, withIcon }: { tab: (typeof TABS)[number]; badge?: number; withIcon: boolean }) {
   const content = (
@@ -56,8 +58,10 @@ export default function App() {
           <Route path="/agente" element={<Agent />} />
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/buscar" element={<SearchPage />} />
+          <Route path="/comparar" element={<ComparePage />} />
         </Routes>
         </ErrorBoundary>
+        <CompareBar />
       </main>
       <LegalFooter />
       <nav className="tabbar" aria-label="Principal">

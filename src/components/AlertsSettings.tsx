@@ -18,6 +18,15 @@ export default function AlertsSettings() {
     api.alerts().then(setData).catch(() => setData(null));
   }, []);
 
+  // Desde "Avisarme si baja" se llega con #alertas: bajamos hasta acá cuando ya cargó.
+  const loaded = Boolean(data);
+  useEffect(() => {
+    if (!loaded || window.location.hash !== "#alertas") return;
+    requestAnimationFrame(() => {
+      document.getElementById("alertas")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [loaded]);
+
   if (!data) return null;
   const { settings } = data;
   const connected = Boolean(settings.telegramChatId);
@@ -81,7 +90,7 @@ export default function AlertsSettings() {
   }
 
   return (
-    <section>
+    <section id="alertas" className="alerts-anchor">
       <p className="grouped-title">Alertas</p>
       <div className="grouped">
         <div className="list-row list-row-block">

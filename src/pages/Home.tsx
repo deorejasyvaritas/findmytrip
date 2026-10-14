@@ -9,6 +9,7 @@ import { FlightForm, HotelForm, MultiForm, TripForm } from "../components/FullSe
 import RadarSection from "../components/RadarSection.tsx";
 import Segmented from "../components/Segmented.tsx";
 import LodgingPicker from "../components/LodgingPicker.tsx";
+import { CompareToggle } from "../components/Compare.tsx";
 import SuggestionCard, { Photo, SuggestionSkeleton } from "../components/SuggestionCard.tsx";
 import { PartyPicker, WhenPicker, describeWhen, validateWhen } from "../components/TripPickers.tsx";
 import { api } from "../lib/api.ts";
@@ -27,6 +28,8 @@ interface Search {
   /** Tope del vuelo ida y vuelta por persona, en USD (0 = sin tope). */
   maxFlightPP: number;
   directOnly: boolean;
+  /** Solo salidas en los próximos fines de semana largos. */
+  longWeekends?: boolean;
 }
 
 type Sheet = "when" | "party" | null;
@@ -118,11 +121,18 @@ export default function Home() {
         includeDaily: profile.includeDaily ?? false,
         maxFlightPP: s.maxFlightPP || undefined,
         directOnly: s.directOnly || undefined,
+        longWeekendsOnly: (s.longWeekends && s.when.kind !== "exact") || undefined,
       });
       setResult(res);
       if (fromButton) {
         const n = res.suggestions.length + res.alternatives.length;
-        setStatus(n ? `Listo: ${n} destinos para tu búsqueda.` : "No encontramos destinos con esos datos. Probá subir el presupuesto o cambiar fechas.");
+        setStatus(
+          n
+            ? `Listo: ${n} destinos para tu búsqueda.`
+            : s.longWeekends
+              ? "No encontramos escapadas para los próximos fines de semana largos. Probá subir el presupuesto o quitar el filtro."
+              : "No encontramos destinos con esos datos. Probá subir el presupuesto o cambiar fechas.",
+        );
         requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
       }
     } catch (e) {
@@ -323,6 +333,17 @@ export default function Home() {
               >
                 Solo directos
               </button>
+              <button
+                type="button"
+                className={`chip ${form.longWeekends && !exact ? "on" : ""}`}
+                aria-pressed={Boolean(form.longWeekends && !exact)}
+                disabled={exact}
+                title={exact ? "Con fechas exactas no aplica" : "Salidas en los próximos fines de semana largos"}
+                onClick={() => setForm({ ...form, longWeekends: !form.longWeekends })}
+              >
+                <Icon name="calendar" size={14} />
+                Fines de semana largos
+              </button>
             </div>
             {meta && <InterestPicker options={meta.interests} value={form.interests} onChange={(interests) => setForm({ ...form, interests })} />}
             <button className="search-cta" disabled={loading}>
@@ -351,16 +372,19 @@ export default function Home() {
             </div>
             <div className="dest-list">
               {filteredDest.map((d) => (
-                <button key={d.id} className="dest-item" onClick={() => navigate(`/destino/${d.id}`)}>
-                  {photos[d.id] && <img className="dest-thumb" src={photos[d.id]} alt="" loading="lazy" referrerPolicy="no-referrer" />}
-                  <span className="stack-sm grow">
-                    <span>{d.name}</span>
-                    <span className="sub">
-                      {d.country} · {d.tags.slice(0, 3).join(", ")}
+                <div key={d.id} className="dest-item-wrap">
+                  <button className="dest-item" onClick={() => navigate(`/destino/${d.id}`)}>
+                    {photos[d.id] && <img className="dest-thumb" src={photos[d.id]} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+                    <span className="stack-sm grow">
+                      <span>{d.name}</span>
+                      <span className="sub">
+                        {d.country} · {d.tags.slice(0, 3).join(", ")}
+                      </span>
                     </span>
-                  </span>
-                  <Icon name="chevronRight" size={18} />
-                </button>
+                    <Icon name="chevronRight" size={18} />
+                  </button>
+                  <CompareToggle id={d.id} name={d.name} iconOnly />
+                </div>
               ))}
               {filteredDest.length === 0 && <p>No hay destinos del catálogo con ese nombre. Usá el buscador de arriba: encuentra cualquier lugar.</p>}
             </div>
@@ -431,16 +455,23 @@ export default function Home() {
             {profile.currency === "ARS" && (
               <p className="small muted fx-note">Pesos al dólar tarjeta. Pagando con dólares propios no hay percepción del 30 %.</p>
             )}
+            {shown.longWeekends && shown.when.kind !== "exact" && result.suggestions.length > 0 && (
+              <p className="small muted fx-note">Salidas en los próximos fines de semana largos, a destinos de hasta 6 horas de vuelo.</p>
+            )}
             {result.suggestions.length === 0 ? (
               <div className="card empty">
-                <Icon name="search" size={28} />
-                <h3>Con ese presupuesto no hay opciones todavía</h3>
-                <p className="muted">Probá con menos noches, alojamiento económico o fechas flexibles: suelen abrir muchas opciones.</p>
+                <Icon name={shown.longWeekends ? "calendar" : "search"} size={28} />
+                <h3>{shown.longWeekends ? "No hay escapadas para los fines largos con ese presupuesto" : "Con ese presupuesto no hay opciones todavía"}</h3>
+                <p className="muted">
+                  {shown.longWeekends
+                    ? "Probá subir el presupuesto, elegir alojamiento económico o quitar el filtro de fines de semana largos."
+                    : "Probá con menos noches, alojamiento económico o fechas flexibles: suelen abrir muchas opciones."}
+                </p>
               </div>
             ) : (
               <div className="grid-cards">
                 {result.suggestions.map((s) => (
-                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} range={rangeShown} />
+                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} range={rangeShown} style={shown.style} />
                 ))}
               </div>
             )}
@@ -457,7 +488,7 @@ export default function Home() {
               </div>
               <div className="grid-cards">
                 {result.alternatives.map((s) => (
-                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} range={rangeShown} />
+                  <SuggestionCard key={s.destination.id} s={s} nights={nightsShown} party={shown.party} range={rangeShown} style={shown.style} />
                 ))}
               </div>
             </section>

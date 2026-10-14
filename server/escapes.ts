@@ -11,7 +11,7 @@ const TP = "https://api.travelpayouts.com";
 const MAX_FLIGHT_HOURS = 6; // escapada corta: destinos cercanos
 const PER_WEEKEND = 4;
 
-interface Offer {
+export interface Offer {
   code: string;
   price: number;
   depart: string;
@@ -19,7 +19,7 @@ interface Offer {
   airline?: string;
 }
 
-async function offersFor(token: string, origin: string, depart: string, ret: string): Promise<Offer[]> {
+export async function offersFor(token: string, origin: string, depart: string, ret: string): Promise<Offer[]> {
   const out =
     (await cached<Offer[]>(`esc:${origin}-${depart}-${ret}`, 6 * 3600, async () => {
       const headers = { headers: { "X-Access-Token": token } };
