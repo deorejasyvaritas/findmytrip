@@ -1,11 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { FlightResult, ItemQuote, LegOption, LegResult, Party, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
+import type { FlightResult, ItemQuote, LegOption, LegResult, MealPlan, Party, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
 import { aviasalesForParty } from "../../shared/links.ts";
 import { priceLabel } from "../../shared/price-age.ts";
 import { airlineName } from "../../shared/airlines.ts";
-import { BAGS_LABEL, DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams, partyToParams, roomsForParty } from "../../shared/pricing.ts";
+import {
+  BAGS_LABEL,
+  DEFAULT_PARTY,
+  describeParty,
+  describeRooms,
+  fareUnits,
+  headcount,
+  partyFromParams,
+  partyToParams,
+  roomOccupancy,
+  roomsForParty,
+} from "../../shared/pricing.ts";
 import { hotelDistanceKm, hotelLinks } from "../../shared/hotel-links.ts";
+import { priceIncludesPlan, sortHotelsFor } from "../../shared/hotel-badges.ts";
+import { MEAL_PLAN_LABEL } from "../../shared/meal-plan.ts";
+import { HotelBadges, HotelFilters, HotelFinder, MealPlanNote, MealPlanPriceLink } from "../components/HotelBadges.tsx";
 import { estimateTrip } from "../../shared/compare.ts";
 import { groundSeats, groundTotal } from "../../shared/ground.ts";
 import { describeWindow, tripDatesFromParams, tripDatesToParams, windowFromParam } from "../../shared/trip-window.ts";
@@ -488,12 +502,13 @@ interface HotelData {
   name: string;
   nights: number;
   rooms: number;
+  roomsLabel?: string;
   hotels: RealHotel[];
   options: StayOption[];
   links: { label: string; url: string }[];
 }
 
-function useHotels(place: string, name: string, checkin: string, checkout: string, party: Party) {
+function useHotels(place: string, name: string, checkin: string, checkout: string, party: Party, meal: MealPlan = "room", beach = false) {
   const [data, setData] = useState<HotelData | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Edades de los chicos: los links a Booking, Expedia y Airbnb se abren para el grupo real.
@@ -503,30 +518,54 @@ function useHotels(place: string, name: string, checkin: string, checkout: strin
     setData(null);
     setError(null);
     api
-      .searchHotels({ place, name: name.split(",")[0].replace(/\s*\([A-Z]{3}\)$/, ""), checkin, checkout, travelers: headcount(party), ...partyToParams(party) })
+      .searchHotels({
+        place,
+        name: name.split(",")[0].replace(/\s*\([A-Z]{3}\)$/, ""),
+        checkin,
+        checkout,
+        travelers: headcount(party),
+        ...partyToParams(party),
+        ...(meal !== "room" ? { meal } : {}),
+        ...(beach ? { beach: 1 as const } : {}),
+      })
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError((e as Error).message));
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [place, name, checkin, checkout, partyKey]);
+  }, [place, name, checkin, checkout, partyKey, meal, beach]);
   return { data, error };
 }
 
 function HotelResults(p: { place: string; name: string; checkin: string; checkout: string; party: Party }) {
-  const { money } = useApp();
-  const { data, error } = useHotels(p.place, p.name, p.checkin, p.checkout, p.party);
+  const { money, profile } = useApp();
+  const [meal, setMeal] = useState<MealPlan>(profile.mealPlan ?? "room");
+  const [beach, setBeach] = useState(profile.beachfront ?? false);
+  const { data, error } = useHotels(p.place, p.name, p.checkin, p.checkout, p.party, meal, beach);
   const [sort, setSort] = useState<"price" | "rating">("price");
   const [minRating, setMinRating] = useState(0);
+  const filters = <HotelFilters mealPlan={meal} onMealPlan={setMeal} beachfront={beach} onBeachfront={setBeach} />;
   if (error) return <ErrorCard message={error} />;
-  if (!data) return <HotelSkeleton />;
-  const hotels = data.hotels
-    .filter((h) => (h.rating ?? 0) >= minRating)
-    .sort((a, b) => (sort === "price" ? a.nightlyUSD - b.nightlyUSD : (b.rating ?? 0) - (a.rating ?? 0)));
+  if (!data) return (
+    <div className="stack">
+      {filters}
+      <HotelSkeleton />
+    </div>
+  );
+  const city = data.name.split(",")[0];
+  const hotels = sortHotelsFor(
+    data.hotels
+      .filter((h) => (h.rating ?? 0) >= minRating)
+      .sort((a, b) => (sort === "price" ? a.nightlyUSD - b.nightlyUSD : (b.rating ?? 0) - (a.rating ?? 0))),
+    meal,
+    beach,
+  );
 
   return (
     <div className="stack">
+      {filters}
+      <MealPlanNote mealPlan={meal} />
       {data.hotels.length > 0 && (
         <div className="results-bar">
           <Segmented
@@ -548,12 +587,23 @@ function HotelResults(p: { place: string; name: string; checkin: string; checkou
       {data.hotels.length > 0 ? (
         <>
           <p className="small muted">
-            {hotels.length} hoteles · {data.nights} noches · {data.rooms} {data.rooms === 1 ? "habitación" : "habitaciones"} · el mejor precio entre Booking, Agoda,
-            Expedia y más
+            {hotels.length} hoteles · {data.nights} noches · {data.roomsLabel ?? `${data.rooms} ${data.rooms === 1 ? "habitación" : "habitaciones"}`} · el mejor precio entre
+            Booking, Agoda, Expedia y más
           </p>
+          {beach && hotels.length === 0 && (
+            <p className="small muted">Ninguno de estos hoteles dice tener acceso a la playa. Sacá el filtro o compará directo:</p>
+          )}
           <div className="hotel-results">
             {hotels.map((h) => (
-              <HotelCard key={h.name} h={h} rooms={data.rooms} money={money} />
+              <HotelCard
+                key={h.name}
+                h={h}
+                rooms={data.rooms}
+                money={money}
+                mealPlan={meal}
+                roomsLabel={data.roomsLabel}
+                extra={<MealPlanPriceLink h={h} city={city} checkin={p.checkin} checkout={p.checkout} party={p.party} mealPlan={meal} />}
+              />
             ))}
           </div>
         </>
@@ -587,7 +637,26 @@ function HotelThumb({ src }: { src?: string | null }) {
   return <img src={src} alt="" width={320} height={140} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
 }
 
-function HotelCard({ h, rooms, money, selected, onSelect }: { h: RealHotel; rooms: number; money: (n: number) => string; selected?: boolean; onSelect?: () => void }) {
+function HotelCard({
+  h,
+  rooms,
+  money,
+  selected,
+  onSelect,
+  mealPlan = "room",
+  roomsLabel,
+  extra,
+}: {
+  h: RealHotel;
+  rooms: number;
+  money: (n: number) => string;
+  selected?: boolean;
+  onSelect?: () => void;
+  mealPlan?: MealPlan;
+  /** "3 personas en 1 habitación". */
+  roomsLabel?: string;
+  extra?: ReactNode;
+}) {
   return (
     <article className={`card hotel-card ${selected ? "on" : ""}`}>
       <HotelThumb src={h.thumbnail} />
@@ -599,10 +668,14 @@ function HotelCard({ h, rooms, money, selected, onSelect }: { h: RealHotel; room
             {h.reviews ? ` · ${h.reviews.toLocaleString("es-AR")} opiniones` : ""}
           </span>
         )}
+        <HotelBadges h={h} mealPlan={mealPlan} />
         <span className="price">{money(h.totalUSD * rooms)}</span>
         <span className="small muted">
-          {money(h.nightlyUSD)} por noche{h.site ? ` en ${h.site}` : ""}
+          {money(h.nightlyUSD)} por noche{rooms > 1 ? " por habitación" : ""}
+          {h.site ? ` en ${h.site}` : ""}
         </span>
+        {roomsLabel && <span className="small muted">{roomsLabel}</span>}
+        {extra}
       </div>
       {onSelect ? (
         <button className={selected ? "primary" : "secondary"} onClick={onSelect} aria-pressed={selected}>
@@ -676,7 +749,10 @@ function PackageResults() {
       at,
       unitUSD: hotel.nightlyUSD,
       units: nights * rooms,
-      ...(hotel.key ? { hotel: { key: hotel.key, checkin: depart, checkout: ret } } : {}),
+      // La ocupación con la que se cotizó (al revisar el precio se pide igual).
+      ...(hotel.key
+        ? { hotel: { key: hotel.key, checkin: depart, checkout: ret, adults: roomOccupancy(party).adults, ages: roomOccupancy(party).childAges } }
+        : {}),
     };
     const pkg: TripPackage = {
       id: `pkg_${Date.now().toString(36)}`,
@@ -744,7 +820,15 @@ function PackageResults() {
           )}
           <div className="hotel-results">
             {hotelList.map((h) => (
-              <HotelCard key={h.name} h={h} rooms={rooms} money={money} selected={hotel === h} onSelect={() => setHotelName(h.name)} />
+              <HotelCard
+                key={h.name}
+                h={h}
+                rooms={rooms}
+                money={money}
+                roomsLabel={hotels.data?.roomsLabel}
+                selected={hotel === h}
+                onSelect={() => setHotelName(h.name)}
+              />
             ))}
           </div>
         </section>
@@ -1831,57 +1915,86 @@ function StopCard({
   money: (n: number) => string;
   onPick: (p: StayPick | null) => void;
 }) {
+  const { profile } = useApp();
   const [data, setData] = useState<TripHotels | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
+  // Hotel encontrado por nombre ("Buscar un hotel"): si se elige, reemplaza la elección de la lista.
+  const [found, setFound] = useState<RealHotel | null>(null);
+  const [meal, setMeal] = useState<MealPlan>(profile.mealPlan ?? "room");
+  const [beach, setBeach] = useState(profile.beachfront ?? false);
+  const roomsLabel = describeRooms(party);
+  const occupancy = roomOccupancy(party);
 
   useEffect(() => {
     let alive = true;
     setData(null);
     setFailed(false);
+    setFound(null);
     onPick(null);
     api
-      .tripHotels({ name: stop.name, country: stop.country, lat: stop.lat, lon: stop.lon, checkin: stop.checkin, nights: stop.nights, travelers, rooms, style, ...partyToParams(party) })
+      .tripHotels({
+        name: stop.name,
+        country: stop.country,
+        lat: stop.lat,
+        lon: stop.lon,
+        checkin: stop.checkin,
+        nights: stop.nights,
+        travelers,
+        rooms,
+        style,
+        ...partyToParams(party),
+        ...(meal !== "room" ? { meal } : {}),
+        ...(beach ? { beach: 1 as const } : {}),
+      })
       .then((d) => alive && setData(d))
       .catch(() => alive && setFailed(true));
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stop.name, stop.checkin, stop.nights, travelers, rooms, attempt]);
+  }, [stop.name, stop.checkin, stop.nights, travelers, rooms, attempt, meal, beach]);
 
-  const hotels = (data?.hotels ?? []).slice(0, 6);
-  const choice = hotels.find((h) => h.name === picked) ?? hotels[Math.floor(hotels.length / 3)];
+  const hotels = sortHotelsFor(data?.hotels ?? [], meal, beach).slice(0, 6);
+  const listed = hotels.find((h) => h.name === picked) ?? hotels[Math.floor(hotels.length / 3)];
+  const choice = found ?? listed;
 
   useEffect(() => {
     if (!data) return;
     const at = new Date().toISOString();
     const units = stop.nights * rooms;
-    if (choice)
+    if (choice) {
+      // El régimen va en la etiqueta solo si el precio lo incluye según la fuente.
+      const covered = priceIncludesPlan(choice, meal);
+      const plan = meal === "room" ? "" : covered ? ` (${MEAL_PLAN_LABEL[meal].toLowerCase()})` : " (precio real, puede ser solo alojamiento)";
       onPick({
-        label: choice.name,
+        label: `${choice.name}${plan} · ${roomsLabel}`,
         total: choice.totalUSD * rooms,
         real: true,
         link: choice.link ?? choice.tripadvisorUrl ?? undefined,
         quote: {
           kind: "exacto",
-          source: data.source === "google" ? "google" : "xotelo",
+          source: choice.key ? "xotelo" : "google",
           at,
           unitUSD: choice.nightlyUSD,
           units,
-          ...(choice.key ? { hotel: { key: choice.key, checkin: stop.checkin, checkout: stop.checkout } } : {}),
+          ...(choice.key
+            ? { hotel: { key: choice.key, checkin: stop.checkin, checkout: stop.checkout, adults: occupancy.adults, ages: occupancy.childAges } }
+            : {}),
         },
       });
-    else
+    } else {
+      const plan = data.estimatePlan && data.estimatePlan !== "room" ? `, ${MEAL_PLAN_LABEL[data.estimatePlan].toLowerCase()}` : "";
       onPick({
-        label: "alojamiento",
+        label: `alojamiento${plan} · ${roomsLabel}`,
         total: data.estimateNight * units,
         real: false,
         quote: { kind: "estimado", source: "estimado", at, unitUSD: data.estimateNight, units },
       });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, choice?.name, rooms]);
+  }, [data, choice?.name, rooms, meal]);
 
   return (
     <section className="card trip-stop" aria-label={`Parada ${index + 1}: ${stop.name}`}>
@@ -1908,6 +2021,7 @@ function StopCard({
         <EntryLine country={stop.country} />
       </div>
 
+      <HotelFilters mealPlan={meal} onMealPlan={setMeal} beachfront={beach} onBeachfront={setBeach} />
       {!data && !failed && <div className="sk" style={{ width: "100%", height: 72 }} aria-hidden="true" />}
       {failed && (
         <div className="trip-estimate" role="alert">
@@ -1920,27 +2034,73 @@ function StopCard({
       )}
       {data && hotels.length > 0 && (
         <p className="small muted">
-          Precios reales {data.source === "google" ? "de Google Hotels" : "comparados entre Booking, Agoda, Expedia y más"} para tus fechas
-          {rooms > 1 ? `, ${rooms} habitaciones` : ""}. Elegí uno:
+          Precios reales {data.source === "google" ? "de Google Hotels" : "comparados entre Booking, Agoda, Expedia y más"} para tus fechas · {roomsLabel}.
+          Elegí uno:
         </p>
       )}
+      {data && hotels.length > 0 && <MealPlanNote mealPlan={meal} />}
       {data && hotels.length > 0 && (
         <div className="hotel-results">
           {hotels.map((h) => (
-            <TripHotelCard key={h.name} h={h} stop={stop} rooms={rooms} money={money} selected={choice === h} onSelect={() => setPicked(h.name)} />
+            <TripHotelCard
+              key={h.name}
+              h={h}
+              stop={stop}
+              rooms={rooms}
+              money={money}
+              party={party}
+              mealPlan={meal}
+              roomsLabel={roomsLabel}
+              selected={choice === h}
+              onSelect={() => (setFound(null), setPicked(h.name))}
+            />
           ))}
         </div>
       )}
       {data && hotels.length === 0 && (
         <div className="trip-estimate">
+          {beach && (data.hotels.length ?? 0) > 0 && (
+            <p className="small muted">Entre los hoteles con precio no hay ninguno que diga tener acceso a la playa.</p>
+          )}
           <p>
-            Alojamiento estimado: <strong>{money(data.estimateNight * stop.nights * rooms)}</strong>{" "}
+            {data.estimatePlan === "all" ? "All inclusive estimado" : "Alojamiento estimado"}:{" "}
+            <strong>{money(data.estimateNight * stop.nights * rooms)}</strong>{" "}
             <span className="small muted">
-              ({money(data.estimateNight)} por noche{rooms > 1 ? ` · ${rooms} habitaciones` : ""}
+              ({data.estimatePlan === "all" ? "comidas y bebidas incluidas" : `${money(data.estimateNight)} por noche`} · {roomsLabel}
+              {data.estimatePlan && data.estimatePlan !== "room" && data.estimatePlan !== "all" ? ` · ${MEAL_PLAN_LABEL[data.estimatePlan].toLowerCase()}` : ""}
               {data.estimateFrom ? `, según precios de la zona de ${data.estimateFrom}` : ""})
             </span>
           </p>
+          {meal === "all" && data.estimatePlan !== "all" && (
+            <p className="small muted">En esta zona casi no hay all inclusive: el estimado es de solo alojamiento.</p>
+          )}
         </div>
+      )}
+      {data && (
+        <HotelFinder
+          place={stop.name}
+          country={stop.country}
+          lat={stop.lat}
+          lon={stop.lon}
+          checkin={stop.checkin}
+          nights={stop.nights}
+          party={party}
+          mealPlan={meal}
+          renderHotel={(h) => (
+            <TripHotelCard
+              key={`found-${h.name}`}
+              h={h}
+              stop={stop}
+              rooms={rooms}
+              money={money}
+              party={party}
+              mealPlan={meal}
+              roomsLabel={roomsLabel}
+              selected={found?.name === h.name}
+              onSelect={() => setFound(found?.name === h.name ? null : h)}
+            />
+          )}
+        />
       )}
       {data && (
         <div className="results-foot">
@@ -1964,6 +2124,9 @@ function TripHotelCard({
   stop,
   rooms,
   money,
+  party,
+  mealPlan,
+  roomsLabel,
   selected,
   onSelect,
 }: {
@@ -1971,6 +2134,9 @@ function TripHotelCard({
   stop: TripPlan["stops"][number];
   rooms: number;
   money: (n: number) => string;
+  party: Party;
+  mealPlan: MealPlan;
+  roomsLabel: string;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -1992,12 +2158,14 @@ function TripHotelCard({
             {h.reviews ? ` · ${h.reviews.toLocaleString("es-AR")} opiniones` : ""}
           </span>
         )}
+        <HotelBadges h={h} mealPlan={mealPlan} />
         <span className="price">{money(h.totalUSD * rooms)}</span>
         <span className="small muted">
-          {money(h.nightlyUSD)} por noche · {nights} {nights === 1 ? "noche" : "noches"}
-          {rooms > 1 ? ` · ${rooms} habitaciones` : ""}
+          {money(h.nightlyUSD)} por noche{rooms > 1 ? " por habitación" : ""} · {nights} {nights === 1 ? "noche" : "noches"}
           {h.site ? ` · en ${h.site}` : ""}
         </span>
+        <span className="small muted">{roomsLabel}</span>
+        <MealPlanPriceLink h={h} city={stop.name} checkin={stop.checkin} checkout={stop.checkout} party={party} mealPlan={mealPlan} />
       </div>
       <nav className="hotel-links" aria-label={`Más sobre ${h.name}`}>
         <a href={links.tripadvisor} target="_blank" rel="noreferrer">

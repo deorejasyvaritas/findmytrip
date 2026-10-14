@@ -3,6 +3,8 @@
 // fechas (ida y vuelta) y el grupo real (adultos, niños y bebés), para que el
 // total que se ve al pagar sea el del mismo viaje.
 
+import type { MealPlan } from "./types.ts";
+
 /** Grupo para armar links: cantidad de adultos o el detalle con la edad de cada menor. */
 export type PartyLike = number | { adults: number; childAges?: number[] };
 
@@ -133,14 +135,21 @@ export function flightLinks(
   ];
 }
 
-export function stayLinks(
-  place: string,
-  checkin: string,
-  checkout: string,
-  party: PartyLike,
-  rooms: number,
-): { label: string; url: string }[] {
-  const q = encodeURIComponent(place);
+// Régimen en los buscadores de hoteles (solo filtran la lista: el precio final
+// se confirma en la tarifa elegida).
+//
+// Booking: filtro `nflt=mealplan=N` de la página de resultados. Los valores
+// salen de links públicos de Booking (no hay documentación oficial de la URL
+// de búsqueda): 1 = desayuno incluido, 9 = desayuno y cena (media pensión),
+// 4 = all inclusive. Si Booking cambia los códigos, el link igual abre la
+// búsqueda con fechas y grupo, solo que sin el filtro.
+const BOOKING_MEALPLAN: Record<MealPlan, string | null> = { room: null, breakfast: "1", half: "9", all: "4" };
+// Expedia: `mealPlan=FREE_BREAKFAST | HALF_BOARD | ALL_INCLUSIVE` (visto en
+// links de Expedia.com; tampoco está documentado). Sin filtro si no lo reconoce.
+const EXPEDIA_MEALPLAN: Record<MealPlan, string | null> = { room: null, breakfast: "FREE_BREAKFAST", half: "HALF_BOARD", all: "ALL_INCLUSIVE" };
+
+/** Búsqueda de Booking con fechas, grupo y (si hay) el régimen. `place` puede ser el nombre de un hotel y su ciudad. */
+export function bookingSearchUrl(place: string, checkin: string, checkout: string, party: PartyLike, rooms: number, mealPlan: MealPlan = "room"): string {
   const { adults, childAges } = normParty(party);
   const booking = new URLSearchParams({
     ss: place,
@@ -152,16 +161,33 @@ export function stayLinks(
     selected_currency: "USD",
   });
   for (const a of childAges) booking.append("age", String(a));
+  const meal = BOOKING_MEALPLAN[mealPlan];
+  if (meal) booking.set("nflt", `mealplan=${meal}`);
+  return `https://www.booking.com/searchresults.es.html?${booking}`;
+}
+
+export function stayLinks(
+  place: string,
+  checkin: string,
+  checkout: string,
+  party: PartyLike,
+  rooms: number,
+  mealPlan: MealPlan = "room",
+): { label: string; url: string }[] {
+  const q = encodeURIComponent(place);
+  const { adults, childAges } = normParty(party);
   const expedia = new URLSearchParams({ destination: place, startDate: checkin, endDate: checkout, adults: String(adults), rooms: String(rooms) });
   // Expedia: "1_5,1_8" = habitación 1, chicos de 5 y 8.
   if (childAges.length) expedia.set("children", childAges.map((a) => `1_${a}`).join(","));
+  const expediaMeal = EXPEDIA_MEALPLAN[mealPlan];
+  if (expediaMeal) expedia.set("mealPlan", expediaMeal);
   const airbnb = new URLSearchParams({ checkin, checkout, adults: String(adults), currency: "USD" });
   const kids = childAges.filter((a) => a >= 2).length;
   const babies = childAges.length - kids;
   if (kids) airbnb.set("children", String(kids));
   if (babies) airbnb.set("infants", String(babies));
   return [
-    { label: "Booking", url: `https://www.booking.com/searchresults.es.html?${booking}` },
+    { label: "Booking", url: bookingSearchUrl(place, checkin, checkout, party, rooms, mealPlan) },
     { label: "Expedia", url: `https://www.expedia.com/Hotel-Search?${expedia}` },
     { label: "Airbnb", url: `https://www.airbnb.com.ar/s/${q}/homes?${airbnb}` },
   ];

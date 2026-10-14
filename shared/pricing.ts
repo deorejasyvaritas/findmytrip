@@ -29,10 +29,77 @@ export function dailyUnits(p: Party): number {
   return p.childAges.reduce((sum, age) => sum + (age < 2 ? 0 : age < 12 ? 0.6 : 1), p.adults);
 }
 
-/** Habitaciones: dos adultos (o mayores de 12) por habitación; los chicos comparten. */
+/** Ocupación de una habitación: adultos y edades de los menores. */
+export interface RoomOccupancy {
+  adults: number;
+  childAges: number[];
+}
+
+/**
+ * Cómo se reparte el grupo en habitaciones, como lo venden los hoteles (y
+ * Despegar): hasta 2 adultos por habitación; hasta 3 personas de 12 años o más
+ * si al menos una es menor (habitación triple: 2 adultos + un adolescente);
+ * con niños de 2 a 11, hasta 4 personas (2 adultos + 2 chicos). Los bebés
+ * (menos de 2) van en cuna y no ocupan cama.
+ *
+ * Elige la menor cantidad de habitaciones posible.
+ */
+export function roomPlan(p: Party): RoomOccupancy[] {
+  const adults = Math.max(1, p.adults);
+  const teens = p.childAges.filter((a) => a >= 12).sort((a, b) => b - a);
+  const kids = p.childAges.filter((a) => a >= 2 && a < 12).sort((a, b) => b - a);
+  const babies = p.childAges.filter((a) => a < 2);
+  const grown = adults + teens.length;
+  let r = 1;
+  for (; r < 12; r++) {
+    // Habitaciones que necesitan 3 personas de 12+ (cada una con un adolescente).
+    const triples = Math.max(0, grown - 2 * r);
+    const fits = adults <= 2 * r && triples <= Math.min(r, teens.length) && kids.length <= 4 * r - triples - grown;
+    if (fits) break;
+  }
+  const rooms: RoomOccupancy[] = Array.from({ length: r }, () => ({ adults: 0, childAges: [] }));
+  for (let i = 0; i < adults; i++) rooms[i % r].adults++;
+  const people = (x: RoomOccupancy) => x.adults + x.childAges.filter((a) => a >= 2).length;
+  const grownIn = (x: RoomOccupancy) => x.adults + x.childAges.filter((a) => a >= 12).length;
+  // Adolescentes: primero donde hay menos personas de 12+.
+  for (const t of teens) rooms.slice().sort((a, b) => grownIn(a) - grownIn(b))[0].childAges.push(t);
+  // Chicos: en habitaciones con lugar (máximo 4; con 3 de 12+, ninguno más).
+  for (const k of kids) {
+    const room = rooms.filter((x) => grownIn(x) < 3 && people(x) < 4).sort((a, b) => people(a) - people(b))[0] ?? rooms[0];
+    room.childAges.push(k);
+  }
+  for (const [i, b] of babies.entries()) rooms[i % r].childAges.push(b);
+  return rooms;
+}
+
+/** Habitaciones para el grupo (ver roomPlan). */
 export function roomsForParty(p: Party): number {
-  const grown = p.adults + p.childAges.filter((a) => a >= 12).length;
-  return Math.max(1, Math.ceil(grown / 2));
+  return roomPlan(p).length;
+}
+
+/** La habitación con más gente: con su ocupación se piden los precios reales (por habitación). */
+export function roomOccupancy(p: Party): RoomOccupancy {
+  const plan = roomPlan(p);
+  return plan.reduce((a, b) => (b.adults + b.childAges.length > a.adults + a.childAges.length ? b : a), plan[0]);
+}
+
+/** "3 personas en 1 habitación", como lo muestran los sitios de reserva. */
+export function describeRooms(p: Party): string {
+  const people = headcount(p);
+  const rooms = roomsForParty(p);
+  return `${people} ${people === 1 ? "persona" : "personas"} en ${rooms} ${rooms === 1 ? "habitación" : "habitaciones"}`;
+}
+
+/**
+ * Recargo estimado por ocupación: una habitación con 3 personas de 12 años o
+ * más (triple) cuesta más que una doble. Con Xotelo vimos ~+35 % al pasar de 2
+ * a 3 adultos; usamos +30 % por cada persona de 12+ de más. Solo se aplica a
+ * precios estimados: los reales ya se piden con la ocupación del grupo.
+ */
+export function occupancyFactor(p: Party): number {
+  const plan = roomPlan(p);
+  const extra = plan.reduce((sum, x) => sum + Math.max(0, x.adults + x.childAges.filter((a) => a >= 12).length - 2), 0);
+  return 1 + (0.3 * extra) / plan.length;
 }
 
 // Costo aproximado de una valija despachada por tramo (ida o vuelta), en USD.

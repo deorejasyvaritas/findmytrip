@@ -122,7 +122,7 @@ describe("SerpApi", () => {
         gps_coordinates: { latitude: -22.97, longitude: -43.18 },
       })),
     }));
-    const q = await googleHotels("key", rio, "2027-03-10", 7, 2);
+    const q = await googleHotels("key", rio, "2027-03-10", 7, { adults: 2, childAges: [] });
     expect(q?.hotels).toHaveLength(5);
     expect(q?.tiers).toEqual({ low: 80, mid: 120, high: 200 });
     expect(q?.checkout).toBe("2027-03-17");

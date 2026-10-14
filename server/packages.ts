@@ -1,7 +1,8 @@
-import type { Destination, PackageItem, Party, Style, TripPackage } from "../shared/types.ts";
+import type { Destination, MealPlan, PackageItem, Party, Style, TripPackage } from "../shared/types.ts";
+import { MEAL_PLAN_LABEL } from "../shared/meal-plan.ts";
 import { flightLinks, stayLinks } from "../shared/links.ts";
 import { BAGS_LABEL, describeParty, fareUnits, headcount, roomsForParty } from "../shared/pricing.ts";
-import { addDays, flightEstimateForDate, lodgingNightly, toParty, tripCost } from "./engine.ts";
+import { addDays, flightEstimateForDate, toParty, tripCost } from "./engine.ts";
 
 export interface BuildPackageInput {
   dest: Destination;
@@ -18,6 +19,8 @@ export interface BuildPackageInput {
   flightSource?: "aviasales" | "estimado";
   /** Sumar comidas y paseos al total (por defecto van aparte, como en el resto de la app). */
   includeDaily?: boolean;
+  /** Régimen (all inclusive: tarifa estimada por persona). */
+  mealPlan?: MealPlan;
   notes?: string;
 }
 
@@ -31,8 +34,10 @@ export function buildPackage(input: BuildPackageInput): TripPackage {
   const month = Number(departDate.slice(5, 7));
   const flightPP = input.flightPP ?? flightEstimateForDate(origin, dest, departDate);
   const rooms = roomsForParty(party);
-  const nightly = lodgingNightly(dest, style, month);
-  const cost = tripCost(origin, dest, month, nights, party, style, flightPP, undefined, includeDaily);
+  const cost = tripCost(origin, dest, month, nights, party, style, flightPP, undefined, includeDaily, input.mealPlan);
+  // Por habitación y noche (con el régimen y el recargo de habitación triple, si corresponde).
+  const nightly = Math.round(cost.lodging / (nights * rooms));
+  const plan = cost.mealPlan ? ` · ${MEAL_PLAN_LABEL[cost.mealPlan].toLowerCase()}, estimado` : "";
   const seen = input.flightPP != null && input.flightSource === "aviasales";
   const at = new Date().toISOString();
 
@@ -56,9 +61,9 @@ export function buildPackage(input: BuildPackageInput): TripPackage {
       : []),
     {
       kind: "alojamiento",
-      label: `Alojamiento ${nights} noches en ${dest.areas[0]} (${rooms} hab. × USD ${nightly})`,
+      label: `Alojamiento ${nights} noches en ${dest.areas[0]} (${rooms} hab. × USD ${nightly}${plan})`,
       amountUSD: cost.lodging,
-      link: stayLinks(`${dest.areas[0]}, ${dest.name}`, departDate, returnDate, party, rooms)[0].url,
+      link: stayLinks(`${dest.areas[0]}, ${dest.name}`, departDate, returnDate, party, rooms, cost.mealPlan)[0].url,
       quote: { kind: "estimado", source: "estimado", at, unitUSD: nightly, units: nights * rooms },
     },
     ...(includeDaily

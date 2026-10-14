@@ -13,6 +13,8 @@ import type {
   AlertSettings,
   AlertSub,
   Destination,
+  AllInclusiveInfo,
+  MealPlan,
   RadarSnapshot,
   ExploreRequest,
   ExploreResponse,
@@ -87,8 +89,8 @@ export const api = {
   meta: () => request<Meta>("/api/meta"),
   destinations: () => request<Destination[]>("/api/destinations"),
   photos: () => request<Record<string, string>>("/api/photos"),
-  destination: (id: string, p: { origin: string; nights: number; travelers: number; style: Style } & PartyQuery) =>
-    request<{ destination: Destination; baseFlightUSD: number; months: MonthPrice[] }>(
+  destination: (id: string, p: { origin: string; nights: number; travelers: number; style: Style; meal?: MealPlan } & PartyQuery) =>
+    request<{ destination: Destination; baseFlightUSD: number; months: MonthPrice[]; allInclusive?: AllInclusiveInfo | null }>(
       `/api/destinations/${id}?${qs(p)}`,
     ),
   explore: (body: ExploreRequest) =>
@@ -102,12 +104,13 @@ export const api = {
     ),
   searchMulti: (legs: { origin: string; destination: string; date: string }[]) =>
     request<LegResult[]>("/api/search/multi", { method: "POST", body: JSON.stringify({ legs }) }),
-  searchHotels: (p: { place: string; name: string; checkin: string; checkout: string; travelers: number } & PartyQuery) =>
+  searchHotels: (p: { place: string; name: string; checkin: string; checkout: string; travelers: number; meal?: MealPlan; beach?: 1 } & PartyQuery) =>
     request<{
       destinationId: string | null;
       name: string;
       nights: number;
       rooms: number;
+      roomsLabel?: string;
       hotels: RealHotel[];
       options: StayOption[];
       links: { label: string; url: string }[];
@@ -121,17 +124,44 @@ export const api = {
       body: JSON.stringify(body),
     }),
   tripHotels: (
-    p: { name: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; rooms?: number; style: string } & PartyQuery,
+    p: {
+      name: string;
+      country: string;
+      lat: number;
+      lon: number;
+      checkin: string;
+      nights: number;
+      travelers: number;
+      rooms?: number;
+      style: string;
+      meal?: MealPlan;
+      beach?: 1;
+    } & PartyQuery,
   ) =>
     request<{
       destinationId: string | null;
       hotels: RealHotel[];
       source: "xotelo" | "google" | null;
       rooms: number;
+      roomsLabel?: string;
       estimateNight: number;
+      /** Régimen con el que se calculó el estimado (all inclusive solo si en la zona hay). */
+      estimatePlan?: MealPlan;
       estimateFrom: string | null;
       links: { label: string; url: string }[];
     }>(`/api/trip/hotels?${qs(p)}`),
+  /** Buscar un hotel por nombre (gratis en la lista de la ciudad; si no, una búsqueda de Google). */
+  findHotel: (
+    p: { q: string; place: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; meal?: MealPlan } & PartyQuery,
+  ) =>
+    request<{
+      hotels: RealHotel[];
+      source: "xotelo" | "google" | null;
+      rooms: number;
+      roomsLabel: string;
+      searchedGoogle: boolean;
+      links: { label: string; url: string }[];
+    }>(`/api/hotels/find?${qs(p)}`),
   /** Vuelve a consultar los precios de un viaje guardado (Google solo si `google`). */
   recheck: (items: RecheckItem[], google = false) =>
     request<RecheckResponse>("/api/packages/recheck", { method: "POST", body: JSON.stringify({ items, google }) }),
@@ -186,8 +216,16 @@ export const api = {
   quota: () => request<{ left: number | null; total: number | null }>("/api/quota"),
   flightQuote: (p: { origin: string; dest: string; depart: string; ret: string; cacheOnly?: 1 }) =>
     request<FlightQuote>(`/api/flights/quote?${qs(p)}`),
-  stays: (p: { dest: string; checkin: string; nights: number; travelers: number; real?: 1; google?: 1 } & PartyQuery) =>
-    request<{ options: StayOption[]; hotels: RealHotel[]; source: "xotelo" | "google" | null; live: boolean }>(`/api/stays?${qs(p)}`),
+  stays: (p: { dest: string; checkin: string; nights: number; travelers: number; real?: 1; google?: 1; meal?: MealPlan; beach?: 1 } & PartyQuery) =>
+    request<{
+      options: StayOption[];
+      hotels: RealHotel[];
+      source: "xotelo" | "google" | null;
+      live: boolean;
+      rooms?: number;
+      roomsLabel?: string;
+      allInclusive?: AllInclusiveInfo | null;
+    }>(`/api/stays?${qs(p)}`),
   buildPackage: (body: {
     destinationId: string;
     origin: string;
