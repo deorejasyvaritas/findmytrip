@@ -539,6 +539,10 @@ export interface TripLeg {
   price: number | null;
   /** exacto = para esa fecha · cercano = día vecino (±3) · mes = lo más barato del mes. */
   priceKind: "exacto" | "cercano" | "mes" | null;
+  /** Fecha de salida del precio "cercano". */
+  priceDate: string | null;
+  /** De dónde salió el precio: lo visto en Aviasales o Google Flights de hoy. */
+  priceSource: "aviasales" | "google" | null;
   airline: string | null;
   stops: number | null;
   link: string | null;

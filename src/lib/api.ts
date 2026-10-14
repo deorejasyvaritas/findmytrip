@@ -89,7 +89,7 @@ export const api = {
     }>(`/api/search/hotels?${qs(p)}`),
   geo: (q: string) => request<GeoPlace[]>(`/api/geo?${qs({ q })}`),
   planTrip: (body: TripPlanRequest) => request<TripPlan>("/api/trip/plan", { method: "POST", body: JSON.stringify(body) }),
-  tripHotels: (p: { name: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; style: string; google?: 1 }) =>
+  tripHotels: (p: { name: string; country: string; lat: number; lon: number; checkin: string; nights: number; travelers: number; style: string }) =>
     request<{
       destinationId: string | null;
       hotels: RealHotel[];

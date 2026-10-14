@@ -50,6 +50,7 @@ import { crossAndFly } from "./cross.ts";
 import { partnerLinks } from "./partner-links.ts";
 import { searchFlights, searchMulti, searchPlaces } from "./search.ts";
 import { geocode, nearestCatalog, planTrip } from "./trip.ts";
+import { canUseGoogle } from "./google-budget.ts";
 import { BY_CODE } from "./radar.ts";
 import { stayLinks } from "../shared/links.ts";
 import { extrasFor } from "../shared/extras.ts";
@@ -295,9 +296,10 @@ app.get("/flights/quote", async (c) => {
     .parse(c.req.query());
   const dest = getDestination(q.dest);
   if (!dest) return c.json(notFound, 404);
-  // cacheOnly=1: devuelve el precio solo si ya se buscó antes (no gasta cuota).
-  const quote = await googleFlights(serpKey, q.origin, dest, q.depart, q.ret, q.cacheOnly === "1");
-  if (!quote && q.cacheOnly === "1") return c.json({ cached: false }, 404);
+  // cacheOnly=1 (o pocas búsquedas en el mes): devuelve el precio solo si ya se buscó antes.
+  const cacheOnly = q.cacheOnly === "1" || !(await canUseGoogle(serpKey));
+  const quote = await googleFlights(serpKey, q.origin, dest, q.depart, q.ret, cacheOnly);
+  if (!quote && cacheOnly) return c.json({ cached: false }, 404);
   if (!quote) return c.json({ error: "Google Flights no devolvió resultados para esa fecha." }, 502);
   return c.json(quote);
 });
@@ -325,7 +327,8 @@ app.get("/stays", async (c) => {
       console.error("xotelo", err);
       return null;
     });
-    if (!quote && q.google === "1" && has(serpKey)) {
+    // Si el comparador gratis no trae datos, Google Hotels automático (con freno para no agotar el mes).
+    if (!quote && has(serpKey) && (await canUseGoogle(serpKey))) {
       quote = await googleHotels(serpKey, dest, q.checkin, q.nights, Math.min(q.travelers, 2));
     }
   }
@@ -481,7 +484,8 @@ const stopSchema = z.object({
 app.post("/trip/plan", async (c) => {
   const body = z.object({ origin: iata, depart: isoDate, stops: z.array(stopSchema).min(1).max(5) }).parse(await c.req.json());
   const e = env(c);
-  return c.json(await planTrip(e.TRAVELPAYOUTS_TOKEN, body, e.TRAVELPAYOUTS_MARKER));
+  const google = has(e.SERPAPI_KEY) && (await canUseGoogle(e.SERPAPI_KEY)) ? e.SERPAPI_KEY : undefined;
+  return c.json(await planTrip(e.TRAVELPAYOUTS_TOKEN, body, e.TRAVELPAYOUTS_MARKER, google));
 });
 
 // Alojamiento de una parada: precios reales si está en el catálogo (o con Google, a pedido); si no, estimado y links.
@@ -504,7 +508,8 @@ app.get("/trip/hotels", async (c) => {
   const inCatalog = near.km < 40 ? near.dest : null;
   let quote = inCatalog ? await xoteloHotels(inCatalog, q.checkin, q.nights).catch(() => null) : null;
   const serpKey = env(c).SERPAPI_KEY;
-  if (!quote && q.google === "1" && has(serpKey)) {
+  // Fuera del catálogo: Google Hotels automático (con freno para no agotar el mes).
+  if (!quote && has(serpKey) && (await canUseGoogle(serpKey))) {
     // Destino "de paso" armado con el lugar elegido: Google filtra los hoteles cerca de esas coordenadas.
     const place: Destination = { ...near.dest, id: `geo-${q.lat.toFixed(2)},${q.lon.toFixed(2)}`, name: q.name, country: q.country, lat: q.lat, lon: q.lon };
     quote = await googleHotels(serpKey, place, q.checkin, q.nights, Math.min(q.travelers, 2)).catch(() => null);

@@ -67,3 +67,29 @@ describe("viaje con paradas", () => {
     expect(plan.legs[1].mapsUrl).toContain("google.com/maps/dir");
   });
 });
+
+describe("precio del vuelo sin dato para el día exacto", () => {
+  it("usa el día vecino con precio real y dice cuál es", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input));
+        if (url.pathname.includes("airports.json")) return Response.json(AIRPORTS);
+        if (url.pathname.includes("/v1/prices/cheap")) return Response.json({ success: true, data: {} });
+        const dep = url.searchParams.get("departure_at")!;
+        // Fecha exacta: sin datos. Mes completo: un vuelo dos días después, misma cantidad de noches.
+        if (dep.length === 10) return Response.json({ success: true, data: [] });
+        return Response.json({
+          success: true,
+          data: [{ origin: "BUE", destination: "REC", price: 333, airline: "G3", departure_at: "2031-05-12T08:00:00-03:00", return_at: "2031-05-16T20:00:00-03:00", transfers: 0 }],
+        });
+      }),
+    );
+    const plan = await planTrip("tok", {
+      origin: "BUE",
+      depart: "2031-05-10",
+      stops: [{ name: "Porto de Galinhas", country: "Brasil", lat: -8.505, lon: -35.006, nights: 4 }],
+    });
+    expect(plan.legs[0]).toMatchObject({ priceKind: "cercano", priceDate: "2031-05-12", price: 333, priceSource: "aviasales" });
+  });
+});

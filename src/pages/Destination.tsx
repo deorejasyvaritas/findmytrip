@@ -99,7 +99,6 @@ export default function DestinationPage() {
   const [autoKey, setAutoKey] = useState<string | null>(null);
   const [hotelsCheckin, setHotelsCheckin] = useState<string | null>(null);
   const [loading, setLoading] = useState({ quote: false, hotels: false });
-  const [quota, setQuota] = useState<{ left: number | null; total: number | null } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -161,14 +160,14 @@ export default function DestinationPage() {
       setQuote(null);
     } finally {
       setLoading((l) => ({ ...l, quote: false }));
-      if (!cacheOnly) api.quota().then(setQuota).catch(() => {});
     }
   }
 
   useEffect(() => {
     setQuote(null);
     if (!day || !google) return;
-    const t = setTimeout(() => fetchQuote(dayKey !== autoKey, day), 400);
+    // El servidor decide si puede consultar Google (y si no, devuelve lo que ya tiene guardado).
+    const t = setTimeout(() => fetchQuote(false, day), 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayKey, autoKey, google, id, profile.origin]);
@@ -200,7 +199,6 @@ export default function DestinationPage() {
           setHotels(r.hotels);
           setHotelsSource(r.source);
           setHotelsFor(`${checkin}_${nights}`);
-          if (r.source === "google") api.quota().then(setQuota).catch(() => {});
         })
         .catch(() => !cancelled && setHotels([]))
         .finally(() => !cancelled && setLoading((l) => ({ ...l, hotels: false })));
@@ -559,15 +557,7 @@ export default function DestinationPage() {
                 )}
                 {google && !loading.quote && !quoteOk && (
                   <p className="small muted" style={{ marginTop: 12 }}>
-                    {dayKey === autoKey
-                      ? "Google Flights no devolvió vuelos para estas fechas; se muestra el precio del calendario. "
-                      : "Para cuidar la cuota, este día muestra el precio del calendario. "}
-                    {dayKey !== autoKey && (
-                      <button className="link" onClick={() => fetchQuote(false, day)}>
-                        Ver precio de hoy (usa 1 búsqueda)
-                      </button>
-                    )}{" "}
-                    También podés usar Buscar en vivo, que no tiene límite.
+                    Precio del calendario: lo vieron usuarios de Aviasales en los últimos días.
                   </p>
                 )}
               </>
@@ -710,12 +700,6 @@ export default function DestinationPage() {
         {error && (
           <p className="error" role="alert">
             {error}
-          </p>
-        )}
-        {quota?.left != null && (
-          <p className="small muted">
-            Búsquedas de Google disponibles este mes: {quota.left}
-            {quota.total ? ` de ${quota.total}` : ""}. Repetir una búsqueda reciente no descuenta.
           </p>
         )}
       </div>

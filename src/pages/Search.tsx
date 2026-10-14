@@ -838,7 +838,7 @@ function TripResults() {
   const flights = plan?.legs.filter((l) => l.kind === "flight") ?? [];
   const flightsTotal = flights.reduce((s, l) => s + (l.price ? Math.round(l.price * units) : 0), 0);
   const missingFlights = flights.filter((l) => l.price == null).length;
-  const approxFlights = flights.some((l) => l.priceKind === "cercano" || l.priceKind === "mes");
+  const approxFlights = flights.some((l) => l.priceKind === "mes");
   const staysTotal = Object.values(stays).reduce((s, x) => s + x.total, 0);
   const total = flightsTotal + staysTotal;
   const single = stops.length === 1 && stops[0].destinationId;
@@ -979,12 +979,14 @@ function LegCard({ leg, units, money }: { leg: TripLeg; units: number; money: (n
           {capitalize(shortDate(leg.date))}
           {leg.returnDate ? ` al ${shortDate(leg.returnDate)}` : ""}
           {leg.price == null
-            ? " · sin precio visto para esa fecha"
+            ? " · todavía sin precio para esa fecha"
             : leg.priceKind === "exacto"
-              ? ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")}`
+              ? leg.priceSource === "google"
+                ? " · precio de hoy en Google Flights"
+                : ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")}`
               : leg.priceKind === "cercano"
-                ? " · precio aproximado: el de un día cercano"
-                : " · precio aproximado: lo más barato visto en el mes"}
+                ? ` · precio real saliendo el ${shortDate(leg.priceDate!)}`
+                : " · precio de referencia del mes"}
         </span>
       </span>
       <span className="trip-leg-price">
@@ -995,7 +997,7 @@ function LegCard({ leg, units, money }: { leg: TripLeg; units: number; money: (n
           </>
         )}
         <a className="button secondary" href={(leg.priceKind === "exacto" ? leg.link : leg.liveUrl) ?? "#"} target="_blank" rel="noreferrer sponsored">
-          {leg.priceKind === "exacto" ? "Ver en Aviasales" : "Buscar en vivo"} <Icon name="external" size={14} />
+          {leg.priceSource === "google" ? "Ver en Google Flights" : "Ver en Aviasales"} <Icon name="external" size={14} />
         </a>
       </span>
     </div>
@@ -1017,16 +1019,13 @@ function StopCard({
   money: (n: number) => string;
   onPick: (p: StayPick) => void;
 }) {
-  const { meta } = useApp();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.tripHotels>> | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
-  const [loadingGoogle, setLoadingGoogle] = useState(false);
-  const load = (google: boolean) =>
-    api.tripHotels({ name: stop.name, country: stop.country, lat: stop.lat, lon: stop.lon, checkin: stop.checkin, nights: stop.nights, travelers, style, ...(google ? { google: 1 as const } : {}) });
+  const load = () => api.tripHotels({ name: stop.name, country: stop.country, lat: stop.lat, lon: stop.lon, checkin: stop.checkin, nights: stop.nights, travelers, style });
 
   useEffect(() => {
     setData(null);
-    load(false)
+    load()
       .then(setData)
       .catch(() => setData(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1065,6 +1064,11 @@ function StopCard({
 
       {!data && <div className="sk" style={{ width: "100%", height: 72 }} />}
       {data && hotels.length > 0 && (
+        <p className="small muted">
+          Precios reales {data.source === "google" ? "de Google Hotels" : "comparados entre Booking, Agoda, Expedia y más"} para tus fechas. Elegí uno:
+        </p>
+      )}
+      {data && hotels.length > 0 && (
         <div className="hotel-results">
           {hotels.map((h) => (
             <HotelCard key={h.name} h={h} rooms={rooms} money={money} selected={choice === h} onSelect={() => setPicked(h.name)} />
@@ -1077,23 +1081,9 @@ function StopCard({
             Alojamiento estimado: <strong>{money(data.estimateNight * stop.nights * rooms)}</strong>{" "}
             <span className="small muted">
               ({money(data.estimateNight)} por noche{rooms > 1 ? ` · ${rooms} habitaciones` : ""}
-              {data.estimateFrom ? `, según precios de ${data.estimateFrom}` : ""})
+              {data.estimateFrom ? `, según precios de la zona de ${data.estimateFrom}` : ""})
             </span>
           </p>
-          {meta?.googleQuotes && (
-            <button
-              className="secondary"
-              disabled={loadingGoogle}
-              onClick={() => {
-                setLoadingGoogle(true);
-                load(true)
-                  .then(setData)
-                  .finally(() => setLoadingGoogle(false));
-              }}
-            >
-              {loadingGoogle ? "Buscando hoteles…" : "Ver hoteles reales (usa 1 búsqueda de Google)"}
-            </button>
-          )}
         </div>
       )}
       {data && (

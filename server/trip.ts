@@ -2,7 +2,7 @@ import type { Destination, GeoPlace, TripLeg, TripPlan, TripPlanRequest } from "
 import { cached, fetchJSON } from "./cache.ts";
 import { DESTINATIONS } from "./data/destinations.ts";
 import { addDays } from "./engine.ts";
-import { cheapestAnywhere } from "./providers/flights.ts";
+import { cheapestAnywhere, googleFlights } from "./providers/flights.ts";
 import { searchFlights } from "./search.ts";
 
 // "Ya sé a dónde": un viaje con una o varias paradas en cualquier lugar del
@@ -102,7 +102,7 @@ export function nearestCatalog(lat: number, lon: number): { dest: Destination; k
   return DESTINATIONS.map((dest) => ({ dest, km: distanceKm(lat, lon, dest.lat, dest.lon) })).sort((a, b) => a.km - b.km)[0];
 }
 
-export async function planTrip(token: string | undefined, req: TripPlanRequest, marker?: string): Promise<TripPlan> {
+export async function planTrip(token: string | undefined, req: TripPlanRequest, marker?: string, googleKey?: string): Promise<TripPlan> {
   const list = await airports();
   const fares = token ? await cheapestAnywhere(token, req.origin, req.depart.slice(0, 7)).catch(() => new Map<string, number>()) : new Map<string, number>();
 
@@ -121,21 +121,31 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
   const cheapest = async (from: string, to: string, depart: string, back: string | null) => {
     if (!token) return { best: null, near: null };
     const r = await searchFlights(token, { origin: from, destination: to, depart, ret: back }, marker).catch(() => null);
-    const near = r?.strip.length ? Math.min(...r.strip.map((d) => d.price)) : null;
+    // El día con precio real más cercano a la fecha pedida (si empatan, el más barato).
+    const gap = (d: string) => Math.abs(Date.parse(d) - Date.parse(depart));
+    const near = r?.strip.length ? [...r.strip].sort((a, b) => gap(a.date) - gap(b.date) || a.price - b.price)[0] : null;
     return { best: r?.results[0] ?? null, near };
   };
 
   const legs: TripLeg[] = [];
   const flightLeg = async (from: string, to: string, date: string, back: string | null, label: string, role: TripLeg["role"], after: number | null = null): Promise<TripLeg> => {
     const { best, near } = await cheapest(from, to, date, back);
-    // Sin precio para el día exacto: el de un día vecino o, en ida y vuelta desde tu ciudad, lo más barato del mes.
+    // Sin precio visto para el día exacto: Google Flights de hoy (ida y vuelta, si hay búsquedas en el mes),
+    // después el día vecino con precio real y, por último, la referencia del mes.
+    const google =
+      !best && back && googleKey
+        ? await googleFlights(googleKey, from, { iata: to } as Destination, date, back).catch(() => null)
+        : null;
     const month = back && from === req.origin ? (fares.get(to) ?? null) : null;
-    const price = best?.price ?? near ?? month;
+    const price = best?.price ?? google?.lowestUSD ?? near?.price ?? month;
+    const priceKind = best || google ? "exacto" : near ? "cercano" : month ? "mes" : null;
     return {
       kind: "flight",
       role,
       after,
-      priceKind: best ? "exacto" : near ? "cercano" : month ? "mes" : null,
+      priceKind,
+      priceDate: priceKind === "cercano" ? near!.date : null,
+      priceSource: google && !best ? "google" : price != null ? "aviasales" : null,
       label,
       from,
       to,
@@ -144,7 +154,7 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
       price: price ?? null,
       airline: best?.airline ?? null,
       stops: best?.stops ?? null,
-      link: best?.link ?? aviasalesUrl(from, to, date, back, 1, marker),
+      link: best?.link ?? (google?.url || aviasalesUrl(from, to, date, back, 1, marker)),
       liveUrl: aviasalesUrl(from, to, date, back, 1, marker),
       km: null,
       hours: null,
@@ -183,6 +193,8 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
         returnDate: null,
         price: null,
         priceKind: null,
+        priceDate: null,
+        priceSource: null,
         airline: null,
         stops: null,
         link: null,
