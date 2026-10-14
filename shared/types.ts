@@ -1,5 +1,9 @@
 // Tipos compartidos entre el servidor (API) y el cliente (web).
 
+import type { FlightInfo } from "./flight-details.ts";
+import type { AirportTransfer } from "./transfers.ts";
+import type { DateWindow, TripWindow } from "./trip-window.ts";
+
 export type Style = "low" | "mid" | "high";
 
 export type Interest =
@@ -261,6 +265,10 @@ export interface PackageItem {
   link?: string;
   /** Qué precio es y cuándo se vio: para mostrarlo y volver a revisarlo (Mis viajes). */
   quote?: ItemQuote;
+  /** Vuelo: horarios, escalas, aerolínea y equipaje, cuando se conocen. */
+  flight?: FlightInfo;
+  /** Estimado que se puede quitar (traslados, equipaje). */
+  optional?: boolean;
 }
 
 /**
@@ -303,6 +311,12 @@ export interface TripPackage {
   status: "idea" | "armando" | "reservado";
   /** Tareas antes de viajar (Mis viajes > Ver detalle). */
   checklist?: ChecklistItem[];
+  /** Grupo con la edad de cada menor ("Ya sé a dónde"): para pedir cotización. */
+  party?: Party;
+  /** Ventana de fechas flexible con la que se buscó. */
+  window?: DateWindow;
+  /** Paradas con sus noches ("Ya sé a dónde"). */
+  stops?: { name: string; nights: number }[];
 }
 
 export interface ChecklistItem {
@@ -344,6 +358,10 @@ export interface FlightOffer {
   stops: number;
   durationMin: number | null;
   departTime: string | null;
+  /** Llegada local del último tramo ("2026-07-18 16:25"), si Google la da. */
+  arriveTime?: string | null;
+  /** Notas de equipaje de Google, tal cual. */
+  bags?: string[];
 }
 
 /** Cotización exacta de Google Flights para un par de fechas. */
@@ -621,8 +639,22 @@ export interface TripStopInput {
 
 export interface TripPlanRequest {
   origin: string;
+  /** Día de salida (con ventana: el elegido por el usuario si `pinned`, si no, el inicio). */
   depart: string;
   stops: TripStopInput[];
+  /** Fechas flexibles: se elige el día de salida más barato de la ventana. */
+  window?: DateWindow | null;
+  /** Con ventana: el usuario eligió `depart` (no buscar el más barato). */
+  pinned?: boolean;
+}
+
+/** Otro vuelo para el mismo tramo y día ("Cambiar vuelo"). */
+export interface LegOption {
+  price: number;
+  airline: string | null;
+  link: string | null;
+  source: "aviasales" | "google";
+  flight: FlightInfo;
 }
 
 export interface TripLeg {
@@ -658,6 +690,12 @@ export interface TripLeg {
   mapsUrl: string | null;
   /** Por tierra: costo estimado (shared/ground.ts). */
   ground?: GroundEstimate | null;
+  /** Vuelo: horarios y escalas del precio mostrado, si la fuente los da. */
+  flight?: FlightInfo | null;
+  /** Otros vuelos de ese día que ya tenemos (para "Cambiar vuelo"). */
+  options?: LegOption[];
+  /** Precio por día de salida cercano (±3 días), por adulto. */
+  strip?: { date: string; price: number }[];
 }
 
 export interface GroundEstimate {
@@ -680,6 +718,10 @@ export interface TripPlan {
     checkin: string;
     checkout: string;
     airport: { code: string; city: string; name: string; km: number } | null;
+    /** Traslado aeropuerto–hotel estimado (shared/transfers.ts). */
+    transfer?: AirportTransfer | null;
   })[];
   legs: TripLeg[];
+  /** Fechas flexibles: precio por día de la ventana y día elegido. */
+  window?: TripWindow | null;
 }

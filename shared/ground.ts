@@ -80,7 +80,7 @@ const BY_COUNTRY: Record<string, Fare> = {
 const DEFAULT: Fare = bus(0.08, 10);
 
 // Transfer privado (auto con chofer, hasta 3 personas), por vehículo: USD por km y mínimo.
-const TRANSFER: Record<Fare["level"], { perKm: number; min: number }> = {
+export const TRANSFER: Record<Fare["level"], { perKm: number; min: number }> = {
   bajo: { perKm: 0.6, min: 25 },
   medio: { perKm: 1, min: 40 },
   alto: { perKm: 1.8, min: 70 },
@@ -122,7 +122,7 @@ export function fareFor(country: string): Fare {
   return BY_COUNTRY[ALIASES[key] ?? key] ?? DEFAULT;
 }
 
-const round5 = (n: number) => Math.max(5, Math.round(n / 5) * 5);
+export const round5 = (n: number) => Math.max(5, Math.round(n / 5) * 5);
 
 /** Link de búsqueda en Rome2Rio (horarios, empresas y precios por tramo). */
 export const rome2rioUrl = (from: string, to: string) => {

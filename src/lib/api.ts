@@ -116,7 +116,7 @@ export const api = {
   planTrip: (body: TripPlanRequest) => request<TripPlan>("/api/trip/plan", { method: "POST", body: JSON.stringify(body) }),
   /** Vuelve a mirar el precio de un tramo (día exacto, sin caché larga). */
   tripLeg: (body: { from: string; to: string; date: string; returnDate: string | null }) =>
-    request<Pick<TripLeg, "from" | "to" | "price" | "priceKind" | "priceDate" | "priceSource" | "airline" | "stops" | "link">>("/api/trip/leg", {
+    request<Pick<TripLeg, "from" | "to" | "price" | "priceKind" | "priceDate" | "priceSource" | "airline" | "stops" | "link" | "flight">>("/api/trip/leg", {
       method: "POST",
       body: JSON.stringify(body),
     }),

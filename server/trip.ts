@@ -1,4 +1,4 @@
-import type { Destination, GeoPlace, TripLeg, TripPlan, TripPlanRequest } from "../shared/types.ts";
+import type { Destination, FlightQuote, FlightResult, GeoPlace, LegOption, TripLeg, TripPlan, TripPlanRequest } from "../shared/types.ts";
 import { edgeCached, fetchJSON } from "./cache.ts";
 import { DESTINATIONS } from "./data/destinations.ts";
 import AIRPORTS from "./data/airports.json";
@@ -8,6 +8,10 @@ import { cheapestAnywhere, googleFlights, monthDays, type DayPrice } from "./pro
 import { canUseGoogle } from "./google-budget.ts";
 import { searchFlights } from "./search.ts";
 import { aviasalesSearchUrl } from "../shared/links.ts";
+import { arrivalFromDuration, infoFromResult, localStamp, type FlightInfo } from "../shared/flight-details.ts";
+import { pickWindowDay, validWindow, windowMonths, type TripWindow } from "../shared/trip-window.ts";
+import { planTransfers } from "../shared/transfers.ts";
+import { directPartnerLink } from "./partner-links.ts";
 
 // "Ya sé a dónde": un viaje con una o varias paradas en cualquier lugar del
 // mundo (también pueblos sin aeropuerto, como Maragogi o Porto de Galinhas).
@@ -105,7 +109,45 @@ export function nearestCatalog(lat: number, lon: number): { dest: Destination; k
   return DESTINATIONS.map((dest) => ({ dest, km: distanceKm(lat, lon, dest.lat, dest.lon) })).sort((a, b) => a.km - b.km)[0];
 }
 
-type LegPrice = Pick<TripLeg, "from" | "to" | "price" | "priceKind" | "priceDate" | "priceAt" | "priceSource" | "airline" | "stops" | "link">;
+type LegPrice = Pick<
+  TripLeg,
+  "from" | "to" | "price" | "priceKind" | "priceDate" | "priceAt" | "priceSource" | "airline" | "stops" | "link" | "flight" | "options" | "strip"
+>;
+
+/** Cuántos vuelos alternativos del mismo día mandamos por tramo ("Cambiar vuelo"). */
+export const MAX_LEG_OPTIONS = 8;
+
+/** Vuelos del día como opciones: el más barato primero, sin repetir aerolínea + horario. */
+export function legOptions(results: FlightResult[]): LegOption[] {
+  const seen = new Set<string>();
+  const out: LegOption[] = [];
+  for (const r of [...results].sort((a, b) => a.price - b.price)) {
+    const key = `${r.airline}-${r.departAt}-${r.returnAt ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ price: r.price, airline: r.airline, link: r.link, source: "aviasales", flight: infoFromResult(r) });
+    if (out.length >= MAX_LEG_OPTIONS) break;
+  }
+  return out;
+}
+
+/** Detalle del vuelo de una oferta de Google Flights (horarios locales de Google). */
+export function googleInfo(from: string, to: string, offer: FlightQuote["offers"][number]): FlightInfo | null {
+  if (!offer.departTime) return null;
+  return {
+    out: {
+      from,
+      to,
+      departAt: localStamp(offer.departTime),
+      arriveAt: offer.arriveTime ? localStamp(offer.arriveTime) : null,
+      durationMin: offer.durationMin,
+      stops: offer.stops,
+      airline: offer.airlines[0] ?? null,
+      ...(offer.bags?.length ? { bags: offer.bags } : {}),
+    },
+    back: null,
+  };
+}
 
 const gapDays = (a: string, b: string) => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86400000));
 
@@ -165,8 +207,22 @@ async function aviasalesLeg(p: LegPriceInput, from: string, to: string, primary:
   const none: LegPrice = { from, to, price: null, priceKind: null, priceDate: null, priceSource: null, airline: null, stops: null, link: null };
   const r = p.token && primary ? await searchFlights(p.token, { origin: from, destination: to, depart: p.date, ret: p.back }, p.marker).catch(() => null) : null;
   const best = r?.results[0];
+  const strip = r?.strip.length ? r.strip : undefined;
   if (best) {
-    return { from, to, price: best.price, priceKind: "exacto", priceDate: null, priceSource: "aviasales", airline: best.airline, stops: best.stops, link: best.link };
+    return {
+      from,
+      to,
+      price: best.price,
+      priceKind: "exacto",
+      priceDate: null,
+      priceSource: "aviasales",
+      airline: best.airline,
+      stops: best.stops,
+      link: best.link,
+      flight: infoFromResult(best),
+      options: legOptions(r!.results),
+      strip,
+    };
   }
 
   if (primary && p.googleKey) {
@@ -175,6 +231,10 @@ async function aviasalesLeg(p: LegPriceInput, from: string, to: string, primary:
       (await googleFlights(p.googleKey, from, dest, p.date, p.back, true).catch(() => null)) ??
       ((await canUseGoogle(p.googleKey)) ? await googleFlights(p.googleKey, from, dest, p.date, p.back).catch(() => null) : null);
     if (google?.lowestUSD) {
+      const options: LegOption[] = google.offers.flatMap((o) => {
+        const flight = googleInfo(from, to, o);
+        return flight ? [{ price: o.priceUSD, airline: o.airlines[0] ?? null, link: google.url, source: "google" as const, flight }] : [];
+      });
       return {
         from,
         to,
@@ -186,12 +246,16 @@ async function aviasalesLeg(p: LegPriceInput, from: string, to: string, primary:
         airline: null,
         stops: google.offers[0]?.stops ?? null,
         link: google.url,
+        // Solo ida: Google trae horarios de cada vuelo. Ida y vuelta: solo los de la ida.
+        flight: google.offers[0] ? googleInfo(from, to, google.offers[0]) : null,
+        options: options.length > 1 ? options : undefined,
+        strip,
       };
     }
   }
 
   const near = r?.strip.length ? [...r.strip].sort((a, b) => gapDays(a.date, p.date) - gapDays(b.date, p.date) || a.price - b.price)[0] : null;
-  if (near) return { ...none, price: near.price, priceKind: "cercano", priceDate: near.date, priceSource: "aviasales" };
+  if (near) return { ...none, price: near.price, priceKind: "cercano", priceDate: near.date, priceSource: "aviasales", strip };
 
   if (p.token) {
     const nights = p.back ? gapDays(p.back, p.date) : null;
@@ -218,6 +282,12 @@ interface TPItem {
   departure_at?: string;
   return_at?: string;
   transfers?: number;
+  return_transfers?: number;
+  duration_to?: number;
+  duration_back?: number;
+  duration?: number;
+  origin_airport?: string;
+  destination_airport?: string;
   link?: string;
 }
 
@@ -263,6 +333,37 @@ export async function refreshLeg(
     airline: best.airline ?? null,
     stops: best.transfers ?? null,
     link,
+    flight: tpInfo(best, from, to),
+  };
+}
+
+/** Detalle del vuelo de una fila de la Data API (llegada solo si se puede calcular). */
+function tpInfo(i: TPItem, from: string, to: string): FlightInfo | null {
+  if (!i.departure_at) return null;
+  const a = i.origin_airport ?? from;
+  const b = i.destination_airport ?? to;
+  const durOut = i.duration_to ?? (i.return_at ? null : (i.duration ?? null));
+  return {
+    out: {
+      from: a,
+      to: b,
+      departAt: localStamp(i.departure_at),
+      arriveAt: arrivalFromDuration(i.departure_at, durOut, b),
+      durationMin: durOut,
+      stops: i.transfers ?? null,
+      airline: i.airline ?? null,
+    },
+    back: i.return_at
+      ? {
+          from: b,
+          to: a,
+          departAt: localStamp(i.return_at),
+          arriveAt: arrivalFromDuration(i.return_at, i.duration_back, a),
+          durationMin: i.duration_back ?? null,
+          stops: i.return_transfers ?? null,
+          airline: i.airline ?? null,
+        }
+      : null,
   };
 }
 
@@ -281,20 +382,72 @@ async function edgeFetch<T>(url: string, token: string): Promise<T | null> {
   return data;
 }
 
-export async function planTrip(token: string | undefined, req: TripPlanRequest, marker?: string, googleKey?: string): Promise<TripPlan> {
-  const list = await airports();
-  const fares = token ? await cheapestAnywhere(token, req.origin, req.depart.slice(0, 7)).catch(() => new Map<string, number>()) : new Map<string, number>();
+/**
+ * Fechas flexibles: el día de salida más barato de la ventana con los precios
+ * por día del mes que ya están en caché (monthDays, sin Google). Ida y vuelta
+ * al mismo aeropuerto: el precio de ida y vuelta con las noches del viaje. Si
+ * no: ida más vuelta (la vuelta sale `nights` días después).
+ */
+export async function chooseWindowDay(
+  token: string | undefined,
+  req: Pick<TripPlanRequest, "origin" | "depart" | "window" | "pinned">,
+  first: string,
+  last: string,
+  nights: number,
+): Promise<TripWindow | null> {
+  const w = req.window;
+  if (!w || !validWindow(w)) return null;
+  const same = first === last;
+  const days = async (from: string, to: string, months: string[], n: number | null) =>
+    token ? (await Promise.all(months.map((m) => monthDays(token, from, to, m, n).catch(() => [] as DayPrice[])))).flat() : [];
+  const [out, back] = await Promise.all([
+    days(req.origin, first, windowMonths(w), same ? nights : null),
+    same ? Promise.resolve(null) : days(last, req.origin, windowMonths(w, nights), null),
+  ]);
+  const pick = pickWindowDay(w, out, back, nights);
+  const pinned = Boolean(req.pinned) && req.depart >= w.from && req.depart <= w.to;
+  return {
+    ...w,
+    days: pick.days,
+    chosen: pinned ? req.depart : (pick.chosen ?? w.from),
+    pinned,
+    basis: same ? "ida y vuelta" : pick.combined ? "ida + vuelta" : "solo ida",
+  };
+}
 
-  // Fechas de cada parada.
-  let cursor = req.depart;
-  const stops = req.stops.map((s) => {
-    const checkin = cursor;
-    cursor = addDays(cursor, s.nights);
+export async function planTrip(
+  token: string | undefined,
+  req: TripPlanRequest,
+  marker?: string,
+  googleKey?: string,
+  trs?: string,
+): Promise<TripPlan> {
+  const list = await airports();
+  const month = (req.window && validWindow(req.window) ? req.window.from : req.depart).slice(0, 7);
+  const fares = token ? await cheapestAnywhere(token, req.origin, month).catch(() => new Map<string, number>()) : new Map<string, number>();
+
+  // Aeropuerto de cada parada (no depende del día).
+  const placed = req.stops.map((s) => {
     const near = nearestAirports(list, s.lat, s.lon);
     const airport = pickAirport(near, fares);
     // Otros aeropuertos de la zona, por si el elegido no tiene precios.
     const alternates = [...new Set(airportOptions(near).map((a) => a.city))].filter((c) => c !== airport?.city).slice(0, 2);
-    return { ...s, checkin, checkout: cursor, airport, alternates };
+    return { ...s, airport, alternates };
+  });
+
+  // Fechas flexibles: elegimos el día de salida antes de poner fechas a cada parada.
+  const totalNights = req.stops.reduce((n, s) => n + s.nights, 0);
+  const a0 = placed[0].airport;
+  const aN = placed[placed.length - 1].airport;
+  const window = a0 && aN ? await chooseWindowDay(token, req, a0.city, aN.city, totalNights) : null;
+  const depart = window?.chosen ?? (req.window && validWindow(req.window) && !req.pinned ? req.window.from : req.depart);
+
+  // Fechas de cada parada.
+  let cursor = depart;
+  const stops = placed.map((s) => {
+    const checkin = cursor;
+    cursor = addDays(cursor, s.nights);
+    return { ...s, checkin, checkout: cursor };
   });
   const ret = cursor;
   const first = stops[0].airport;
@@ -335,9 +488,9 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
   const sameAirport = first && last && first.city === last.city;
   if (first && last) {
     if (sameAirport) {
-      legs.push(await flightLeg(req.origin, first.city, req.depart, ret, (f, t) => `Vuelo ida y vuelta ${f}–${t}`, "out", null, { to: firstStop.alternates }));
+      legs.push(await flightLeg(req.origin, first.city, depart, ret, (f, t) => `Vuelo ida y vuelta ${f}–${t}`, "out", null, { to: firstStop.alternates }));
     } else {
-      legs.push(await flightLeg(req.origin, first.city, req.depart, null, (f, t) => `Vuelo de ida ${f}–${t}`, "out", null, { to: firstStop.alternates }));
+      legs.push(await flightLeg(req.origin, first.city, depart, null, (f, t) => `Vuelo de ida ${f}–${t}`, "out", null, { to: firstStop.alternates }));
     }
   }
 
@@ -383,11 +536,7 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
     legs.push(await flightLeg(last.city, req.origin, ret, null, (f, t) => `Vuelo de vuelta ${f}–${t}`, "back", null, { from: lastStop.alternates }));
   }
 
-  return {
-    origin: req.origin,
-    depart: req.depart,
-    ret,
-    stops: stops.map((s) => ({
+  const outStops = stops.map((s) => ({
       name: s.name,
       region: s.region ?? null,
       country: s.country,
@@ -397,7 +546,16 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
       checkin: s.checkin,
       checkout: s.checkout,
       airport: s.airport,
-    })),
+    }));
+  // Traslado aeropuerto–hotel (estimado) con link para ver el precio exacto.
+  const pickups = marker && trs ? directPartnerLink("https://www.welcomepickups.com/", marker, trs) : null;
+  const transfers = planTransfers({ stops: outStops, legs }, () => pickups ?? "https://www.welcomepickups.com/");
+  return {
+    origin: req.origin,
+    depart,
+    ret,
+    stops: outStops.map((s, i) => ({ ...s, transfer: transfers[i] })),
     legs,
+    window,
   };
 }

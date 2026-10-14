@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { FlightResult, ItemQuote, LegResult, Party, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
+import type { FlightResult, ItemQuote, LegOption, LegResult, Party, RealHotel, StayOption, TripLeg, TripPackage, TripPlan } from "../../shared/types.ts";
 import { aviasalesForParty } from "../../shared/links.ts";
 import { priceLabel } from "../../shared/price-age.ts";
 import { airlineName } from "../../shared/airlines.ts";
-import { DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams, partyToParams, roomsForParty } from "../../shared/pricing.ts";
+import { BAGS_LABEL, DEFAULT_PARTY, describeParty, fareUnits, headcount, partyFromParams, partyToParams, roomsForParty } from "../../shared/pricing.ts";
 import { hotelDistanceKm, hotelLinks } from "../../shared/hotel-links.ts";
 import { estimateTrip } from "../../shared/compare.ts";
 import { groundSeats, groundTotal } from "../../shared/ground.ts";
+import { describeWindow, tripDatesFromParams, tripDatesToParams, windowFromParam } from "../../shared/trip-window.ts";
+import { BAGS_SHORT, tripBagsCost, type FlightInfo, type FlightSegment } from "../../shared/flight-details.ts";
+import { FlightInfoBlock, InstallmentsNote } from "../components/FlightInfo.tsx";
+import { transferCars, transferCost, transferTimes, transfersTotal, tripTotal } from "../../shared/transfers.ts";
+import { quoteText, whatsappUrl } from "../../shared/quote-text.ts";
+import { flightLinks } from "../../shared/links.ts";
 import { FlightForm, HotelForm, MultiForm, TripForm, readPlace, readStop, type SearchKind } from "../components/FullSearch.tsx";
 import Icon from "../components/Icon.tsx";
 import Segmented from "../components/Segmented.tsx";
@@ -55,9 +61,12 @@ export default function SearchPage() {
   }, [params]);
 
   const tripStops = params.getAll("stop").map(readStop).filter((x): x is NonNullable<typeof x> => Boolean(x));
+  const tripWin = kind === "viaje" ? windowFromParam(params.get("win")) : null;
   const summary =
     kind === "viaje"
-      ? `${tripStops.map((t) => `${t.name} (${t.nights} ${t.nights === 1 ? "noche" : "noches"})`).join(", ")} · desde ${depart && shortDate(depart)} · ${describeParty(party)}`
+      ? `${tripStops.map((t) => `${t.name} (${t.nights} ${t.nights === 1 ? "noche" : "noches"})`).join(", ")} · ${
+          tripWin ? `salida flexible, ${describeWindow(tripWin)}` : `desde ${depart && shortDate(depart)}`
+        } · ${describeParty(party)}`
       : kind === "multi"
       ? `${params.getAll("leg").length} tramos · ${describeParty(party)}`
       : kind === "hoteles"
@@ -903,13 +912,32 @@ interface StayPick {
 }
 
 /** Lo que devuelve /api/trip/leg al volver a mirar un tramo. */
-type LegPatch = Pick<TripLeg, "price" | "priceKind" | "priceDate" | "priceSource" | "airline" | "stops" | "link">;
+type LegPatch = Pick<TripLeg, "price" | "priceKind" | "priceDate" | "priceSource" | "airline" | "stops" | "link" | "flight">;
 
 /** Tramo con lo que se actualizó después de Aviasales y, encima, el precio que cargó el usuario. */
 function effectiveLeg(base: TripLeg, patch: LegPatch | undefined, manual: number | undefined): TripLeg {
-  const auto = patch ? { ...base, ...patch, link: patch.link ?? base.link } : base;
+  const auto = patch ? { ...base, ...patch, link: patch.link ?? base.link, flight: patch.flight ?? base.flight } : base;
   return manual != null ? { ...auto, price: manual, priceKind: "manual" } : auto;
 }
+
+/** Tramo con otro vuelo del mismo día ("Cambiar vuelo"): precio, horarios y link de esa opción. */
+function withOption(base: TripLeg, o: LegOption): TripLeg {
+  return {
+    ...base,
+    price: o.price,
+    priceKind: "exacto",
+    priceDate: null,
+    priceSource: o.source,
+    airline: o.airline,
+    stops: o.flight.out.stops,
+    link: o.link ?? base.link,
+    flight: o.flight,
+  };
+}
+
+/** Misma opción (para marcar cuál está elegida). */
+const sameOption = (a: FlightInfo | null | undefined, b: FlightInfo | null | undefined) =>
+  Boolean(a && b && a.out.departAt === b.out.departAt && a.out.airline === b.out.airline && (a.back?.departAt ?? "") === (b.back?.departAt ?? ""));
 
 /** Cuántas veces volvemos a mirar un tramo después de cada visita a Aviasales. */
 const MAX_RECHECKS = 2;
@@ -924,10 +952,16 @@ function TripResults() {
   const units = fareUnits(party);
   const rooms = roomsForParty(party);
   const from = readPlace(params.get("from"))!;
-  const depart = params.get("depart")!;
+  const dates = tripDatesFromParams(params);
+  const depart = dates.depart;
   const stops = params.getAll("stop").map(readStop).filter((x): x is NonNullable<typeof x> => Boolean(x));
-  const key = params.getAll("stop").join(",") + from.code + depart;
+  const key = params.getAll("stop").join(",") + from.code + depart + (params.get("win") ?? "") + (dates.pinned ?? "");
   const [plan, setPlan] = useState<TripPlan | null>(null);
+  // "Cambiar vuelo": otra opción del mismo día para un tramo (por índice de tramo).
+  const [picked, setPicked] = useState<Record<number, LegOption>>({});
+  // Traslados aeropuerto–hotel que el usuario sacó (por parada) y equipaje estimado.
+  const [noTransfer, setNoTransfer] = useState<Record<number, boolean>>({});
+  const [withBags, setWithBags] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [stays, setStays] = useState<Record<number, StayPick | null>>({});
@@ -947,8 +981,16 @@ function TripResults() {
     setManual({});
     setRefreshed({});
     setUpdated({});
+    setPicked({});
+    setNoTransfer({});
     api
-      .planTrip({ origin: from.code, depart, stops: stops.map(({ name, region, country, lat, lon, nights }) => ({ name, region, country, lat, lon, nights })) })
+      .planTrip({
+        origin: from.code,
+        depart: dates.pinned ?? depart,
+        stops: stops.map(({ name, region, country, lat, lon, nights }) => ({ name, region, country, lat, lon, nights })),
+        window: dates.window,
+        pinned: Boolean(dates.pinned),
+      })
       .then((p) => alive && setPlan(p))
       .catch((e) => alive && setError((e as Error).message));
     return () => {
@@ -957,7 +999,10 @@ function TripResults() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, attempt]);
 
-  const autoLegs = useMemo(() => plan?.legs.map((l, i) => effectiveLeg(l, refreshed[i], undefined)) ?? [], [plan, refreshed]);
+  const autoLegs = useMemo(
+    () => plan?.legs.map((l, i) => (picked[i] ? withOption(l, picked[i]) : effectiveLeg(l, refreshed[i], undefined))) ?? [],
+    [plan, refreshed, picked],
+  );
   const legs = autoLegs.map((l, i) => (manual[i] != null ? effectiveLeg(l, undefined, manual[i]) : l));
 
   // "Actualizar después de Aviasales": al tocar "Ver en Aviasales" recordamos el tramo y,
@@ -1042,10 +1087,89 @@ function TripResults() {
   const staysTotal = Object.values(stays).reduce((s, x) => s + (x?.total ?? 0), 0);
   const groundLegs = legs.filter((l) => l.kind === "ground" && l.ground);
   const groundUSD = groundTotal(groundLegs, party);
-  const total = flightsTotal + staysTotal + (withGround ? groundUSD : 0);
+  // Traslado aeropuerto–hotel (estimado, se puede quitar por parada).
+  const transfers = plan?.stops.map((s) => s.transfer ?? null) ?? [];
+  const transfersUSD = transfersTotal(transfers, party, noTransfer);
+  const hasTransfers = transfers.some(Boolean);
+  // Equipaje elegido para el grupo (estimado): la Data API no dice qué incluye la tarifa.
+  const bagsUSD = plan ? Math.round(tripBagsCost(party, flights.map((l) => ({ country: legCountry(plan, l), roundTrip: Boolean(l.returnDate) })))) : 0;
+  const total = tripTotal(
+    { flights: flightsTotal, stays: staysTotal, ground: groundUSD, transfers: transfersUSD, bags: bagsUSD },
+    { ground: withGround, transfers: true, bags: withBags },
+  );
   const single = stops.length === 1 && stops[0].destinationId;
   // Cada parada tiene que tener un hotel elegido o el estimado a la vista antes de guardar.
   const staysReady = plan != null && plan.stops.every((_, i) => stays[i] != null);
+
+  const outbound = legs.findIndex((l) => l.role === "out");
+  const inbound = legs.findIndex((l) => l.role === "back");
+  const after = (i: number) => legs.findIndex((l) => l.role === "between" && l.after === i);
+
+  /** Vuelo con el que se llega a la parada y con el que se va (para los horarios del traslado). */
+  function stopFlights(i: number): { arrive: FlightSegment | null; leave: FlightSegment | null; international: boolean } {
+    const n = plan!.stops.length;
+    const out = legs[outbound];
+    const before = i === 0 ? out : legs[after(i - 1)];
+    const roundTrip = Boolean(out?.returnDate);
+    const leaving = i === n - 1 ? (roundTrip ? out : legs[inbound]) : legs[after(i)];
+    const arrive = before?.kind === "flight" ? (before.flight?.out ?? null) : null;
+    const leave = leaving?.kind === "flight" ? ((leaving === out ? leaving.flight?.back : leaving.flight?.out) ?? null) : null;
+    const here = normCountry(plan!.stops[i].country);
+    // Entre paradas: internacional si cambia el país; la vuelta a casa, si la parada no es de Argentina.
+    const international = i < n - 1 ? here !== normCountry(plan!.stops[i + 1].country) : here !== "argentina";
+    return { arrive, leave, international };
+  }
+
+  // Ventana de fechas: elegir otro día vuelve a armar el viaje con ese día.
+  function goDay(day: string) {
+    const q = new URLSearchParams(params);
+    if (dates.window) {
+      for (const [k, v] of Object.entries(tripDatesToParams({ depart, window: dates.window, pinned: day }))) q.set(k, v);
+    } else q.set("depart", day);
+    navigate(`/buscar?${q}`);
+  }
+
+  const outLeg = outbound >= 0 ? legs[outbound] : null;
+  const backLeg = inbound >= 0 ? legs[inbound] : null;
+  // Despegar: misma ruta de ida (y la vuelta si es al mismo aeropuerto) para ver cuotas en pesos.
+  const despegarUrl =
+    outLeg?.kind === "flight"
+      ? flightLinks(outLeg.from, outLeg.to, outLeg.date, outLeg.returnDate ?? (backLeg && backLeg.from === outLeg.to ? backLeg.date : null), party).find(
+          (l) => l.label === "Despegar",
+        )?.url
+      : null;
+
+  const transferLabel = (i: number) => {
+    const t = transfers[i]!;
+    const way = t.ways.length === 2 ? "ida y vuelta" : t.ways[0] === "ida" ? "solo ida" : "solo vuelta";
+    return `Traslado aeropuerto–hotel en ${plan!.stops[i].name} (${way})`;
+  };
+
+  function quote(): string {
+    if (!plan) return "";
+    const nowIso = new Date().toISOString();
+    const prices = [
+      ...flights.map((l) => ({
+        label: l.label,
+        amount: l.price != null ? `${money(Math.round(l.price * units))} en total` : "sin precio",
+        note: l.price != null ? priceLabel({ kind: l.priceKind, source: l.priceSource ?? "aviasales", at: l.priceAt ?? nowIso, priceDate: l.priceDate }) : null,
+      })),
+      ...plan.stops.flatMap((st, i) => (stays[i] ? [{ label: `${st.name}: ${stays[i]!.label}`, amount: money(stays[i]!.total), note: stays[i]!.real ? null : "estimado" }] : [])),
+      ...transfers.flatMap((t, i) => (t && !noTransfer[i] ? [{ label: transferLabel(i), amount: money(transferCost(t, party)), note: "estimado" }] : [])),
+      ...(withBags && bagsUSD > 0 ? [{ label: `Equipaje (${BAGS_SHORT[party.bags]})`, amount: money(bagsUSD), note: "estimado" }] : []),
+    ];
+    return quoteText({
+      origin: from.label || from.code,
+      party,
+      stops: plan.stops.map((s) => ({ name: s.name, nights: s.nights })),
+      depart: plan.depart,
+      ret: plan.ret,
+      window: dates.window,
+      lodging: plan.stops.flatMap((st, i) => (stays[i] ? [`${st.name}, ${stays[i]!.label}`] : [])),
+      prices,
+      total: money(total),
+    });
+  }
 
   function save() {
     if (!plan || !staysReady) return;
@@ -1070,6 +1194,7 @@ function TripResults() {
         amountUSD: l.price ? Math.round(l.price * units) : 0,
         link: aviasalesForParty(l.link, party) ?? undefined,
         quote: legQuote(l),
+        ...(l.flight && l.priceKind !== "manual" ? { flight: l.flight } : {}),
       })),
       ...plan.stops.map((st, i) => {
         const pick = stays[i]!;
@@ -1089,6 +1214,14 @@ function TripResults() {
             link: l.ground!.rome2rioUrl,
           }))
         : []),
+      ...transfers.flatMap((t, i) =>
+        t && !noTransfer[i]
+          ? [{ kind: "extra" as const, label: `${transferLabel(i)} (estimado)`, amountUSD: transferCost(t, party), link: t.link ?? undefined, optional: true }]
+          : [],
+      ),
+      ...(withBags && bagsUSD > 0
+        ? [{ kind: "extra" as const, label: `Equipaje: ${BAGS_LABEL[party.bags].toLowerCase()} por persona (estimado)`, amountUSD: bagsUSD, optional: true }]
+        : []),
     ];
     app.savePackage({
       id: `pkg_${Date.now().toString(36)}`,
@@ -1103,6 +1236,9 @@ function TripResults() {
       totalUSD: total,
       createdAt: new Date().toISOString(),
       status: "armando",
+      party,
+      ...(dates.window ? { window: dates.window } : {}),
+      stops: plan.stops.map((s) => ({ name: s.name, nights: s.nights })),
     });
     navigate("/viajes");
   }
@@ -1111,6 +1247,7 @@ function TripResults() {
   const legCard = (idx: number) => {
     const leg = legs[idx];
     if (!leg) return null;
+    const base = plan?.legs[idx];
     return (
       <LegCard
         leg={leg}
@@ -1121,6 +1258,18 @@ function TripResults() {
         checking={checking === idx}
         updated={Boolean(updated[idx])}
         onLive={() => watchLeg(idx)}
+        options={base?.options}
+        onPick={(o) => {
+          setPicked((x) => ({ ...x, [idx]: o }));
+          setManual((m) => {
+            const next = { ...m };
+            delete next[idx];
+            return next;
+          });
+        }}
+        // Otros días: solo para la ida y sin ventana (con ventana está la franja de arriba).
+        strip={leg.role === "out" && !plan?.window ? base?.strip : undefined}
+        onDay={goDay}
         onManual={(usd) =>
           setManual((m) => {
             const next = { ...m };
@@ -1132,15 +1281,12 @@ function TripResults() {
       />
     );
   };
-  const outbound = legs.findIndex((l) => l.role === "out");
-  const inbound = legs.findIndex((l) => l.role === "back");
-  const after = (i: number) => legs.findIndex((l) => l.role === "between" && l.after === i);
 
   return (
     <div className="package-layout">
       <div className="stack-lg">
         {single && (
-          <Link className="card trip-catalog" to={`/destino/${stops[0].destinationId}?month=${depart.slice(0, 7)}&depart=${depart}&nights=${stops[0].nights}`}>
+          <Link className="card trip-catalog" to={`/destino/${stops[0].destinationId}?month=${(plan?.depart ?? depart).slice(0, 7)}&depart=${plan?.depart ?? depart}&nights=${stops[0].nights}`}>
             <Icon name="compass" size={20} />
             <span className="grow">
               <strong>{stops[0].name} tiene ficha completa</strong>
@@ -1149,6 +1295,7 @@ function TripResults() {
             <Icon name="chevronRight" size={18} />
           </Link>
         )}
+        {plan?.window && <WindowCard w={plan.window} money={money} onDay={goDay} />}
         {!plan && Array.from({ length: 3 }, (_, i) => <div key={i} className="card skeleton flight-skeleton" aria-hidden="true" />)}
         {plan && (
           <ol className="timeline">
@@ -1165,6 +1312,20 @@ function TripResults() {
                   money={money}
                   onPick={(pick) => setStays((x) => ({ ...x, [i]: pick }))}
                 />
+                {transfers[i] && (
+                  <TransferCard
+                    t={transfers[i]!}
+                    title={transferLabel(i).replace(` en ${st.name}`, "")}
+                    party={party}
+                    money={money}
+                    times={(() => {
+                      const f = stopFlights(i);
+                      return transferTimes(f.arrive?.arriveAt ?? null, f.leave?.departAt ?? null, f.international);
+                    })()}
+                    off={Boolean(noTransfer[i])}
+                    onToggle={() => setNoTransfer((x) => ({ ...x, [i]: !x[i] }))}
+                  />
+                )}
                 {after(i) >= 0 && legCard(after(i))}
               </li>
             ))}
@@ -1206,11 +1367,35 @@ function TripResults() {
               <span>{withGround ? money(groundUSD) : <s aria-label={`No sumado: ${money(groundUSD)}`}>{money(groundUSD)}</s>}</span>
             </li>
           )}
+          {hasTransfers && (
+            <li className={transfersUSD > 0 ? "" : "off"}>
+              <span className="label">
+                <Icon name="car" size={16} />
+                Traslados aeropuerto–hotel (estimado)
+              </span>
+              <span>{transfersUSD > 0 ? money(transfersUSD) : "Quitados"}</span>
+            </li>
+          )}
+          {plan && bagsUSD > 0 && (
+            <li className={withBags ? "" : "off"}>
+              <span className="label">
+                <Icon name="luggage" size={16} />
+                Equipaje: {BAGS_SHORT[party.bags]} (estimado)
+              </span>
+              <span>{withBags ? money(bagsUSD) : <s aria-label={`No sumado: ${money(bagsUSD)}`}>{money(bagsUSD)}</s>}</span>
+            </li>
+          )}
         </ul>
         {groundLegs.length > 0 && (
           <label className="check ground-toggle">
             <input type="checkbox" checked={withGround} onChange={(e) => setWithGround(e.target.checked)} />
             Sumar traslados por tierra al total
+          </label>
+        )}
+        {plan && bagsUSD > 0 && (
+          <label className="check ground-toggle">
+            <input type="checkbox" checked={withBags} onChange={(e) => setWithBags(e.target.checked)} />
+            Sumar el equipaje (si la tarifa no lo incluye)
           </label>
         )}
         <div className="total">
@@ -1224,6 +1409,7 @@ function TripResults() {
               ? "Traslados por tierra: pasaje de micro o tren estimado. "
               : "Traslados por tierra no incluidos. "
             : ""}
+          {hasTransfers ? "Traslados al aeropuerto y equipaje: estimados, podés quitarlos. " : ""}
           Precios de referencia; se reservan por separado.
         </p>
         <button className="primary full" disabled={!staysReady} onClick={save}>
@@ -1231,7 +1417,128 @@ function TripResults() {
           Guardar en Mis viajes
         </button>
         {plan && !staysReady && <p className="small muted">Falta el alojamiento de alguna parada: esperá a que cargue o reintentá.</p>}
+        {plan && (
+          <a className="button secondary full" href={whatsappUrl(quote())} target="_blank" rel="noreferrer">
+            <Icon name="message" size={18} />
+            Pedir cotización por WhatsApp
+          </a>
+        )}
+        {plan && <InstallmentsNote despegarUrl={despegarUrl ?? null} />}
       </aside>
+    </div>
+  );
+}
+
+const normCountry = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+
+/** País del lugar al que va (o del que vuelve) un vuelo: para estimar el equipaje por región. */
+function legCountry(plan: TripPlan, l: TripLeg): string {
+  if (l.role === "between" && l.after != null) return plan.stops[l.after + 1]?.country ?? plan.stops[l.after].country;
+  return l.role === "back" ? plan.stops[plan.stops.length - 1].country : plan.stops[0].country;
+}
+
+const MONTHS_SHORT = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+/** "18 jul 16:25" de una hora local "YYYY-MM-DDTHH:MM". */
+const whenText = (local: string) => `${Number(local.slice(8, 10))} ${MONTHS_SHORT[Number(local.slice(5, 7)) - 1]} ${local.slice(11, 16)}`;
+
+/** Fechas flexibles: el día elegido y el precio visto de cada día de la ventana. */
+function WindowCard({ w, money, onDay }: { w: NonNullable<TripPlan["window"]>; money: (n: number) => string; onDay: (d: string) => void }) {
+  const min = w.days.length ? Math.min(...w.days.map((d) => d.price)) : 0;
+  const basis = w.basis === "ida y vuelta" ? "ida y vuelta" : w.basis === "ida + vuelta" ? "ida más vuelta" : "solo el vuelo de ida";
+  return (
+    <section className="card window-card" aria-label="Fechas flexibles">
+      <div className="window-card-head">
+        <Icon name="calendar" size={20} />
+        <span className="grow">
+          <strong>
+            {w.pinned ? "Elegiste salir el" : w.days.length ? "Salida más barata en tu ventana:" : "Salida:"} {shortDate(w.chosen)}
+          </strong>
+          <span className="small muted">
+            Ventana: {describeWindow(w)}.{" "}
+            {w.days.length
+              ? `Precio por adulto (${basis}) visto en Aviasales en los últimos días; el del día elegido se confirma abajo.`
+              : "No encontramos precios vistos para esos días: armamos el viaje con el primer día de la ventana."}
+          </span>
+        </span>
+      </div>
+      {w.days.length > 1 && (
+        <div className="strip" role="list" aria-label="Precio por día de salida en tu ventana">
+          {w.days.map((d) => (
+            <button
+              key={d.date}
+              role="listitem"
+              className={`strip-day ${d.date === w.chosen ? "on" : ""} ${d.price === min ? "cheap" : ""}`}
+              onClick={() => d.date !== w.chosen && onDay(d.date)}
+              aria-current={d.date === w.chosen ? "date" : undefined}
+              ref={d.date === w.chosen ? (el) => el?.scrollIntoView({ block: "nearest", inline: "center" }) : undefined}
+            >
+              <span>{capitalize(shortDate(d.date))}</span>
+              <strong>{money(d.price)}</strong>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Traslado aeropuerto–hotel de una parada: estimado, con horarios según los vuelos y se puede quitar. */
+function TransferCard({
+  t,
+  title,
+  party,
+  money,
+  times,
+  off,
+  onToggle,
+}: {
+  t: NonNullable<NonNullable<TripPlan["stops"][number]["transfer"]>>;
+  title: string;
+  party: Party;
+  money: (n: number) => string;
+  times: { ida: string | null; vuelta: string | null };
+  off: boolean;
+  onToggle: () => void;
+}) {
+  const cars = transferCars(party);
+  const both = t.ways.length === 2;
+  const when = [
+    t.ways.includes("ida") ? `Ida ${times.ida ? whenText(times.ida) : "al llegar"}` : null,
+    t.ways.includes("vuelta") ? `Vuelta ${times.vuelta ? whenText(times.vuelta) : "antes del vuelo"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className={`card trip-leg transfer ${off ? "off" : ""}`}>
+      <Icon name="car" size={18} />
+      <span className="grow">
+        <strong>{title}</strong>
+        <span className="small muted">
+          Auto privado · aeropuerto {t.airport} a unos {t.km} km{cars > 1 ? ` · ${cars} autos` : ""}
+        </span>
+        <span className="small">{when}</span>
+        <span className="small muted">
+          {both ? "Del aeropuerto al hotel y del hotel al aeropuerto. " : ""}
+          {off ? "No está sumado al total." : "Estimado: ya está sumado al total, pero podés quitarlo."}
+        </span>
+      </span>
+      <span className="trip-leg-price">
+        {off ? <s>{money(transferCost(t, party))}</s> : <strong>{money(transferCost(t, party))}</strong>}
+        <span className="small muted">Estimado</span>
+        {t.link && (
+          <a className="button secondary" href={t.link} target="_blank" rel="noreferrer sponsored">
+            Ver precio exacto <Icon name="external" size={14} />
+          </a>
+        )}
+        <button type="button" className="leg-action" onClick={onToggle} aria-pressed={!off}>
+          {off ? "Sumar al total" : "Quitar"}
+        </button>
+      </span>
     </div>
   );
 }
@@ -1264,6 +1571,10 @@ function LegCard({
   updated = false,
   onLive,
   onManual,
+  options,
+  onPick,
+  strip,
+  onDay,
 }: {
   leg: TripLeg;
   /** Los links a Aviasales se abren para todo el grupo. */
@@ -1275,7 +1586,14 @@ function LegCard({
   updated?: boolean;
   onLive?: () => void;
   onManual?: (usd: number | null) => void;
+  /** Otros vuelos del mismo día ("Cambiar vuelo"). */
+  options?: LegOption[];
+  onPick?: (o: LegOption) => void;
+  /** Precio por día cercano (solo la ida): elegir otro día vuelve a armar el viaje. */
+  strip?: { date: string; price: number }[];
+  onDay?: (d: string) => void;
 }) {
+  const [changing, setChanging] = useState(false);
   if (leg.kind === "ground") {
     const g = leg.ground;
     return (
@@ -1330,6 +1648,7 @@ function LegCard({
           {leg.returnDate ? ` al ${shortDate(leg.returnDate)}` : ""}
           {legDetail(leg)}
         </span>
+        {leg.flight && leg.priceKind !== "manual" && <FlightInfoBlock f={leg.flight} roundTrip={Boolean(leg.returnDate)} />}
         {checking && (
           <span className="leg-note small muted" role="status">
             Mirando si ya aparece el precio de Aviasales
@@ -1357,8 +1676,63 @@ function LegCard({
             Comparar en Aviasales
           </a>
         )}
+        {options && options.length > 1 && onPick && (
+          <button type="button" className="leg-action" aria-expanded={changing} onClick={() => setChanging((c) => !c)}>
+            {changing ? "Cerrar" : "Cambiar vuelo"}
+          </button>
+        )}
         {onManual && <ManualPrice leg={leg} onManual={onManual} />}
       </span>
+      {changing && options && onPick && (
+        <div className="leg-options">
+          <p className="small muted">Otros vuelos de ese día, precio por adulto visto en {options[0].source === "google" ? "Google Flights" : "Aviasales en los últimos días"}:</p>
+          <ul className="leg-option-list">
+            {options.map((o, i) => {
+              const on = sameOption(o.flight, leg.flight);
+              return (
+                <li key={i} className={on ? "on" : ""}>
+                  <span className="grow">
+                    <FlightInfoBlock f={o.flight} roundTrip={Boolean(o.flight.back)} compact />
+                  </span>
+                  <span className="leg-option-price">
+                    <strong>{money(o.price)}</strong>
+                    <button
+                      type="button"
+                      className={on ? "primary" : "secondary"}
+                      aria-pressed={on}
+                      onClick={() => {
+                        onPick(o);
+                        setChanging(false);
+                      }}
+                    >
+                      {on ? "Elegido" : "Elegir"}
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {strip && strip.length > 1 && onDay && (
+        <div className="leg-days">
+          <p className="small muted">Salir otro día (por adulto, visto en los últimos días). Cambia las fechas de todo el viaje:</p>
+          <div className="strip" role="list" aria-label="Precio por día de salida">
+            {strip.map((d) => (
+              <button
+                key={d.date}
+                role="listitem"
+                className={`strip-day ${d.date === leg.date ? "on" : ""} ${d.price === Math.min(...strip.map((x) => x.price)) ? "cheap" : ""}`}
+                onClick={() => d.date !== leg.date && onDay(d.date)}
+                aria-current={d.date === leg.date ? "date" : undefined}
+              >
+                <span>{capitalize(shortDate(d.date))}</span>
+                <strong>{money(d.price)}</strong>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

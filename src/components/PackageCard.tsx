@@ -7,6 +7,15 @@ import { STYLE_LABEL, formatDate, isDomestic, timeAgo } from "../lib/format.ts";
 import type { IconName } from "../lib/icons.ts";
 import type { PriceCheck } from "../lib/price-check.ts";
 import Icon from "./Icon.tsx";
+import { FlightInfoBlock, InstallmentsNote } from "./FlightInfo.tsx";
+import { flightLinks } from "../../shared/links.ts";
+
+/** Despegar con la ruta del primer vuelo guardado (para ver cuotas en pesos). */
+export function despegarForPackage(pkg: TripPackage): string | null {
+  const q = pkg.items.find((i) => i.kind === "vuelo" && i.quote?.flight)?.quote?.flight;
+  if (!q) return null;
+  return flightLinks(q.from, q.to, q.depart, q.ret, pkg.party ?? pkg.travelers).find((l) => l.label === "Despegar")?.url ?? null;
+}
 
 const KIND_ICON: Record<TripPackage["items"][number]["kind"], IconName> = {
   vuelo: "plane",
@@ -80,6 +89,7 @@ export default function PackageCard({
                   ) : (
                     q && <span className="small muted">{priceLabel(q)}</span>
                   )}
+                  {i.flight && <FlightInfoBlock f={i.flight} roundTrip={Boolean(i.flight.back)} compact />}
                 </span>
               </span>
               <span>{money(i.amountUSD)}</span>
@@ -93,6 +103,7 @@ export default function PackageCard({
         {hint ? ` · ${hint.toLowerCase()}` : ""}
         {cardTotal ? `. Si pagás en dólares con tarjeta: ${cardTotal}` : ""}
       </p>
+      {pkg.items.some((i) => i.kind === "vuelo") && <InstallmentsNote despegarUrl={despegarForPackage(pkg)} />}
       {check?.checkable && (
         <div className="price-check small" aria-live="polite">
           {check.busy ? (
