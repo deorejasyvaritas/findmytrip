@@ -6,6 +6,7 @@ import type {
   ExploreResponse,
   FlightCalendar,
   FlightDay,
+  MealPlan,
   MonthPrice,
   Party,
   RealPrice,
@@ -16,7 +17,8 @@ import type {
 } from "../shared/types.ts";
 import { flightLinks, stayLinks } from "../shared/links.ts";
 import { DESTINATIONS, ORIGINS, getOrigin } from "./data/destinations.ts";
-import { bagsCost, dailyUnits, fareUnits, headcount, roomsForParty } from "../shared/pricing.ts";
+import { bagsCost, dailyUnits, fareUnits, headcount, occupancyFactor, roomsForParty } from "../shared/pricing.ts";
+import { allInclusiveFor, allInclusiveUnits, boardPerPersonNight, dailyFactor, MEAL_PLAN_LABEL } from "../shared/meal-plan.ts";
 import { longWeekends, type LongWeekend } from "./holidays.ts";
 export { headcount };
 
@@ -130,20 +132,65 @@ export function tripCost(
   hotelNightOverride?: number,
   /** Comidas y paseos son una estimación: por defecto van aparte del total. */
   includeDaily = false,
+  /** Régimen (shared/meal-plan.ts). All inclusive donde no hay = solo alojamiento. */
+  mealPlan: MealPlan = "room",
 ): CostBreakdown {
   const party = toParty(who);
   const flightPP = flightOverride ?? flightEstimate(originCode, dest, month);
   const flights = Math.round(flightPP * fareUnits(party));
   const bags = bagsCost(party, dest.region);
+  const lodgingPart = lodgingCost(dest, style, month, nights, party, mealPlan, hotelNightOverride);
+  const plan = lodgingPart.mealPlan;
+  const daily = Math.round(dest.dailyUSD[style] * (nights + 1) * dailyUnits(party) * dailyFactor(plan));
+  const lodging = lodgingPart.total;
+  const total = Math.round(flights + bags + lodging + (includeDaily ? daily : 0));
+  return {
+    flights,
+    bags,
+    lodging,
+    daily,
+    dailyIncluded: includeDaily,
+    total,
+    perPerson: Math.round(total / headcount(party)),
+    ...(plan !== "room" && { mealPlan: plan }),
+  };
+}
+
+/**
+ * Alojamiento de toda la estadía según el régimen. All inclusive: tarifa por
+ * persona del destino (estimado; el precio real de un hotel puede ser solo
+ * alojamiento). Desayuno y media pensión: la habitación más las comidas que se
+ * pagan en el hotel. Habitaciones triples: recargo estimado por ocupación.
+ */
+export function lodgingCost(
+  dest: Destination,
+  style: Style,
+  month: number,
+  nights: number,
+  who: Party | number,
+  mealPlan: MealPlan = "room",
+  /** Precio real por noche del hotel más accesible (Google): se ignora con all inclusive. */
+  hotelNightOverride?: number,
+): { total: number; nightly: number; mealPlan: MealPlan; estimate: boolean } {
+  const party = toParty(who);
+  const ai = mealPlan === "all" ? allInclusiveFor(dest) : null;
+  if (ai) {
+    const perNight = Math.round(ai.perPersonNight[style] * Math.sqrt(dest.season[month - 1]) * allInclusiveUnits(party));
+    return { total: perNight * nights, nightly: perNight, mealPlan: "all", estimate: true };
+  }
+  const plan: MealPlan = mealPlan === "all" ? "room" : mealPlan;
   // Google da el precio de entrada; para otros estilos escalamos con la relación del catálogo.
-  const nightly = hotelNightOverride
+  const room = hotelNightOverride
     ? Math.round(hotelNightOverride * (dest.lodgingUSD[style] / dest.lodgingUSD.low))
     : lodgingNightly(dest, style, month);
-  const lodging = nightly * nights * roomsForParty(party);
-  const daily = Math.round(dest.dailyUSD[style] * (nights + 1) * dailyUnits(party));
-  const total = Math.round(flights + bags + lodging + (includeDaily ? daily : 0));
-  return { flights, bags, lodging, daily, dailyIncluded: includeDaily, total, perPerson: Math.round(total / headcount(party)) };
+  const board = boardPerPersonNight(dest, style, plan) * dailyUnits(party);
+  const perNight = Math.round(room * roomsForParty(party) * occupancyFactor(party) + board);
+  return { total: perNight * nights, nightly: perNight, mealPlan: plan, estimate: !hotelNightOverride || board > 0 };
 }
+
+/** Texto para el alojamiento estimado ("Estimado all inclusive"). */
+export const lodgingEstimateLabel = (plan: MealPlan | undefined) =>
+  plan === "all" ? "Estimado all inclusive" : plan && plan !== "room" ? `Estimado, ${MEAL_PLAN_LABEL[plan].toLowerCase()}` : "Estimado";
 
 /** Meses a considerar y fechas límite según lo que eligió el usuario. */
 export function resolveWhen(
@@ -303,7 +350,9 @@ export function explore(
       !exclude.has(d.id) &&
       !isSameCity(req.origin, d) &&
       (!req.regions?.length || req.regions.includes(d.region)) &&
-      (req.maxFlightHours == null || d.flightHours <= req.maxFlightHours),
+      (req.maxFlightHours == null || d.flightHours <= req.maxFlightHours) &&
+      // All inclusive: solo destinos donde se consigue.
+      (req.mealPlan !== "all" || allInclusiveFor(d) !== null),
   );
 
   const scored: Suggestion[] = [];
@@ -344,7 +393,18 @@ export function explore(
       // Tope de vuelo por persona (precio real si lo hay; si no, el estimado).
       if (req.maxFlightPP && (live?.flightPP ?? opt.flightPP ?? flightEstimate(req.origin, dest, month)) > req.maxFlightPP) continue;
       const direct = live?.stops === 0;
-      const cost = tripCost(req.origin, dest, month, opt.nights, party, req.style, live?.flightPP ?? opt.flightPP, live?.hotelNight, req.includeDaily);
+      const cost = tripCost(
+        req.origin,
+        dest,
+        month,
+        opt.nights,
+        party,
+        req.style,
+        live?.flightPP ?? opt.flightPP,
+        live?.hotelNight,
+        req.includeDaily,
+        req.mealPlan,
+      );
       const ratio = cost.total / destBudget;
       if (ratio > 1.15) continue;
 
@@ -368,6 +428,13 @@ export function explore(
         reasons.push(`Se pasa ~${Math.round((ratio - 1) * 100)}%: bajando el estilo o las noches entra`);
       }
 
+      if (cost.mealPlan === "all") {
+        reasons.push(
+          allInclusiveFor(dest)?.availability === "común"
+            ? "Muchos resorts all inclusive: comidas y bebidas incluidas (precio estimado)"
+            : "Hay resorts all inclusive: comidas y bebidas incluidas (precio estimado)",
+        );
+      }
       if (dest.bestMonths.includes(month)) {
         score += 15;
         reasons.push(`${capitalize(monthName(month))} es buena época para ir`);
@@ -400,7 +467,7 @@ export function explore(
         reasons,
         isAlternative,
         flightSource: live?.source ?? "estimado",
-        lodgingSource: live?.hotelNight ? "google" : "estimado",
+        lodgingSource: live?.hotelNight && cost.mealPlan !== "all" ? "google" : "estimado",
         depart: opt.depart ?? live?.depart ?? (req.when?.kind === "exact" ? req.when.depart : undefined),
         ret: opt.ret ?? live?.ret ?? (req.when?.kind === "exact" ? req.when.ret : undefined),
         airline: live?.airline,
@@ -448,10 +515,11 @@ export function monthOverview(
   who: Party | number,
   style: Style,
   today = new Date(),
+  mealPlan: MealPlan = "room",
 ): MonthPrice[] {
   const party = toParty(who);
   const rows = upcomingMonths(today).map(({ month, year }) => {
-    const cost = tripCost(originCode, dest, month, nights, party, style);
+    const cost = tripCost(originCode, dest, month, nights, party, style, undefined, undefined, false, mealPlan);
     return {
       month,
       year,
@@ -506,28 +574,55 @@ export function stayOptions(
   nights: number,
   /** Grupo (los chicos comparten habitación) o cantidad de adultos. */
   who: Party | number,
-  /** Precio real por noche por estilo (Google Hotels), si se consultó. */
+  /** Precio real por noche por estilo (hoteles reales, por habitación), si se consultó. */
   realTiers?: Record<Style, number>,
+  /** Régimen: con all inclusive se usa la tarifa estimada por persona (los precios reales pueden ser solo alojamiento). */
+  mealPlan: MealPlan = "room",
 ): StayOption[] {
   const party = toParty(who);
   const month = Number(checkin.slice(5, 7));
   const checkout = addDays(checkin, nights);
   const rooms = roomsForParty(party);
+  const ai = mealPlan === "all" && allInclusiveFor(dest) !== null;
   return (["low", "mid", "high"] as Style[]).map((tier, i) => {
-    const nightlyUSD = realTiers?.[tier] ?? lodgingNightly(dest, tier, month);
     const area = dest.areas[i % dest.areas.length];
+    const links = stayLinks(`${area}, ${dest.name}`, checkin, checkout, party, rooms, mealPlan);
+    const real = !ai && realTiers ? realTiers[tier] : null;
+    if (real) {
+      return {
+        tier,
+        label: STAY_LABELS[tier].label,
+        description: STAY_LABELS[tier].description,
+        nightlyUSD: real,
+        totalUSD: real * nights * rooms,
+        rooms,
+        area,
+        links,
+        source: "real",
+      };
+    }
+    const est = lodgingCost(dest, tier, month, nights, party, mealPlan);
+    const labels = est.mealPlan === "all" ? AI_LABELS[tier] : STAY_LABELS[tier];
     return {
       tier,
-      label: STAY_LABELS[tier].label,
-      description: STAY_LABELS[tier].description,
-      nightlyUSD,
-      totalUSD: nightlyUSD * nights * rooms,
+      label: labels.label,
+      description: labels.description,
+      // Por habitación y noche (para mostrar y para revisar el precio); el total es de todo el grupo.
+      nightlyUSD: Math.round(est.total / (nights * rooms)),
+      totalUSD: est.total,
       rooms,
       area,
-      links: stayLinks(`${area}, ${dest.name}`, checkin, checkout, party, rooms),
-      source: realTiers ? "real" : "estimado",
+      links,
+      source: "estimado",
+      ...(est.mealPlan !== "room" && { mealPlan: est.mealPlan }),
     };
   });
 }
+
+const AI_LABELS: Record<Style, { label: string; description: string }> = {
+  low: { label: "All inclusive 3★", description: "Resort sencillo con comidas y bebidas incluidas. Precio estimado." },
+  mid: { label: "All inclusive 4★", description: "Resort 4★ con varios restaurantes, bebidas y actividades incluidas. Precio estimado." },
+  high: { label: "All inclusive 5★", description: "Resort 5★ o adults only, restaurantes a la carta. Precio estimado." },
+};
 
 export { flightLinks };

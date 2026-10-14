@@ -6,7 +6,7 @@ import { parseAviasalesUrl } from "./links.ts";
 
 export type RecheckItem =
   | { i: number; type: "flight"; from: string; to: string; depart: string; ret: string | null }
-  | { i: number; type: "hotel"; key: string; checkin: string; checkout: string };
+  | { i: number; type: "hotel"; key: string; checkin: string; checkout: string; adults?: number; ages?: number[] };
 
 export interface RecheckResult {
   i: number;

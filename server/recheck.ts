@@ -51,6 +51,6 @@ async function flight(keys: RecheckKeys, x: Extract<RecheckItem, { type: "flight
 
 async function hotel(x: Extract<RecheckItem, { type: "hotel" }>): Promise<RecheckResult> {
   const at = new Date().toISOString();
-  const r = await hotelRate(x.key, x.checkin, x.checkout).catch(() => null);
+  const r = await hotelRate(x.key, x.checkin, x.checkout, x.adults ? { adults: x.adults, childAges: x.ages ?? [] } : undefined).catch(() => null);
   return r ? { i: x.i, unitUSD: r.nightly, kind: "exacto", source: "xotelo", at } : { i: x.i, unitUSD: null, kind: null, source: null, at };
 }

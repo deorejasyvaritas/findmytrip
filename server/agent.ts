@@ -100,6 +100,10 @@ export async function runAgent(
         interests: z.array(z.enum(INTERESTS)).optional(),
         regions: z.array(z.enum(REGIONS)).optional(),
         maxFlightHours: z.number().optional(),
+        mealPlan: z
+          .enum(["room", "breakfast", "half", "all"])
+          .optional()
+          .describe("Régimen: room = solo alojamiento, breakfast = con desayuno, half = media pensión, all = all inclusive (solo destinos donde hay)"),
       }),
       run: async (input) => {
         const month = input.month ?? null;
@@ -126,6 +130,7 @@ export async function runAgent(
             regions: input.regions,
             exclude: profile.visited,
             maxFlightHours: input.maxFlightHours ?? profile.maxFlightHours,
+            mealPlan: input.mealPlan ?? profile.mealPlan,
           },
           live,
           today,
@@ -144,6 +149,7 @@ export async function runAgent(
           motivos: s.reasons,
           fuenteVuelo: FLIGHT_SOURCE[s.flightSource],
           fuenteHotel: s.lodgingSource,
+          ...(s.cost.mealPlan === "all" && { regimen: "all inclusive (alojamiento estimado por persona, comidas y bebidas incluidas)" }),
           fechas: s.depart ? `${s.depart} a ${s.ret ?? "?"}` : undefined,
           docs: s.destination.docs,
         });

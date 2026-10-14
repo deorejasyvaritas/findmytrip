@@ -49,6 +49,8 @@ export default function SuggestionCard({
     ...(party ? partyToParams(party) : {}),
   });
   if (s.depart) q.set("depart", s.depart);
+  // La ficha abre con el mismo régimen (ej. all inclusive).
+  if (s.cost.mealPlan) q.set("meal", s.cost.mealPlan);
   if (range) {
     q.set("from", range.from);
     q.set("to", range.to);
@@ -84,15 +86,24 @@ export default function SuggestionCard({
         <div>
           <div className="price">{money(s.cost.total)}</div>
           <div className="small muted">
-            {s.cost.dailyIncluded ? "Total" : "Vuelo y alojamiento"} · {money(s.cost.perPerson)} por persona
+            {s.cost.dailyIncluded ? "Total" : s.cost.mealPlan === "all" ? "Vuelo y all inclusive" : "Vuelo y alojamiento"} · {money(s.cost.perPerson)} por persona
           </div>
+          {s.cost.mealPlan && (
+            <div className="small muted">
+              {s.cost.mealPlan === "all"
+                ? "Estimado all inclusive: comidas y bebidas incluidas"
+                : s.cost.mealPlan === "breakfast"
+                  ? "Alojamiento con desayuno (estimado)"
+                  : "Alojamiento con media pensión (estimado)"}
+            </div>
+          )}
           {hint && <div className="small muted">{hint}</div>}
         </div>
         <div className="breakdown">
           <span className={s.flightSource !== "estimado" ? "real" : ""}>
             <Icon name="plane" size={14} /> {money(s.cost.flights)}
           </span>
-          <span className={s.lodgingSource !== "estimado" ? "real" : ""}>
+          <span className={s.lodgingSource !== "estimado" ? "real" : ""} title={s.cost.mealPlan === "all" ? "Estimado all inclusive" : undefined}>
             <Icon name="bed" size={14} /> {money(s.cost.lodging)}
           </span>
           {s.cost.bags > 0 && (
@@ -100,7 +111,15 @@ export default function SuggestionCard({
               <Icon name="luggage" size={14} /> {money(s.cost.bags)}
             </span>
           )}
-          <span title={s.cost.dailyIncluded ? "Comidas y paseos (estimado)" : "Comidas y paseos aparte (estimado)"}>
+          <span
+            title={
+              s.cost.mealPlan === "all"
+                ? "Traslados y paseos aparte (estimado): las comidas van en el all inclusive"
+                : s.cost.dailyIncluded
+                  ? "Comidas y paseos (estimado)"
+                  : "Comidas y paseos aparte (estimado)"
+            }
+          >
             <Icon name="utensils" size={14} /> {s.cost.dailyIncluded ? "" : "+"}
             {money(s.cost.daily)}
           </span>

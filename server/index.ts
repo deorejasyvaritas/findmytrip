@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Destination, Meta, Party, SharedTripResponse } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
 import { DESTINATIONS, ORIGINS, getDestination } from "./data/destinations.ts";
-import { addDays, baseFlightFrom, explore, lodgingNightly, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
+import { addDays, baseFlightFrom, explore, lodgingCost, monthOverview, resolveWhen, stayOptions } from "./engine.ts";
 import { StorageError, deleteJSON, fetchJSON, loadJSON, saveJSON, useCacheStore } from "./cache.ts";
 import {
   changePassword,
@@ -44,8 +44,8 @@ import {
 import { destinationPhotos } from "./providers/photos.ts";
 import { flightCalendar, googleFlights } from "./providers/flights.ts";
 import { usdArsOfficialRate, usdArsRate } from "./providers/fx.ts";
-import { googleHotels } from "./providers/hotels.ts";
-import { xoteloHotels } from "./providers/xotelo.ts";
+import { googleHotelByName, googleHotels } from "./providers/hotels.ts";
+import { xoteloHotelByName, xoteloHotels, type XoteloOptions } from "./providers/xotelo.ts";
 import { escapes } from "./escapes.ts";
 import { crossAndFly } from "./cross.ts";
 import { routeQuotes } from "./routes.ts";
@@ -55,7 +55,8 @@ import { geocode, nearestCatalog, planTrip, refreshLeg } from "./trip.ts";
 import { canUseGoogle } from "./google-budget.ts";
 import { BY_CODE } from "./radar.ts";
 import { stayLinks } from "../shared/links.ts";
-import { partyFromParams, roomsForParty } from "../shared/pricing.ts";
+import { describeRooms, partyFromParams, roomOccupancy, roomsForParty } from "../shared/pricing.ts";
+import { allInclusiveFor } from "../shared/meal-plan.ts";
 import { extrasFor } from "../shared/extras.ts";
 import { buildPackage } from "./packages.ts";
 import { recheckItems } from "./recheck.ts";
@@ -212,6 +213,12 @@ const originCode = z.string().regex(/^[A-Z]{3}$/).default("BUE");
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const nightsQ = z.coerce.number().int().min(1).max(60).default(7);
 const travelersQ = z.coerce.number().int().min(1).max(12).default(2);
+const mealPlan = z.enum(["room", "breakfast", "half", "all"]);
+/** Régimen (?meal=all) de los selectores de hotel; si falta o no se reconoce, solo alojamiento. */
+const mealQ = mealPlan.catch("room");
+/** Qué hoteles sumar primero a la muestra de Xotelo según lo que se pidió. */
+const preferFor = (meal: string, beach: boolean): XoteloOptions["prefer"] =>
+  meal === "all" ? "all" : meal === "breakfast" || meal === "half" ? "breakfast" : beach ? "beach" : null;
 /** Grupo desde la query (?adults=2&kids=5,8&bags=cabin); sin eso, `travelers` adultos (compatibilidad). */
 function partyQ(query: Record<string, string>, travelers: number): Party {
   const p = partyFromParams(new URLSearchParams(query), { adults: travelers, childAges: [], bags: "cabin" });
@@ -228,6 +235,8 @@ const profileSchema = z.object({
   visited: z.array(z.string()).default([]),
   maxFlightHours: z.number().nullable().default(null),
   includeDaily: z.boolean().optional(),
+  mealPlan: mealPlan.optional(),
+  beachfront: z.boolean().optional(),
 });
 
 const exploreSchema = z.object({
@@ -248,6 +257,7 @@ const exploreSchema = z.object({
   maxFlightPP: z.number().positive().nullable().optional(),
   directOnly: z.boolean().optional(),
   longWeekendsOnly: z.boolean().optional(),
+  mealPlan: mealPlan.optional(),
   party: z
     .object({
       adults: z.number().int().min(1).max(12),
@@ -298,12 +308,13 @@ app.get("/destinations/:id", (c) => {
   const dest = getDestination(c.req.param("id"));
   if (!dest) return c.json(notFound, 404);
   const q = z
-    .object({ origin: originCode, nights: nightsQ, travelers: travelersQ, style: style.default("mid") })
+    .object({ origin: originCode, nights: nightsQ, travelers: travelersQ, style: style.default("mid"), meal: mealQ })
     .parse(c.req.query());
   return c.json({
     destination: dest,
     baseFlightUSD: baseFlightFrom(q.origin, dest),
-    months: monthOverview(q.origin, dest, q.nights, partyQ(c.req.query(), q.travelers), q.style),
+    months: monthOverview(q.origin, dest, q.nights, partyQ(c.req.query(), q.travelers), q.style, undefined, q.meal),
+    allInclusive: allInclusiveFor(dest),
   });
 });
 
@@ -367,27 +378,35 @@ app.get("/stays", async (c) => {
       travelers: travelersQ,
       real: z.string().optional(),
       google: z.string().optional(),
+      meal: mealQ,
+      beach: z.string().optional(),
     })
     .parse(c.req.query());
   const dest = getDestination(q.dest);
   if (!dest) return c.json(notFound, 404);
   const serpKey = env(c).SERPAPI_KEY;
+  const party = partyQ(c.req.query(), q.travelers);
+  // Precios reales por habitación, con la gente que va en ella (una triple cuesta más que una doble).
+  const room = roomOccupancy(party);
   let quote = null;
   if (q.real === "1") {
-    quote = await xoteloHotels(dest, q.checkin, q.nights).catch((err) => {
+    quote = await xoteloHotels(dest, q.checkin, q.nights, { room, prefer: preferFor(q.meal, q.beach === "1") }).catch((err) => {
       console.error("xotelo", err);
       return null;
     });
     // Si el comparador gratis no trae datos, Google Hotels solo si el cliente lo pide (y con freno para no agotar el mes).
     if (!quote && q.google === "1" && has(serpKey) && (await canUseGoogle(serpKey))) {
-      quote = await googleHotels(serpKey, dest, q.checkin, q.nights, Math.min(q.travelers, 2));
+      quote = await googleHotels(serpKey, dest, q.checkin, q.nights, room);
     }
   }
   return c.json({
-    options: stayOptions(dest, q.checkin, q.nights, partyQ(c.req.query(), q.travelers), quote?.tiers),
+    options: stayOptions(dest, q.checkin, q.nights, party, quote?.tiers, q.meal),
     hotels: quote?.hotels ?? [],
     source: quote?.source ?? null,
     live: Boolean(quote),
+    rooms: roomsForParty(party),
+    roomsLabel: describeRooms(party),
+    allInclusive: allInclusiveFor(dest),
   });
 });
 
@@ -412,6 +431,7 @@ app.post("/packages/build", async (c) => {
       travelers: z.number().int().min(1).max(12),
       party: exploreSchema.shape.party,
       includeDaily: z.boolean().optional(),
+      mealPlan: mealPlan.optional(),
       style,
       flightPP: z.number().positive().optional(),
       notes: z.string().max(500).optional(),
@@ -437,7 +457,7 @@ function recheckAllowed(user: string, now = Date.now()): boolean {
 
 app.post("/packages/recheck", async (c) => {
   const flightItem = z.object({ i: z.number().int().min(0).max(40), type: z.literal("flight"), from: iata, to: iata, depart: isoDate, ret: isoDate.nullable() });
-  const hotelItem = z.object({ i: z.number().int().min(0).max(40), type: z.literal("hotel"), key: z.string().regex(/^[\w-]{1,40}$/), checkin: isoDate, checkout: isoDate });
+  const hotelItem = z.object({ i: z.number().int().min(0).max(40), type: z.literal("hotel"), key: z.string().regex(/^[\w-]{1,40}$/), checkin: isoDate, checkout: isoDate, adults: z.number().int().min(1).max(8).optional(), ages: z.array(z.number().int().min(0).max(17)).max(8).optional() });
   const body = z
     .object({ items: z.array(z.discriminatedUnion("type", [flightItem, hotelItem])).max(12), google: z.boolean().optional() })
     .parse(await c.req.json());
@@ -539,21 +559,32 @@ app.post("/search/multi", async (c) => {
 // Hoteles por ciudad (código IATA): precios reales si es un destino del catálogo; si no, links con las fechas.
 app.get("/search/hotels", async (c) => {
   const q = z
-    .object({ place: iata, name: z.string().max(80).optional(), checkin: isoDate, checkout: isoDate, travelers: travelersQ })
+    .object({
+      place: iata,
+      name: z.string().max(80).optional(),
+      checkin: isoDate,
+      checkout: isoDate,
+      travelers: travelersQ,
+      meal: mealQ,
+      beach: z.string().optional(),
+    })
     .parse(c.req.query());
   const nights = Math.max(1, Math.round((Date.parse(q.checkout) - Date.parse(q.checkin)) / 86400000));
   const party = partyQ(c.req.query(), q.travelers);
   const rooms = roomsForParty(party);
   const dest = BY_CODE.get(q.place);
-  const quote = dest ? await xoteloHotels(dest, q.checkin, nights).catch(() => null) : null;
+  const quote = dest
+    ? await xoteloHotels(dest, q.checkin, nights, { room: roomOccupancy(party), prefer: preferFor(q.meal, q.beach === "1") }).catch(() => null)
+    : null;
   return c.json({
     destinationId: dest?.id ?? null,
     name: dest?.name ?? q.name ?? q.place,
     nights,
     rooms,
+    roomsLabel: describeRooms(party),
     hotels: quote?.hotels ?? [],
-    options: dest ? stayOptions(dest, q.checkin, nights, party, quote?.tiers) : [],
-    links: stayLinks(dest?.name ?? q.name ?? q.place, q.checkin, q.checkout, party, rooms),
+    options: dest ? stayOptions(dest, q.checkin, nights, party, quote?.tiers, q.meal) : [],
+    links: stayLinks(dest?.name ?? q.name ?? q.place, q.checkin, q.checkout, party, rooms, q.meal),
   });
 });
 
@@ -604,30 +635,82 @@ app.get("/trip/hotels", async (c) => {
       google: z.string().optional(),
       // Habitaciones según el grupo (roomsForParty: los chicos comparten).
       rooms: z.coerce.number().int().min(1).max(12).optional(),
+      meal: mealQ,
+      beach: z.string().optional(),
     })
     .parse(c.req.query());
   const party = partyQ(c.req.query(), q.travelers);
   const rooms = q.rooms ?? roomsForParty(party);
+  const room = roomOccupancy(party);
   const near = nearestCatalog(q.lat, q.lon);
   const inCatalog = near.km < 40 ? near.dest : null;
-  let quote = inCatalog ? await xoteloHotels(inCatalog, q.checkin, q.nights).catch(() => null) : null;
+  let quote = inCatalog
+    ? await xoteloHotels(inCatalog, q.checkin, q.nights, { room, prefer: preferFor(q.meal, q.beach === "1") }).catch(() => null)
+    : null;
   const serpKey = env(c).SERPAPI_KEY;
   // Fuera del catálogo: Google Hotels automático (con freno para no agotar el mes).
   if (!quote && has(serpKey) && (await canUseGoogle(serpKey))) {
     // Destino "de paso" armado con el lugar elegido: Google filtra los hoteles cerca de esas coordenadas.
     // Coordenadas redondeadas (~10 km) en la clave de caché: lugares casi iguales comparten búsqueda.
     const place: Destination = { ...near.dest, id: `geo-${q.lat.toFixed(1)},${q.lon.toFixed(1)}`, name: q.name, country: q.country, lat: q.lat, lon: q.lon };
-    quote = await googleHotels(serpKey, place, q.checkin, q.nights, Math.min(q.travelers, 2)).catch(() => null);
+    quote = await googleHotels(serpKey, place, q.checkin, q.nights, room).catch(() => null);
   }
-  const estimateNight = lodgingNightly(near.dest, q.style, Number(q.checkin.slice(5, 7)));
+  // Estimado por habitación y noche, con el régimen pedido (all inclusive por persona, si en la zona hay).
+  const est = lodgingCost(near.dest, q.style, Number(q.checkin.slice(5, 7)), q.nights, party, q.meal);
+  const estimateNight = Math.round(est.total / (q.nights * rooms));
   return c.json({
     destinationId: inCatalog?.id ?? null,
     hotels: quote?.hotels ?? [],
     source: quote?.source ?? null,
     rooms,
+    roomsLabel: describeRooms(party),
     estimateNight,
+    estimatePlan: est.mealPlan,
     estimateFrom: near.km < 40 ? null : near.dest.name,
-    links: stayLinks(`${q.name}, ${q.country}`, q.checkin, addDays(q.checkin, q.nights), party, rooms),
+    links: stayLinks(`${q.name}, ${q.country}`, q.checkin, addDays(q.checkin, q.nights), party, rooms, q.meal),
+  });
+});
+
+// Buscar un hotel por nombre ("Brisa", "Ecoporto") para las fechas y el grupo.
+// Primero en la lista de la ciudad de Xotelo (sin cuota); si no está, Google
+// Hotels con q="<nombre> <lugar>" (una búsqueda con cuota, solo cuando el
+// usuario la pide con el botón, con caché de 24 h).
+app.get("/hotels/find", async (c) => {
+  const q = z
+    .object({
+      q: z.string().trim().min(3).max(60),
+      place: z.string().max(80),
+      country: z.string().max(60),
+      lat: z.coerce.number().min(-90).max(90),
+      lon: z.coerce.number().min(-180).max(180),
+      checkin: isoDate,
+      nights: nightsQ,
+      travelers: travelersQ,
+      meal: mealQ,
+    })
+    .parse(c.req.query());
+  const party = partyQ(c.req.query(), q.travelers);
+  const rooms = roomsForParty(party);
+  const room = roomOccupancy(party);
+  const near = nearestCatalog(q.lat, q.lon);
+  const inCatalog = near.km < 40 ? near.dest : null;
+  let hotels = inCatalog ? await xoteloHotelByName(inCatalog, q.q, q.checkin, q.nights, room).catch(() => []) : [];
+  let source: "xotelo" | "google" | null = hotels.length ? "xotelo" : null;
+  const serpKey = env(c).SERPAPI_KEY;
+  const google = !hotels.length && has(serpKey) && (await canUseGoogle(serpKey));
+  if (google) {
+    const place = { id: `geo-${q.lat.toFixed(1)},${q.lon.toFixed(1)}`, name: q.place, country: q.country, lat: q.lat, lon: q.lon };
+    hotels = (await googleHotelByName(serpKey!, q.q, place, q.checkin, q.nights, room).catch(() => null)) ?? [];
+    if (hotels.length) source = "google";
+  }
+  return c.json({
+    hotels,
+    source,
+    rooms,
+    roomsLabel: describeRooms(party),
+    // Sin Google disponible, la búsqueda solo miró la lista gratis de la ciudad.
+    searchedGoogle: google,
+    links: stayLinks(`${q.q}, ${q.place}`, q.checkin, addDays(q.checkin, q.nights), party, rooms, q.meal),
   });
 });
 

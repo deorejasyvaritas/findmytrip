@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { Bags, ExploreResponse, Interest, Party, Profile, Region, Style, WatchItem, When } from "../../shared/types.ts";
+import type { Bags, ExploreResponse, Interest, MealPlan, Party, Profile, Region, Style, WatchItem, When } from "../../shared/types.ts";
 import { BAGS_LABEL, describeParty } from "../../shared/pricing.ts";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
@@ -30,6 +30,8 @@ interface Search {
   directOnly: boolean;
   /** Solo salidas en los próximos fines de semana largos. */
   longWeekends?: boolean;
+  /** Régimen: con all inclusive solo destinos donde hay (alojamiento estimado por persona). */
+  mealPlan?: MealPlan;
 }
 
 type Sheet = "when" | "party" | null;
@@ -78,6 +80,7 @@ export default function Home() {
     regions: [],
     maxFlightPP: 0,
     directOnly: false,
+    mealPlan: profile.mealPlan ?? "room",
   };
   const lastSearch = migrate(rawLast, defaults);
   const [form, setForm] = useState<Search>(lastSearch ?? defaults);
@@ -122,6 +125,7 @@ export default function Home() {
         maxFlightPP: s.maxFlightPP || undefined,
         directOnly: s.directOnly || undefined,
         longWeekendsOnly: (s.longWeekends && s.when.kind !== "exact") || undefined,
+        mealPlan: s.mealPlan && s.mealPlan !== "room" ? s.mealPlan : undefined,
         // Presupuesto en pesos: para destinos de Argentina rinde al dólar oficial.
         domesticBudgetUSD: profile.currency === "ARS" ? Math.round(app.toUSD(app.fromUSD(s.budgetUSD), { domestic: true })) : undefined,
       });
@@ -133,7 +137,9 @@ export default function Home() {
             ? `Listo: ${n} destinos para tu búsqueda.`
             : s.longWeekends
               ? "No encontramos escapadas para los próximos fines de semana largos. Probá subir el presupuesto o quitar el filtro."
-              : "No encontramos destinos con esos datos. Probá subir el presupuesto o cambiar fechas.",
+              : s.mealPlan === "all"
+                ? "No encontramos destinos con all inclusive para ese presupuesto. Probá subir el presupuesto, bajar las noches o elegir otro régimen."
+                : "No encontramos destinos con esos datos. Probá subir el presupuesto o cambiar fechas.",
         );
         requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
       }
@@ -303,7 +309,12 @@ export default function Home() {
             )}
 
             <div className="search-row">
-              <LodgingPicker value={form.style} onChange={(style) => setForm({ ...form, style })} />
+              <LodgingPicker
+                value={form.style}
+                onChange={(style) => setForm({ ...form, style })}
+                mealPlan={form.mealPlan ?? "room"}
+                onMealPlan={(mealPlan) => setForm({ ...form, mealPlan })}
+              />
               <select
                 className="inline"
                 aria-label="Región"

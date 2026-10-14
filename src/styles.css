@@ -1389,3 +1389,13 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .price-down { color: var(--green); }
 .buy-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: var(--r-md); background: var(--orange-soft); color: var(--label); }
 .buy-note .link { min-height: var(--control); }
+
+/* Alojamiento: régimen, frente al mar, insignias y buscar un hotel por nombre */
+.hotel-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.hotel-badges .badge { white-space: normal; height: auto; min-height: 22px; padding: 2px 8px; font-size: 12px; line-height: 1.3; }
+.hotel-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hotel-finder-form { position: relative; display: flex; gap: 8px; align-items: center; }
+.hotel-finder-form .icon { position: absolute; left: 12px; color: var(--label-3); pointer-events: none; }
+.hotel-finder-form input { flex: 1 1 auto; min-width: 0; padding-left: 36px; }
+.hotel-finder-form button { flex: none; }
+.meal-note { padding: 10px 12px; border-radius: var(--r-md); background: var(--orange-soft); color: var(--label); font-size: 13px; }

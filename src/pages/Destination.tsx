@@ -7,6 +7,8 @@ import type {
   FlightCalendar,
   FlightDay,
   FlightQuote,
+  AllInclusiveInfo,
+  MealPlan,
   MonthPrice,
   RealHotel,
   StayOption,
@@ -16,12 +18,17 @@ import type {
 import { flightLinks, flightPax, stayLinks } from "../../shared/links.ts";
 import { priceLabel } from "../../shared/price-age.ts";
 import LodgingPicker from "../components/LodgingPicker.tsx";
+import { BeachToggle, HotelBadges, HotelFinder, MealPlanNote, MealPlanPriceLink, RoomsLine } from "../components/HotelBadges.tsx";
+import { priceIncludesPlan, sortHotelsFor } from "../../shared/hotel-badges.ts";
+import { MEAL_PLAN_LABEL, dailyFactor, isMealPlan } from "../../shared/meal-plan.ts";
 import { PartyPicker } from "../components/TripPickers.tsx";
 import {
   BAGS_LABEL,
   bagsCost,
   dailyUnits,
   describeParty,
+  describeRooms,
+  roomOccupancy,
   fareUnits,
   headcount,
   partyFromParams,
@@ -89,6 +96,13 @@ export default function DestinationPage() {
   const partyQuery = partyToParams(party);
   const partyKey = `${partyQuery.adults}|${partyQuery.kids}`;
   const [style, setStyle] = useState<Style>(profile.style);
+  // Régimen: el de la búsqueda (?meal=all) o el preferido del perfil.
+  const [mealPlan, setMealPlan] = useState<MealPlan>(() => {
+    const m = params.get("meal");
+    return isMealPlan(m) ? m : (profile.mealPlan ?? "room");
+  });
+  const [beachfront, setBeachfront] = useState(profile.beachfront ?? false);
+  const [allInclusive, setAllInclusive] = useState<AllInclusiveInfo | null>(null);
   const [dest, setDest] = useState<Destination | null>(null);
   const [months, setMonths] = useState<MonthPrice[]>([]);
   const [month, setMonth] = useState<string | null>(params.get("month"));
@@ -112,15 +126,16 @@ export default function DestinationPage() {
 
   useEffect(() => {
     api
-      .destination(id, { origin: profile.origin, nights, travelers, style, ...partyQuery })
+      .destination(id, { origin: profile.origin, nights, travelers, style, meal: mealPlan, ...partyQuery })
       .then((r) => {
         setDest(r.destination);
         setMonths(r.months);
+        setAllInclusive(r.allInclusive ?? null);
         setMonth((m) => m ?? monthKey(r.months.find((x) => x.best) ?? r.months[0]));
       })
       .catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, profile.origin, nights, partyKey, style]);
+  }, [id, profile.origin, nights, partyKey, style, mealPlan]);
 
   useEffect(() => {
     if (!month) return;
@@ -202,8 +217,9 @@ export default function DestinationPage() {
     setShowAll(false);
     if (!hotelsCheckin) return;
     const checkin = hotelsCheckin;
+    const filters = { ...(mealPlan !== "room" ? { meal: mealPlan } : {}), ...(beachfront ? { beach: 1 as const } : {}) };
     api
-      .stays({ dest: id, checkin, nights: stayNights, travelers, ...partyQuery })
+      .stays({ dest: id, checkin, nights: stayNights, travelers, ...partyQuery, ...filters })
       .then((r) => setStays(r.options))
       .catch((e) => setError(e.message));
     let cancelled = false;
@@ -211,7 +227,7 @@ export default function DestinationPage() {
     const t = setTimeout(() => {
       setLoading((l) => ({ ...l, hotels: true }));
       api
-        .stays({ dest: id, checkin, nights: stayNights, travelers, ...partyQuery, real: 1, ...(allowGoogle ? { google: 1 as const } : {}) })
+        .stays({ dest: id, checkin, nights: stayNights, travelers, ...partyQuery, ...filters, real: 1, ...(allowGoogle ? { google: 1 as const } : {}) })
         .then((r) => {
           if (cancelled) return;
           setHotels(r.hotels);
@@ -226,15 +242,24 @@ export default function DestinationPage() {
       clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hotelsCheckin, stayNights, partyKey, google, id]);
+  }, [hotelsCheckin, stayNights, partyKey, google, id, mealPlan, beachfront]);
 
   const priceBands = useMemo(() => {
     const prices = (calendar?.days ?? []).map((d) => d.priceUSD).sort((a, b) => a - b);
     return { low: prices[Math.floor(prices.length / 3)] ?? 0, high: prices[Math.floor((prices.length * 2) / 3)] ?? 0 };
   }, [calendar]);
 
-  const realHotels = hotelsCheckin && hotelsFor === `${hotelsCheckin}_${stayNights}` ? hotels : [];
-  const tiers = useMemo(() => pickTiers(realHotels), [realHotels]);
+  const loadedHotels = hotelsCheckin && hotelsFor === `${hotelsCheckin}_${stayNights}` ? hotels : [];
+  // Régimen y frente al mar: primero los que lo tienen (y con "Frente al mar", solo esos).
+  const realHotels = useMemo(() => sortHotelsFor(loadedHotels, mealPlan, beachfront), [loadedHotels, mealPlan, beachfront]);
+  // Las tarjetas por estilo usan hoteles cuyo precio incluye el régimen pedido
+  // (all inclusive: solo resorts todo incluido). Si no hay, va el estimado.
+  const tierPool = useMemo(() => {
+    if (mealPlan === "room") return realHotels;
+    const ok = realHotels.filter((h) => priceIncludesPlan(h, mealPlan));
+    return mealPlan === "all" || ok.length >= 3 ? ok : realHotels;
+  }, [realHotels, mealPlan]);
+  const tiers = useMemo(() => pickTiers(tierPool), [tierPool]);
 
   if (error && !dest) return <p className="error">{error}</p>;
   if (!dest)
@@ -258,8 +283,24 @@ export default function DestinationPage() {
   const realPick = custom ?? tiers[tier];
   const estStay = stays.find((s) => s.tier === tier);
   const lodging = realPick ? realPick.totalUSD * rooms : (estStay?.totalUSD ?? 0);
-  const lodgingLabel = realPick ? realPick.name : estStay ? `${estStay.label} (estimado)` : "";
-  const daily = Math.round(dest.dailyUSD[style] * (stayNights + 1) * dailyUnits(party));
+  // Régimen que de verdad cubre el precio: un hotel real solo si la fuente lo dice; el estimado, el que se calculó.
+  const coveredPlan: MealPlan = realPick ? (priceIncludesPlan(realPick, mealPlan) ? mealPlan : "room") : (estStay?.mealPlan ?? "room");
+  const planMissing = mealPlan !== "room" && coveredPlan !== mealPlan;
+  const lodgingLabel = realPick
+    ? `${realPick.name}${coveredPlan !== "room" ? ` (${MEAL_PLAN_LABEL[coveredPlan].toLowerCase()})` : ""}`
+    : estStay
+      ? `${estStay.label} (${estStay.mealPlan === "all" ? "estimado all inclusive" : estStay.mealPlan ? `${MEAL_PLAN_LABEL[estStay.mealPlan].toLowerCase()}, estimado` : "estimado"})`
+      : "";
+  const lodgingNote = realPick
+    ? planMissing
+      ? `Precio real · puede ser solo alojamiento, sin ${MEAL_PLAN_LABEL[mealPlan].toLowerCase()}`
+      : "Precio real"
+    : estStay?.mealPlan === "all"
+      ? "Estimado all inclusive"
+      : estStay?.mealPlan
+        ? `Estimado, ${MEAL_PLAN_LABEL[estStay.mealPlan].toLowerCase()}`
+        : "Estimado";
+  const daily = Math.round(dest.dailyUSD[style] * (stayNights + 1) * dailyUnits(party) * dailyFactor(coveredPlan));
   const includeDaily = profile.includeDaily ?? false;
   const total = flights + bags + lodging + (includeDaily ? daily : 0);
   const maxMonth = Math.max(...months.map((m) => m.totalPerPersonUSD), 1);
@@ -306,17 +347,20 @@ export default function DestinationPage() {
           : []),
         {
           kind: "alojamiento",
-          label: `${lodgingLabel} · ${stayNights} noches${rooms > 1 ? ` · ${rooms} hab.` : ""}${realPick ? " (precio real)" : ""}`,
+          label: `${lodgingLabel} · ${stayNights} noches · ${roomsLabel}${realPick ? (planMissing ? " (precio real, puede ser solo alojamiento)" : " (precio real)") : ""}`,
           amountUSD: lodging,
           link: realPick?.link ?? estStay?.links[0].url,
           quote: realPick
             ? {
                 kind: "exacto",
-                source: hotelsSource === "google" ? "google" : "xotelo",
+                source: realPick.key ? "xotelo" : "google",
                 at: savedAt,
                 unitUSD: realPick.nightlyUSD,
                 units: stayNights * rooms,
-                ...(realPick.key && stayStart ? { hotel: { key: realPick.key, checkin: stayStart, checkout: stayEnd } } : {}),
+                // La ocupación con la que se cotizó: al revisar el precio se pide igual.
+                ...(realPick.key && stayStart
+                  ? { hotel: { key: realPick.key, checkin: stayStart, checkout: stayEnd, adults: occupancy.adults, ages: occupancy.childAges } }
+                  : {}),
               }
             : { kind: "estimado", source: "estimado", at: savedAt, unitUSD: estStay?.nightlyUSD ?? 0, units: stayNights * (estStay?.rooms ?? rooms) },
         },
@@ -324,7 +368,10 @@ export default function DestinationPage() {
           ? [
               {
                 kind: "gastos" as const,
-                label: `Comidas, traslados y actividades (${STYLE_LABEL[style].toLowerCase()}, estimado)`,
+                label:
+                  coveredPlan === "all"
+                    ? "Traslados y actividades (las comidas van en el all inclusive, estimado)"
+                    : `Comidas, traslados y actividades (${STYLE_LABEL[style].toLowerCase()}, estimado)`,
                 amountUSD: daily,
               },
             ]
@@ -359,6 +406,45 @@ export default function DestinationPage() {
 
   const stayStart = hotelsCheckin ?? day?.date;
   const stayEnd = stayStart ? addDays(stayStart, stayNights) : "";
+  const roomsLabel = describeRooms(party);
+  const occupancy = roomOccupancy(party);
+  const showTiers = tierPool.length > 0;
+  // Estimado por estilo (sin hoteles reales, o sin ninguno cuyo precio incluya el régimen pedido).
+  const estimateCards = (
+    <div className="grid-3">
+      {stays.map((s) => {
+        const on = !realPick && tier === s.tier;
+        return (
+          <button
+            key={s.tier}
+            className={`stay ${on ? "on" : ""}`}
+            onClick={() => {
+              setCustom(null);
+              setTier(s.tier);
+            }}
+            aria-pressed={on}
+          >
+            <span className="tier">{s.label}</span>
+            <strong>{s.area}</strong>
+            <span className="price">{money(s.totalUSD)}</span>
+            <span className="small muted">
+              {s.mealPlan === "all"
+                ? "Estimado all inclusive · comidas y bebidas incluidas"
+                : `${money(s.nightlyUSD)} por noche · ${s.mealPlan ? `${MEAL_PLAN_LABEL[s.mealPlan].toLowerCase()}, estimado` : "estimado"}`}
+            </span>
+            <span className="small muted">{roomsLabel}</span>
+            <span className="row gap small">
+              {s.links.map((l) => (
+                <a key={l.label} href={l.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="row gap-sm">
+                  {l.label} <Icon name="external" size={14} />
+                </a>
+              ))}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="dest-layout">
@@ -428,6 +514,14 @@ export default function DestinationPage() {
               setStyle(s);
               setTier(s);
               setCustom(null);
+            }}
+            mealPlan={mealPlan}
+            onMealPlan={(m) => {
+              setMealPlan(m);
+              setCustom(null);
+              if (m === "room") params.delete("meal");
+              else params.set("meal", m);
+              setParams(params, { replace: true });
             }}
           />
         </section>
@@ -614,8 +708,7 @@ export default function DestinationPage() {
             <div className="section-head">
               <h2>Dónde dormir</h2>
               <span className="small muted">
-                {formatRange(stayStart ?? day.date, stayEnd)} · {stayNights} {stayNights === 1 ? "noche" : "noches"} · {rooms}{" "}
-                {rooms === 1 ? "habitación" : "habitaciones"}
+                {formatRange(stayStart ?? day.date, stayEnd)} · {stayNights} {stayNights === 1 ? "noche" : "noches"} · {roomsLabel}
                 {realHotels.length
                   ? hotelsSource === "google"
                     ? " · precios reales de Google Hotels"
@@ -623,6 +716,18 @@ export default function DestinationPage() {
                   : " · precios estimados"}
               </span>
             </div>
+            <div className="hotel-filters" style={{ marginBottom: 12 }}>
+              <BeachToggle value={beachfront} onChange={(v) => (setBeachfront(v), setCustom(null))} />
+            </div>
+            {mealPlan === "all" && !allInclusive && (
+              <p className="meal-note" style={{ marginBottom: 12 }}>
+                En {dest.name} casi no hay all inclusive: los precios son de solo alojamiento. Para all inclusive, buscá por presupuesto con ese régimen.
+              </p>
+            )}
+            {mealPlan !== "room" && !loading.hotels && realHotels.length > 0 && <MealPlanNote mealPlan={mealPlan} />}
+            {beachfront && !loading.hotels && loadedHotels.length > 0 && realHotels.length === 0 && (
+              <p className="small muted">Entre los hoteles con precio no hay ninguno que diga tener acceso a la playa. Probá buscar uno por nombre.</p>
+            )}
             {loading.hotels && (
               <div className="grid-3" aria-busy="true" aria-label="Buscando hoteles">
                 {STYLES.map((s) => (
@@ -637,38 +742,44 @@ export default function DestinationPage() {
 
             {!loading.hotels && realHotels.length > 0 && (
               <>
-                <div className="grid-3">
-                  {STYLES.map((s) => {
-                    const h = tiers[s];
-                    if (!h) return null;
-                    const on = !custom && tier === s;
-                    return (
-                      <button
-                        key={s}
-                        className={`stay ${on ? "on" : ""}`}
-                        onClick={() => {
-                          setCustom(null);
-                          setTier(s);
-                        }}
-                        aria-pressed={on}
-                      >
-                        {h.thumbnail ? <img className="stay-img" src={h.thumbnail} alt="" loading="lazy" /> : <div className="stay-img" />}
-                        <span className="tier">{STYLE_LABEL[s]}</span>
-                        <strong>{h.name}</strong>
-                        <Rating stars={h.stars} rating={h.rating} reviews={h.reviews} />
-                        <span className="price">{money(h.totalUSD * rooms)}</span>
-                        <span className="small muted">
-                          {money(h.nightlyUSD)} por noche{h.site ? ` en ${h.site}` : ""}
-                        </span>
-                        {h.link && (
-                          <a href={h.link} target="_blank" rel="noreferrer" className="small row gap-sm" onClick={(e) => e.stopPropagation()}>
-                            Ver hotel <Icon name="external" size={14} />
-                          </a>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                {showTiers && (
+                  <div className="grid-3">
+                    {STYLES.map((s) => {
+                      const h = tiers[s];
+                      if (!h) return null;
+                      const on = !custom && tier === s;
+                      return (
+                        <button
+                          key={s}
+                          className={`stay ${on ? "on" : ""}`}
+                          onClick={() => {
+                            setCustom(null);
+                            setTier(s);
+                          }}
+                          aria-pressed={on}
+                        >
+                          {h.thumbnail ? <img className="stay-img" src={h.thumbnail} alt="" loading="lazy" /> : <div className="stay-img" />}
+                          <span className="tier">{STYLE_LABEL[s]}</span>
+                          <strong>{h.name}</strong>
+                          <Rating stars={h.stars} rating={h.rating} reviews={h.reviews} />
+                          <HotelBadges h={h} mealPlan={mealPlan} />
+                          <span className="price">{money(h.totalUSD * rooms)}</span>
+                          <span className="small muted">
+                            {money(h.nightlyUSD)} por noche{rooms > 1 ? " por habitación" : ""}
+                            {h.site ? ` en ${h.site}` : ""}
+                          </span>
+                          <RoomsLine label={roomsLabel} />
+                          {h.link && (
+                            <a href={h.link} target="_blank" rel="noreferrer" className="small row gap-sm" onClick={(e) => e.stopPropagation()}>
+                              Ver hotel <Icon name="external" size={14} />
+                            </a>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {!showTiers && estimateCards}
                 <button className="plain" style={{ marginTop: 8 }} onClick={() => setShowAll((v) => !v)} aria-expanded={showAll}>
                   {showAll ? "Ocultar la lista" : `Ver los ${realHotels.length} hoteles`}
                   <Icon name="chevronDown" size={16} />
@@ -686,6 +797,7 @@ export default function DestinationPage() {
                         <span className="hotel-body">
                           <strong>{h.name}</strong>
                           <Rating stars={h.stars} rating={h.rating} />
+                          <HotelBadges h={h} mealPlan={mealPlan} />
                           <span className="small">
                             <strong>{money(h.nightlyUSD)}</strong>
                             <span className="muted">
@@ -693,6 +805,9 @@ export default function DestinationPage() {
                               por noche{h.site ? ` en ${h.site}` : ""} · {money(h.totalUSD * rooms)} total
                             </span>
                           </span>
+                          {stayStart && (
+                            <MealPlanPriceLink h={h} city={dest.name} checkin={stayStart} checkout={stayEnd} party={party} mealPlan={mealPlan} />
+                          )}
                         </span>
                       </button>
                     ))}
@@ -701,10 +816,43 @@ export default function DestinationPage() {
               </>
             )}
 
+            {!loading.hotels && stayStart && (
+              <HotelFinder
+                place={dest.name}
+                country={dest.country}
+                lat={dest.lat}
+                lon={dest.lon}
+                checkin={stayStart}
+                nights={stayNights}
+                party={party}
+                mealPlan={mealPlan}
+                renderHotel={(h) => (
+                  <article key={h.name} className={`card hotel-card ${custom?.name === h.name ? "on" : ""}`}>
+                    <div className="stack-sm grow">
+                      <strong>{h.name}</strong>
+                      <Rating stars={h.stars} rating={h.rating} reviews={h.reviews} />
+                      <HotelBadges h={h} mealPlan={mealPlan} />
+                      <span className="price">{money(h.totalUSD * rooms)}</span>
+                      <span className="small muted">
+                        {money(h.nightlyUSD)} por noche{h.site ? ` en ${h.site}` : ""} · {roomsLabel}
+                      </span>
+                      <MealPlanPriceLink h={h} city={dest.name} checkin={stayStart} checkout={stayEnd} party={party} mealPlan={mealPlan} />
+                    </div>
+                    <button
+                      className={custom?.name === h.name ? "primary" : "secondary"}
+                      aria-pressed={custom?.name === h.name}
+                      onClick={() => setCustom(custom?.name === h.name ? null : h)}
+                    >
+                      {custom?.name === h.name ? "Elegido" : "Elegir"}
+                    </button>
+                  </article>
+                )}
+              />
+            )}
             {!loading.hotels && realHotels.length > 0 && stayStart && (
               <div className="date-line">
                 <span className="small muted">Compará en:</span>
-                {stayLinks(dest.name, stayStart, stayEnd, party, rooms).map((l) => (
+                {stayLinks(dest.name, stayStart, stayEnd, party, rooms, mealPlan).map((l) => (
                   <a key={l.label} className="pill-link" href={l.url} target="_blank" rel="noreferrer">
                     {l.label} <Icon name="external" size={14} />
                   </a>
@@ -715,27 +863,7 @@ export default function DestinationPage() {
               <p className="small muted">FindMyTrip no realiza reservas de alojamiento: la contratación se hace con el proveedor.</p>
             )}
 
-            {!loading.hotels && realHotels.length === 0 && (
-              <div className="grid-3">
-                {stays.map((s) => (
-                  <button key={s.tier} className={`stay ${tier === s.tier ? "on" : ""}`} onClick={() => setTier(s.tier)} aria-pressed={tier === s.tier}>
-                    <span className="tier">{s.label}</span>
-                    <strong>{s.area}</strong>
-                    <span className="price">{money(s.totalUSD)}</span>
-                    <span className="small muted">
-                      {money(s.nightlyUSD)} por noche · estimado
-                    </span>
-                    <span className="row gap small">
-                      {s.links.map((l) => (
-                        <a key={l.label} href={l.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="row gap-sm">
-                          {l.label} <Icon name="external" size={14} />
-                        </a>
-                      ))}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+            {!loading.hotels && realHotels.length === 0 && estimateCards}
           </section>
         )}
         <EntryCard country={dest.country} />
@@ -783,7 +911,8 @@ export default function DestinationPage() {
                   <Icon name="bed" size={16} />
                   <span className="stack-sm" style={{ gap: 0 }}>
                     <span>{realPick ? realPick.name : estStay?.label}</span>
-                    <span className="small muted">{realPick ? "Precio real" : "Estimado"}</span>
+                    <span className={`small ${planMissing && realPick ? "warn-text" : "muted"}`}>{lodgingNote}</span>
+                    <span className="small muted">{roomsLabel}{realPick?.checkIn ? ` · check-in desde ${realPick.checkIn}` : ""}</span>
                   </span>
                 </span>
                 <span>{money(lodging)}</span>
@@ -792,9 +921,10 @@ export default function DestinationPage() {
                 <span className="label">
                   <Icon name="utensils" size={16} />
                   <span className="stack-sm" style={{ gap: 0 }}>
-                    <span>Comidas y paseos</span>
+                    <span>{coveredPlan === "all" ? "Traslados y paseos" : "Comidas y paseos"}</span>
                     <span className="small muted">
                       {includeDaily ? "Estimado" : `Aparte · aprox. ${money(daily)}`}
+                      {coveredPlan === "all" ? " · comidas en el all inclusive" : ""}
                     </span>
                   </span>
                 </span>

@@ -7,6 +7,7 @@ import AlertsSettings from "../components/AlertsSettings.tsx";
 import Icon from "../components/Icon.tsx";
 import InterestPicker from "../components/InterestPicker.tsx";
 import Segmented from "../components/Segmented.tsx";
+import { MealPlanSelect } from "../components/HotelBadges.tsx";
 import { useApp } from "../lib/app-context.tsx";
 
 export default function ProfilePage() {
@@ -105,6 +106,19 @@ export default function ProfilePage() {
               ]}
             />
           </div>
+          <label className="list-row">
+            <span className="grow">Régimen preferido</span>
+            <MealPlanSelect className="" value={form.mealPlan ?? "room"} onChange={(mealPlan) => update({ mealPlan })} />
+          </label>
+          <label className="list-row">
+            <span className="grow">Preferir alojamiento frente al mar</span>
+            <input
+              type="checkbox"
+              className="switch"
+              checked={form.beachfront ?? false}
+              onChange={(e) => update({ beachfront: e.target.checked })}
+            />
+          </label>
           <div className="list-row">
             <span className="grow">Ver precios en</span>
             <Segmented
@@ -118,6 +132,9 @@ export default function ProfilePage() {
             />
           </div>
         </div>
+        <p className="grouped-note">
+          Con all inclusive, el alojamiento se estima por persona y solo aparecen destinos donde hay resorts todo incluido.
+        </p>
         {meta && (
           <p className="grouped-note">
             1 USD = ${meta.usdArsRate.toLocaleString("es-AR")} · {meta.usdArsSource}, para viajes al exterior

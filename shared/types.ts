@@ -2,6 +2,18 @@
 
 export type Style = "low" | "mid" | "high";
 
+/** Régimen de comidas del alojamiento. */
+export type MealPlan = "room" | "breakfast" | "half" | "all";
+
+/**
+ * All inclusive en un destino: qué tan común es y la tarifa estimada por
+ * persona y por noche (USD, habitación doble, temporada media) para cada estilo.
+ */
+export interface AllInclusiveInfo {
+  availability: "común" | "algunos";
+  perPersonNight: Record<Style, number>;
+}
+
 export type Interest =
   | "playa"
   | "montaña"
@@ -59,6 +71,11 @@ export interface Destination {
   blurb: string;
   highlights: string[];
   areas: string[];
+  /**
+   * All inclusive (opcional). Sin el campo se usa la tabla de shared/meal-plan.ts
+   * (por id y región); null = casi no hay all inclusive.
+   */
+  allInclusive?: AllInclusiveInfo | null;
 }
 
 export type Bags = "personal" | "cabin" | "checked1" | "checked2";
@@ -93,6 +110,10 @@ export interface Profile {
   maxFlightHours: number | null;
   /** Sumar comidas y paseos (estimado) al total. Por defecto, aparte. */
   includeDaily?: boolean;
+  /** Régimen preferido (por defecto, solo alojamiento). */
+  mealPlan?: MealPlan;
+  /** Preferir alojamientos frente al mar. */
+  beachfront?: boolean;
 }
 
 export interface ExploreRequest {
@@ -127,6 +148,8 @@ export interface ExploreRequest {
    * pesos: se convierte al dólar oficial (allá se paga en pesos, sin percepciones).
    */
   domesticBudgetUSD?: number;
+  /** Régimen: con all inclusive solo van destinos donde se consigue. */
+  mealPlan?: MealPlan;
 }
 
 export interface CostBreakdown {
@@ -139,6 +162,8 @@ export interface CostBreakdown {
   dailyIncluded: boolean;
   total: number;
   perPerson: number;
+  /** Régimen con el que se calculó el alojamiento (falta = solo alojamiento). */
+  mealPlan?: MealPlan;
 }
 
 export interface Suggestion {
@@ -251,6 +276,8 @@ export interface StayOption {
   links: { label: string; url: string }[];
   /** real = tarifas de hoteles reales (Xotelo o Google, con caché de horas); nunca "en vivo". */
   source: "estimado" | "real";
+  /** Régimen incluido en el estimado (falta = solo alojamiento). */
+  mealPlan?: MealPlan;
 }
 
 export interface PackageItem {
@@ -283,7 +310,8 @@ export interface ItemQuote {
   priceDate?: string | null;
   flight?: { from: string; to: string; depart: string; ret: string | null };
   /** Hotel de Xotelo (clave de TripAdvisor) y fechas. */
-  hotel?: { key: string; checkin: string; checkout: string };
+  /** Hotel de Xotelo (clave, fechas y ocupación por habitación con la que se cotizó). */
+  hotel?: { key: string; checkin: string; checkout: string; adults?: number; ages?: number[] };
 }
 
 export interface TripPackage {
@@ -379,6 +407,17 @@ export interface RealHotel {
   officialUrl?: string | null;
   lat?: number | null;
   lon?: number | null;
+  /**
+   * All inclusive: included = resort todo incluido (la tarifa lo incluye según
+   * la fuente) · offered = lo ofrece, pero el precio mostrado puede ser solo alojamiento.
+   */
+  allInclusive?: "included" | "offered" | null;
+  /** Desayuno: included = la fuente dice que es gratis · offered = hay tarifas con desayuno · paid = se paga aparte. */
+  breakfast?: "included" | "offered" | "paid" | null;
+  /** Playa: access = la fuente lo dice (Google) · name = lo sugiere el nombre (verificar en el mapa). */
+  beach?: "access" | "name" | null;
+  /** Hora de check-in ("14:00"). */
+  checkIn?: string | null;
 }
 
 export interface HotelQuote {
