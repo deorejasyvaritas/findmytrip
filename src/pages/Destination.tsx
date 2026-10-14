@@ -51,7 +51,7 @@ const hours = (min: number | null) => (min ? `${Math.floor(min / 60)} h ${min % 
 const addDays = (iso: string, n: number) => {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
+  return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 10);
 };
 
 /** Elige un hotel real representativo para cada estilo. */
@@ -153,7 +153,9 @@ export default function DestinationPage() {
   const dayKey = day ? `${day.date}_${day.returnDate}` : null;
   // El calendario acepta precios reales con hasta 2 noches de diferencia: la
   // estadía (hotel, comidas, paquete) es la de las fechas del vuelo elegido.
-  const stayNights = day ? Math.max(1, nightsBetween(day.date, day.returnDate)) : nights;
+  // Noches reales del vuelo elegido; si el día no trae vuelta (o viene mal), las pedidas.
+  const flightNights = day?.returnDate ? nightsBetween(day.date, day.returnDate) : NaN;
+  const stayNights = Number.isFinite(flightNights) && flightNights > 0 ? flightNights : nights;
   // Viaje dentro de Argentina: en pesos se cotiza al oficial (sin percepciones).
   const domestic = isDomestic(dest?.region);
   const money = (usd: number) => app.money(usd, { domestic });

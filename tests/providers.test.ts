@@ -52,6 +52,17 @@ describe("Travelpayouts", () => {
     expect(cal.days.find((d) => d.date === "2027-05-20")).toMatchObject({ priceUSD: 260, returnDate: "2027-05-28", source: "visto" });
   });
 
+  it("no muestra como ida y vuelta un precio sin fecha de vuelta", async () => {
+    mockFetch((url) => {
+      if (url.includes("month-matrix")) return { success: true, data: [{ value: 120, depart_date: "2027-06-03", return_date: "" }] };
+      return { success: true, data: [{ price: 150, departure_at: "2027-06-04T08:00:00-03:00" }] };
+    });
+    const cal = await flightCalendar("tok", "BUE", rio, "2027-06", 7);
+    expect(cal.days.find((d) => d.date === "2027-06-03")?.source).toBe("estimado");
+    expect(cal.days.find((d) => d.date === "2027-06-04")?.source).toBe("estimado");
+    expect(cal.days.every((d) => d.returnDate)).toBe(true);
+  });
+
   it("sin token usa estimaciones y no llama a la API", async () => {
     const fn = mockFetch(() => ({}));
     const cal = await flightCalendar(undefined, "BUE", rio, "2027-04", 7);

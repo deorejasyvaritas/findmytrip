@@ -1,6 +1,6 @@
 import type { Destination, FlightCalendar, FlightDay, FlightOffer, FlightQuote } from "../../shared/types.ts";
 import { cached, fetchJSON, peek } from "../cache.ts";
-import { addDays, estimatedCalendar } from "../engine.ts";
+import { estimatedCalendar } from "../engine.ts";
 import { googleSearch } from "../google-budget.ts";
 
 // ---------------------------------------------------------------------------
@@ -111,8 +111,11 @@ export async function flightCalendar(
   for (const item of items) {
     const date = item.depart.slice(0, 10);
     if (!date.startsWith(month)) continue;
-    const returnDate = item.ret?.slice(0, 10) ?? addDays(date, nights);
+    // Sin fecha de vuelta válida no sabemos si es ida y vuelta (puede ser un precio
+    // de solo ida, más barato): no lo mostramos como ida y vuelta.
+    const returnDate = item.ret ? item.ret.slice(0, 10) : "";
     const stay = Math.round((Date.parse(returnDate) - Date.parse(date)) / 86400000);
+    if (!Number.isFinite(stay) || stay <= 0) continue;
     const off = Math.abs(stay - nights);
     if (off > NIGHTS_TOLERANCE) continue;
     const prev = byDay.get(date);

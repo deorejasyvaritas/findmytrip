@@ -40,13 +40,13 @@ export async function offersFor(token: string, origin: string, depart: string, r
       if (cheap?.success && cheap.data) {
         for (const [code, offers] of Object.entries(cheap.data)) {
           for (const o of Object.values(offers)) {
-            if (o?.price) list.push({ code, price: Math.round(o.price), depart: o.departure_at?.slice(0, 10) ?? depart, ret: o.return_at?.slice(0, 10) ?? ret, airline: o.airline });
+            if (o?.price) list.push({ code, price: Math.round(o.price), depart: o.departure_at?.slice(0, 10) || depart, ret: o.return_at?.slice(0, 10) || ret, airline: o.airline });
           }
         }
       }
       if (dates?.success && Array.isArray(dates.data)) {
         for (const o of dates.data) {
-          if (o?.price && o.destination) list.push({ code: o.destination, price: Math.round(o.price), depart: o.departure_at.slice(0, 10), ret: o.return_at?.slice(0, 10) ?? ret, airline: o.airline });
+          if (o?.price && o.destination) list.push({ code: o.destination, price: Math.round(o.price), depart: o.departure_at.slice(0, 10), ret: o.return_at?.slice(0, 10) || ret, airline: o.airline });
         }
       }
       // Solo cuenta si las fechas coinciden con la escapada.
