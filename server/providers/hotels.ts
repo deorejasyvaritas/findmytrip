@@ -105,6 +105,10 @@ export async function googleHotels(
         type: p.type ?? null,
         thumbnail: p.images?.[0]?.thumbnail ?? null,
         link: p.link ?? null,
+        // En Google Hotels, `link` es el sitio oficial del hotel.
+        officialUrl: p.link ?? null,
+        lat: p.gps_coordinates?.latitude ?? null,
+        lon: p.gps_coordinates?.longitude ?? null,
       };
     })
     .sort((a, b) => a.nightlyUSD - b.nightlyUSD);

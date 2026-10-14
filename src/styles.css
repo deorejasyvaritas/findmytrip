@@ -1276,3 +1276,27 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .join-summary .eyebrow { color: var(--brand-ink); margin: 0; }
 .join-error h1 { font-size: 24px; }
 .join-error, .join-as { text-align: center; }
+/* ---------- "Ya sé a dónde": precio de cada tramo y detalle de hoteles ---------- */
+.leg-note { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--green); }
+.leg-note.muted { color: var(--label-2); }
+.leg-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 8px; }
+.leg-action {
+  display: inline-flex; align-items: center; min-height: var(--control); padding: 0 4px;
+  font-size: 13px; font-weight: 600; color: var(--label-2); background: none;
+}
+.leg-action:hover { color: var(--label); text-decoration: underline; }
+.manual-price { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 280px; }
+.manual-price-input { display: flex; align-items: center; gap: 8px; }
+.manual-price-input > span { font-size: 15px; font-weight: 600; color: var(--label-2); }
+.manual-price-input input { flex: 1; min-width: 0; font-variant-numeric: tabular-nums; }
+.trip-hotel img { height: 140px; }
+.hotel-links { display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: -4px; }
+.hotel-links a {
+  display: inline-flex; align-items: center; gap: 4px; min-height: var(--control);
+  font-size: 13px; font-weight: 600; color: var(--label-2);
+}
+.hotel-links a:hover { color: var(--label); }
+@media (max-width: 767px) {
+  .leg-actions { justify-content: flex-start; }
+  .manual-price { max-width: none; }
+}
