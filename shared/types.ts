@@ -537,6 +537,8 @@ export interface TripLeg {
   returnDate: string | null;
   /** Vuelo: precio por adulto visto en Aviasales (null si no hay datos). */
   price: number | null;
+  /** exacto = para esa fecha · cercano = día vecino (±3) · mes = lo más barato del mes. */
+  priceKind: "exacto" | "cercano" | "mes" | null;
   airline: string | null;
   stops: number | null;
   link: string | null;

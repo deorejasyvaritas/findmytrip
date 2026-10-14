@@ -119,24 +119,29 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
   const last = stops[stops.length - 1].airport;
 
   const cheapest = async (from: string, to: string, depart: string, back: string | null) => {
-    if (!token) return null;
+    if (!token) return { best: null, near: null };
     const r = await searchFlights(token, { origin: from, destination: to, depart, ret: back }, marker).catch(() => null);
-    return r?.results[0] ?? null;
+    const near = r?.strip.length ? Math.min(...r.strip.map((d) => d.price)) : null;
+    return { best: r?.results[0] ?? null, near };
   };
 
   const legs: TripLeg[] = [];
   const flightLeg = async (from: string, to: string, date: string, back: string | null, label: string, role: TripLeg["role"], after: number | null = null): Promise<TripLeg> => {
-    const best = await cheapest(from, to, date, back);
+    const { best, near } = await cheapest(from, to, date, back);
+    // Sin precio para el día exacto: el de un día vecino o, en ida y vuelta desde tu ciudad, lo más barato del mes.
+    const month = back && from === req.origin ? (fares.get(to) ?? null) : null;
+    const price = best?.price ?? near ?? month;
     return {
       kind: "flight",
       role,
       after,
+      priceKind: best ? "exacto" : near ? "cercano" : month ? "mes" : null,
       label,
       from,
       to,
       date,
       returnDate: back,
-      price: best?.price ?? null,
+      price: price ?? null,
       airline: best?.airline ?? null,
       stops: best?.stops ?? null,
       link: best?.link ?? aviasalesUrl(from, to, date, back, 1, marker),
@@ -177,6 +182,7 @@ export async function planTrip(token: string | undefined, req: TripPlanRequest, 
         date: a.checkout,
         returnDate: null,
         price: null,
+        priceKind: null,
         airline: null,
         stops: null,
         link: null,

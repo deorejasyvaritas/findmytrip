@@ -830,6 +830,7 @@ function TripResults() {
   const flights = plan?.legs.filter((l) => l.kind === "flight") ?? [];
   const flightsTotal = flights.reduce((s, l) => s + (l.price ? Math.round(l.price * units) : 0), 0);
   const missingFlights = flights.filter((l) => l.price == null).length;
+  const approxFlights = flights.some((l) => l.priceKind === "cercano" || l.priceKind === "mes");
   const staysTotal = Object.values(stays).reduce((s, x) => s + x.total, 0);
   const total = flightsTotal + staysTotal;
   const single = stops.length === 1 && stops[0].destinationId;
@@ -910,7 +911,7 @@ function TripResults() {
           <li>
             <span className="label">
               <Icon name="plane" size={16} />
-              Vuelos{missingFlights ? ` (${missingFlights} sin precio)` : ""}
+              Vuelos{missingFlights ? ` (${missingFlights} sin precio)` : approxFlights ? " (aproximado)" : ""}
             </span>
             <span>{money(flightsTotal)}</span>
           </li>
@@ -969,7 +970,13 @@ function LegCard({ leg, units, money }: { leg: TripLeg; units: number; money: (n
         <span className="small muted">
           {capitalize(shortDate(leg.date))}
           {leg.returnDate ? ` al ${shortDate(leg.returnDate)}` : ""}
-          {leg.price != null ? ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")}` : " · sin precio visto para esa fecha"}
+          {leg.price == null
+            ? " · sin precio visto para esa fecha"
+            : leg.priceKind === "exacto"
+              ? ` · ${[airlineName(leg.airline), stopsLabel(leg.stops)].filter(Boolean).join(" · ")}`
+              : leg.priceKind === "cercano"
+                ? " · precio aproximado: el de un día cercano"
+                : " · precio aproximado: lo más barato visto en el mes"}
         </span>
       </span>
       <span className="trip-leg-price">
@@ -979,8 +986,8 @@ function LegCard({ leg, units, money }: { leg: TripLeg; units: number; money: (n
             <span className="small muted">{money(leg.price)} por adulto</span>
           </>
         )}
-        <a className="button secondary" href={(leg.price != null ? leg.link : leg.liveUrl) ?? "#"} target="_blank" rel="noreferrer sponsored">
-          {leg.price != null ? "Ver en Aviasales" : "Buscar en vivo"} <Icon name="external" size={14} />
+        <a className="button secondary" href={(leg.priceKind === "exacto" ? leg.link : leg.liveUrl) ?? "#"} target="_blank" rel="noreferrer sponsored">
+          {leg.priceKind === "exacto" ? "Ver en Aviasales" : "Buscar en vivo"} <Icon name="external" size={14} />
         </a>
       </span>
     </div>
