@@ -56,6 +56,7 @@ import { stayLinks } from "../shared/links.ts";
 import { extrasFor } from "../shared/extras.ts";
 import { buildPackage } from "./packages.ts";
 import { newShareId, shareKey, sharePath, shareSnapshot, userSharesKey, validShareId, type ShareRecord } from "./share.ts";
+import { climateFor } from "./providers/climate.ts";
 
 // API de FindMyTrip. Corre como Cloudflare Worker (gratis); el frontend se
 // sirve como archivos estáticos desde el mismo Worker.
@@ -596,6 +597,15 @@ app.get("/radar/history", async (c) => {
   // Igual para todos y cambia con los barridos: se puede guardar un rato en el navegador.
   c.header("Cache-Control", "private, max-age=600");
   return c.json({ origin: q.origin, dest: q.dest, points });
+});
+
+// Clima esperado por mes (Open-Meteo, historial de 4 años resumido en KV).
+app.get("/climate", async (c) => {
+  const q = z.object({ lat: z.coerce.number().min(-90).max(90), lon: z.coerce.number().min(-180).max(180) }).parse(c.req.query());
+  const months = await climateFor(q.lat, q.lon);
+  if (!months) return c.json({ error: "No pudimos traer el clima de ese lugar" }, 502);
+  c.header("Cache-Control", "private, max-age=86400");
+  return c.json({ months });
 });
 
 // Extras opcionales del viaje (traslado, eSIM, excursiones, seguro) con links de afiliado.

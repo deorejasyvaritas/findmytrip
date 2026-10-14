@@ -1,4 +1,5 @@
 import type { Extra } from "../../shared/extras.ts";
+import type { ClimateMonth } from "../../shared/climate.ts";
 import type {
   GeoPlace,
   TripPlan,
@@ -106,6 +107,7 @@ export const api = {
     request<{ id: string; path: string }>("/api/share", { method: "POST", body: JSON.stringify({ package: pkg }) }),
   unshare: (id: string) => request<{ ok: boolean; shares: Record<string, string> }>(`/api/share/${id}`, { method: "DELETE" }),
   sharedTrip: (id: string) => request<SharedTripResponse>(`/api/share/${encodeURIComponent(id)}`),
+  climate: (lat: number, lon: number) => request<{ months: ClimateMonth[] }>(`/api/climate?${qs({ lat, lon })}`),
   extras: (dest: string) => request<{ extras: Extra[]; partner: boolean }>(`/api/extras?dest=${dest}`),
   cross: (p: { origin: string; dest: string; month: string }) => request<CrossResult>(`/api/cross?${qs(p)}`),
   escapes: (origin: string) => request<EscapeWeekend[]>(`/api/escapes?origin=${origin}`),
