@@ -181,7 +181,9 @@ export async function evaluateAlerts(
       messages.push(
         [
           `Oferta del radar: ${d.name} a ${money(d.priceUSD)} ida y vuelta`,
-          `${d.discountPct} % menos que lo habitual (${money(d.typicalUSD)})${d.isMinimum ? ", el precio más bajo que vimos" : ""}`,
+          d.baseline === "historial"
+            ? `${d.discountPct} % menos que lo habitual para esas fechas (${money(d.typicalUSD)})${d.isMinimum ? ", el precio más bajo que vimos" : ""}`
+            : `Unos ${money(d.priceUSD < d.typicalUSD ? d.typicalUSD - d.priceUSD : 0)} menos que un precio típico estimado (${money(d.typicalUSD)})`,
           d.depart ? `${shortDate(d.depart)} – ${shortDate(d.ret)}${d.airline ? ` · ${d.airline}` : ""}` : "",
           site ? `${site}/destino/${d.destinationId}?month=${d.depart?.slice(0, 7) ?? ""}` : "",
         ]

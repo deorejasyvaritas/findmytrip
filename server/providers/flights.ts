@@ -191,6 +191,26 @@ export function bestPerDay(items: { price?: number; departure_at?: string; retur
   return [...byDay.entries()].sort((x, y) => x[0].localeCompare(y[0]));
 }
 
+/**
+ * Ida y vuelta más barata del mes para una sola ruta (respuesta chica: un solo
+ * destino, no el mundo entero). Para lugares que necesitan pocas rutas, como
+ * "Cruzá y volá", sin el costo de CPU de bajar todos los destinos.
+ */
+export async function routeCheapest(token: string, origin: string, destination: string, month: string): Promise<number | null> {
+  const r = await cached<{ p: number | null }>(`tpr:${origin}-${destination}-${month}`, 6 * 3600, async () => {
+    const qs = new URLSearchParams({ origin, destination, depart_date: month, currency: "usd" });
+    const data = await fetchJSON<{ success: boolean; data: Record<string, Record<string, { price: number }>> }>(
+      `${TP}/v1/prices/cheap?${qs}`,
+      "travelpayouts",
+      { headers: { "X-Access-Token": token } },
+    );
+    if (!data?.success || !data.data) return null;
+    const prices = Object.values(data.data[destination] ?? {}).map((o) => o.price);
+    return { p: prices.length ? Math.round(Math.min(...prices)) : null };
+  });
+  return r?.p ?? null;
+}
+
 /** Precio real más barato del mes desde `origin` hacia cualquier destino (por IATA de ciudad). */
 export async function cheapestAnywhere(token: string, origin: string, month: string): Promise<Map<string, number>> {
   // Guardamos solo destino -> precio: la respuesta cruda es grande y procesarla

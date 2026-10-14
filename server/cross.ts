@@ -1,5 +1,5 @@
 import type { CrossOption, CrossResult, Destination } from "../shared/types.ts";
-import { airportsFor, cheapestAnywhere } from "./providers/flights.ts";
+import { airportsFor, routeCheapest } from "./providers/flights.ts";
 
 // "Cruzá y volá": a veces conviene salir desde otra ciudad (Montevideo,
 // Santiago, San Pablo) aunque haya que sumar el cruce. Comparamos con
@@ -29,27 +29,30 @@ const ALTERNATIVES: Record<string, Alt[]> = {
 /** Mínimo ahorro por persona para recomendar el cruce. */
 export const MIN_SAVING = 40;
 
-const priceTo = (map: Map<string, number>, dest: Destination) => {
-  for (const code of [dest.iata, ...airportsFor(dest.iata).split(",")]) {
-    const p = map.get(code);
+/** Precio a un destino probando el código de ciudad y sus aeropuertos (EZE, AEP...). */
+async function priceTo(token: string, origin: string, dest: Destination, month: string): Promise<number | undefined> {
+  for (const code of [...new Set([dest.iata, ...airportsFor(dest.iata).split(",")])]) {
+    const p = await routeCheapest(token, origin, code, month);
     if (p) return p;
   }
   return undefined;
-};
+}
 
 export async function crossAndFly(token: string | undefined, origin: string, dest: Destination, month: string): Promise<CrossResult> {
   const alts = (ALTERNATIVES[origin] ?? []).filter((a) => a.code !== dest.iata);
   if (!token || !alts.length) return { baseUSD: null, options: [] };
-  const [fromOrigin, ...fromAlts] = await Promise.all([
-    cheapestAnywhere(token, origin, month),
-    ...alts.map((a) => cheapestAnywhere(token, a.code, month)),
+  // Una consulta chica por ruta (no el listado de todos los destinos): cuida el CPU.
+  const [base, fromAlts, crossings] = await Promise.all([
+    priceTo(token, origin, dest, month),
+    Promise.all(alts.map((a) => priceTo(token, a.code, dest, month))),
+    Promise.all(alts.map((a) => (a.flight ? routeCheapest(token, origin, a.code, month) : Promise.resolve(null)))),
   ]);
-  const baseUSD = priceTo(fromOrigin, dest) ?? null;
+  const baseUSD = base ?? null;
   const options: CrossOption[] = [];
   alts.forEach((a, i) => {
-    const flightUSD = priceTo(fromAlts[i], dest);
+    const flightUSD = fromAlts[i];
     if (!flightUSD) return;
-    const realCrossing = a.flight ? fromOrigin.get(a.code) : undefined;
+    const realCrossing = crossings[i] ?? undefined;
     const crossingUSD = realCrossing ?? a.estimateUSD;
     const totalUSD = flightUSD + crossingUSD;
     options.push({

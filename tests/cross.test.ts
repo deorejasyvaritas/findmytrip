@@ -15,8 +15,9 @@ describe("cruzá y volá", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
-        const origin = new URL(String(input)).searchParams.get("origin")!;
-        const data = Object.fromEntries(Object.entries(prices[origin] ?? {}).map(([k, p]) => [k, { 0: { price: p } }]));
+        const q = new URL(String(input)).searchParams;
+        const p = prices[q.get("origin")!]?.[q.get("destination")!];
+        const data = p ? { [q.get("destination")!]: { 0: { price: p } } } : {};
         return Response.json({ success: true, data });
       }),
     );
