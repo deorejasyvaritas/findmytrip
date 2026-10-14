@@ -6,6 +6,7 @@ import { AppProvider } from "./lib/app-context.tsx";
 import AuthGate from "./components/AuthGate.tsx";
 import LegalPage from "./pages/Legal.tsx";
 import SharedTripPage from "./pages/SharedTrip.tsx";
+import JoinTripPage from "./pages/JoinTrip.tsx";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import { registerServiceWorker } from "./lib/pwa.ts";
 import "./styles.css";
@@ -27,6 +28,15 @@ createRoot(document.getElementById("root")!).render(
           element={
             <ErrorBoundary>
               <SharedTripPage />
+            </ErrorBoundary>
+          }
+        />
+        {/* Invitación a un viaje con otros: se ve sin sesión; sumarse la pide. */}
+        <Route
+          path="/unirme/:id"
+          element={
+            <ErrorBoundary>
+              <JoinTripPage />
             </ErrorBoundary>
           }
         />

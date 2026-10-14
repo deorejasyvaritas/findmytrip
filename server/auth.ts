@@ -172,7 +172,8 @@ export const clearFails = (ip: string) => saveJSON(`auth:fails:${ip}`, { n: 0 })
 
 const PUBLIC = new Set(["/api/login", "/api/logout", "/api/session", "/api/register"]);
 // Prefijos públicos solo para leer: los viajes compartidos por link.
-const PUBLIC_GET_PREFIXES = ["/api/share/"];
+// También la vista previa de una invitación a un viaje (sumarse sí pide sesión).
+const PUBLIC_GET_PREFIXES = ["/api/share/", "/api/invite/"];
 
 export const isPublic = (method: string, path: string) =>
   PUBLIC.has(path) || (method === "GET" && PUBLIC_GET_PREFIXES.some((p) => path.startsWith(p) && path.length > p.length));

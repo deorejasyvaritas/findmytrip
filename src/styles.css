@@ -1256,3 +1256,23 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .info-line > span { min-width: 0; }
 .info-line button.link { flex-shrink: 0; min-height: 0; padding: 12px 0; margin: -12px 0; }
 .entry-pop { margin-top: 8px; padding: 4px 16px 16px; border-radius: var(--r-md); background: var(--fill-2); }
+
+/* ---------- Viajes con otros ---------- */
+.trip-more-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.pkg-badge { display: flex; flex-wrap: wrap; gap: 6px; }
+.pkg-badge .badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.trip-members { padding-bottom: 16px; border-bottom: 1px solid var(--separator); margin-bottom: 16px; }
+.member-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.member-list li { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.member-list li + li { border-top: 1px solid var(--separator); }
+.member-avatar {
+  width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: var(--brand-soft); color: var(--brand-ink); font-weight: 700; font-size: 14px;
+}
+.member-name { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.member-list button.link.destructive { color: var(--red); min-height: 44px; padding: 0 4px; }
+.join-card { gap: 20px; }
+.join-summary h1 { text-align: left; overflow-wrap: anywhere; }
+.join-summary .eyebrow { color: var(--brand-ink); margin: 0; }
+.join-error h1 { font-size: 24px; }
+.join-error, .join-as { text-align: center; }

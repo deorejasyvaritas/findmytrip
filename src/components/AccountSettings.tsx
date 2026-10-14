@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../lib/api.ts";
 import { useSession } from "./AuthGate.tsx";
 import Icon from "./Icon.tsx";
+import { clearLocalData } from "../lib/local-data.ts";
 
 /** Cuenta: usuario, cambio de contraseña, registro de otras personas y cierre de sesión. */
 export default function AccountSettings() {
@@ -55,6 +56,8 @@ export default function AccountSettings() {
             className="ghost"
             onClick={async () => {
               await api.logout().catch(() => {});
+              // Que la próxima persona en este navegador no vea nada de esta cuenta.
+              clearLocalData();
               location.href = "/";
             }}
           >

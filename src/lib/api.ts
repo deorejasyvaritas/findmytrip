@@ -26,6 +26,7 @@ import type {
   TripPackage,
   SharedTripResponse,
 } from "../../shared/types.ts";
+import type { CTrip, InvitePreview } from "../../shared/ctrip.ts";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -47,8 +48,8 @@ export const api = {
     request<{ authenticated: boolean; user: string | null; role: "owner" | "member" | null; firstAccount: boolean; canRegister: boolean }>(
       "/api/session",
     ),
-  register: (user: string, password: string) =>
-    request<{ ok: boolean; user: string }>("/api/register", { method: "POST", body: JSON.stringify({ user, password }) }),
+  register: (user: string, password: string, invite?: string) =>
+    request<{ ok: boolean; user: string }>("/api/register", { method: "POST", body: JSON.stringify({ user, password, ...(invite ? { invite } : {}) }) }),
   changePassword: (current: string, password: string) =>
     request<{ ok: boolean }>("/api/account/password", { method: "POST", body: JSON.stringify({ current, password }) }),
   accountSettings: () => request<{ openSignup: boolean }>("/api/account/settings"),
@@ -107,6 +108,31 @@ export const api = {
     request<{ id: string; path: string }>("/api/share", { method: "POST", body: JSON.stringify({ package: pkg }) }),
   unshare: (id: string) => request<{ ok: boolean; shares: Record<string, string> }>(`/api/share/${id}`, { method: "DELETE" }),
   sharedTrip: (id: string) => request<SharedTripResponse>(`/api/share/${encodeURIComponent(id)}`),
+  // Viajes con otros (editables por todos los integrantes).
+  myCTrips: () => request<{ trips: CTrip[] }>("/api/me/ctrips"),
+  createCTrip: (pkg: TripPackage) => request<{ trip: CTrip }>("/api/ctrips", { method: "POST", body: JSON.stringify({ package: pkg }) }),
+  /** Devuelve el estado HTTP: 409 trae la versión más nueva en `trip`. */
+  saveCTrip: async (id: string, version: number, pkg: TripPackage): Promise<{ status: number; trip?: CTrip; error?: string }> => {
+    try {
+      const res = await fetch(`/api/ctrips/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version, package: pkg }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { trip?: CTrip; error?: string; auth?: boolean };
+      if (res.status === 401 && data.auth) window.dispatchEvent(new Event("fmt:unauthorized"));
+      return { status: res.status, trip: data.trip, error: data.error };
+    } catch {
+      return { status: 0 };
+    }
+  },
+  deleteCTrip: (id: string) => request<{ ok: boolean }>(`/api/ctrips/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  removeCTripMember: (id: string, user: string) =>
+    request<{ trip: CTrip }>(`/api/ctrips/${encodeURIComponent(id)}/members/${encodeURIComponent(user)}`, { method: "DELETE" }),
+  inviteCTrip: (id: string) =>
+    request<{ id: string; path: string; expiresAt: string }>(`/api/ctrips/${encodeURIComponent(id)}/invite`, { method: "POST" }),
+  invite: (id: string) => request<{ invite: InvitePreview }>(`/api/invite/${encodeURIComponent(id)}`),
+  joinInvite: (id: string) => request<{ trip: CTrip }>(`/api/invite/${encodeURIComponent(id)}/join`, { method: "POST" }),
   climate: (lat: number, lon: number) => request<{ months: ClimateMonth[] }>(`/api/climate?${qs({ lat, lon })}`),
   extras: (dest: string) => request<{ extras: Extra[]; partner: boolean }>(`/api/extras?dest=${dest}`),
   cross: (p: { origin: string; dest: string; month: string }) => request<CrossResult>(`/api/cross?${qs(p)}`),

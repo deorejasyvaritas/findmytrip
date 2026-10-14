@@ -35,9 +35,12 @@ function TabLink({ tab, badge, withIcon }: { tab: (typeof TABS)[number]; badge?:
 }
 
 export default function App() {
-  const { packages } = useApp();
+  const { packages, sharedTrips } = useApp();
   const location = useLocation();
-  const badgeFor = (to: string) => (to === "/viajes" ? packages.length : 0);
+  // Viajes propios más los compartidos con otros (sin contar dos veces uno que pasó a ser compartido).
+  const sharedIds = new Set(sharedTrips.map((t) => t.pkg.id));
+  const tripCount = sharedTrips.length + packages.filter((p) => !sharedIds.has(p.id)).length;
+  const badgeFor = (to: string) => (to === "/viajes" ? tripCount : 0);
   return (
     <div className="app">
       <header className="topbar">

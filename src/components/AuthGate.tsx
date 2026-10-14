@@ -3,6 +3,7 @@ import { LEGAL_LINKS } from "../pages/Legal.tsx";
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../lib/api.ts";
 import { BrandMark } from "./Icon.tsx";
+import { claimLocalData } from "../lib/local-data.ts";
 
 interface Session {
   user: string;
@@ -22,13 +23,15 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   function check() {
     api
       .session()
-      .then((s) =>
+      .then((s) => {
+        // Antes de mostrar la app: la copia local tiene que ser de esta cuenta.
+        if (s.authenticated && s.user) claimLocalData(s.user);
         setState(
           s.authenticated && s.user && s.role
             ? { kind: "ok", session: { user: s.user, role: s.role } }
             : { kind: "auth", firstAccount: s.firstAccount, canRegister: s.canRegister },
-        ),
-      )
+        );
+      })
       .catch(() => setState({ kind: "auth", firstAccount: false, canRegister: false }));
   }
 

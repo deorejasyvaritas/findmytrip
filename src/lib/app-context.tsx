@@ -3,6 +3,9 @@ import type { Destination, Meta, Party, Profile, Style, TripPackage, WatchItem }
 import { api } from "./api.ts";
 import { formatMoney } from "./format.ts";
 import { useStored } from "./storage.ts";
+import { localOwner } from "./local-data.ts";
+import { useSharedTrips, type SharedTripsState } from "./shared-trips.ts";
+import { useSession } from "../components/AuthGate.tsx";
 
 export const DEFAULT_PROFILE: Profile = {
   name: "",
@@ -17,7 +20,9 @@ export const DEFAULT_PROFILE: Profile = {
   maxFlightHours: null,
 };
 
-interface AppState {
+interface AppState extends SharedTripsState {
+  /** Usuario con la sesión iniciada. */
+  me: string;
   meta: Meta | null;
   destinations: Destination[];
   /** Foto ilustrativa por id de destino. */
@@ -48,6 +53,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [rawPackages, setPackages] = useStored<TripPackage[]>("fmt.packages", []);
   const packages = useMemo(() => cleanPackages(rawPackages), [rawPackages]);
   const [watchlist, setWatchlist] = useStored<WatchItem[]>("fmt.watchlist", []);
+  const me = useSession()?.user ?? "";
+  const shared = useSharedTrips(me);
 
   // Tus datos viven en el servidor (protegidos y sincronizados entre dispositivos).
   // El navegador guarda una copia para abrir rápido.
@@ -56,10 +63,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     api
       .userData()
       .then((server) => {
+        // Solo se sube la copia local si es de esta cuenta (nunca la de otra persona
+        // que usó el mismo navegador).
+        const mine = Boolean(me) && localOwner() === me;
         const sync = <T,>(key: "profile" | "packages" | "watchlist", local: T, set: (v: T) => void, isEmpty: (v: T) => boolean) => {
           const remote = server[key] as T | null;
           if (remote != null) set(remote);
-          else if (!isEmpty(local)) api.saveUserData(key, local).catch(() => {});
+          else if (mine && !isEmpty(local)) api.saveUserData(key, local).catch(() => {});
         };
         sync("profile", storedProfile, setStoredProfile, (v) => v == null);
         sync("packages", packages, (v) => setPackages(cleanPackages(v)), (v) => !v.length);
@@ -84,6 +94,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppState>(
     () => ({
+      ...shared,
+      me,
       meta,
       destinations,
       photos,
@@ -124,7 +136,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fromUSD: (usd) => (profile.currency === "ARS" ? Math.round(usd * rate) : Math.round(usd)),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [meta, destinations, photos, storedProfile, packages, watchlist, rate],
+    [meta, destinations, photos, storedProfile, packages, watchlist, rate, shared.sharedTrips, shared.sharedNotice, me],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { Destination, Meta, SharedTripResponse } from "../shared/types.ts";
 import { runAgent } from "./agent.ts";
@@ -57,6 +57,19 @@ import { extrasFor } from "../shared/extras.ts";
 import { buildPackage } from "./packages.ts";
 import { newShareId, shareKey, sharePath, shareSnapshot, userSharesKey, validShareId, type ShareRecord } from "./share.ts";
 import { climateFor } from "./providers/climate.ts";
+import {
+  createCTrip,
+  createInvite,
+  deleteCTrip,
+  invitePath,
+  invitePreview,
+  joinWithInvite,
+  listCTrips,
+  removeMember,
+  updateCTrip,
+  usableInvite,
+  type Result,
+} from "./ctrips.ts";
 
 // API de FindMyTrip. Corre como Cloudflare Worker (gratis); el frontend se
 // sirve como archivos estáticos desde el mismo Worker.
@@ -93,13 +106,20 @@ app.get("/session", async (c) => {
 });
 
 app.post("/register", async (c) => {
-  if (!(await signupOpen())) return c.json({ error: "El registro está cerrado. Pedile acceso a quien administra el sitio." }, 403);
-  const body = credentials.parse(await c.req.json());
+  const body = credentials.extend({ invite: z.string().max(80).optional() }).parse(await c.req.json());
+  // Una invitación vigente a un viaje habilita esa cuenta aunque el registro esté cerrado.
+  const invite = body.invite ? await usableInvite(body.invite) : null;
+  if (!(await signupOpen()) && !invite?.ok) {
+    if (invite && !invite.ok) return c.json({ error: invite.error }, invite.status);
+    return c.json({ error: "El registro está cerrado. Pedile acceso a quien administra el sitio." }, 403);
+  }
   const user = normalizeUser(body.user);
   if (!validUser(user)) return c.json({ error: "El usuario tiene que tener de 3 a 30 caracteres: letras, números, punto o guion." }, 400);
   if (body.password.length < 8) return c.json({ error: "La contraseña tiene que tener al menos 8 caracteres." }, 400);
   if (await getAccount(user)) return c.json({ error: "Ese usuario ya existe. Probá con otro o iniciá sesión." }, 409);
   const account = await createAccount(user, body.password);
+  // Entrar al viaje gasta la invitación: no sirve para crear otra cuenta.
+  if (body.invite && invite?.ok) await joinWithInvite(account.user, body.invite);
   c.header("Set-Cookie", sessionCookie(await createSession(account), isHttps(c.req.url)));
   return c.json({ ok: true, user: account.user, role: account.role });
 });
@@ -586,6 +606,58 @@ app.delete("/share/:id", async (c) => {
   await saveJSON(userSharesKey(u), rest);
   return c.json({ ok: true, shares: rest });
 });
+
+// ---------------------------------------------------------------------------
+// Viajes con otros: un viaje que varias cuentas ven y editan. Se entra con una
+// invitación (ver la vista previa es público; sumarse pide sesión).
+// ---------------------------------------------------------------------------
+
+const reply = <T>(c: Context, r: Result<T>, map: (v: T) => unknown) =>
+  r.ok ? c.json(map(r.value)) : c.json({ error: r.error, ...(r.trip ? { trip: r.trip } : {}) }, r.status);
+
+/** Cuerpo JSON acotado: un viaje no debería pesar más que esto. */
+async function tripBody(c: Context): Promise<Record<string, unknown> | null> {
+  const raw = await c.req.text();
+  if (raw.length > 60_000) return null;
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+app.get("/me/ctrips", async (c) => c.json({ trips: await listCTrips(userId(c)) }));
+
+app.post("/ctrips", async (c) => {
+  const body = await tripBody(c);
+  if (!body) return c.json({ error: "No pudimos compartir este viaje." }, 400);
+  return reply(c, await createCTrip(userId(c), body.package), (trip) => ({ trip }));
+});
+
+app.put("/ctrips/:id", async (c) => {
+  const body = await tripBody(c);
+  const version = z.number().int().min(1).safeParse(body?.version);
+  if (!body || !version.success) return c.json({ error: "No pudimos guardar el cambio." }, 400);
+  return reply(c, await updateCTrip(userId(c), c.req.param("id"), version.data, body.package), (trip) => ({ trip }));
+});
+
+app.delete("/ctrips/:id", async (c) => reply(c, await deleteCTrip(userId(c), c.req.param("id")), () => ({ ok: true })));
+
+app.delete("/ctrips/:id/members/:user", async (c) =>
+  reply(c, await removeMember(userId(c), c.req.param("id"), normalizeUser(c.req.param("user"))), (trip) => ({ trip })),
+);
+
+app.post("/ctrips/:id/invite", async (c) =>
+  reply(c, await createInvite(userId(c), c.req.param("id")), (inv) => ({ id: inv.id, path: invitePath(inv.id), expiresAt: inv.expiresAt })),
+);
+
+app.get("/invite/:id", async (c) => {
+  c.header("X-Robots-Tag", "noindex");
+  return reply(c, await invitePreview(c.req.param("id")), (invite) => ({ invite }));
+});
+
+app.post("/invite/:id/join", async (c) => reply(c, await joinWithInvite(userId(c), c.req.param("id")), (trip) => ({ trip })));
 
 // ---------------------------------------------------------------------------
 // Historial de precios por ruta (gráfico de la página del destino)
