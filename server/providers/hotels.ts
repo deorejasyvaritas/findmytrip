@@ -1,5 +1,6 @@
 import type { Destination, HotelQuote, RealHotel, Style } from "../../shared/types.ts";
-import { cached, fetchJSON } from "../cache.ts";
+import { cached } from "../cache.ts";
+import { googleSearch } from "../google-budget.ts";
 import { addDays } from "../engine.ts";
 
 // SerpApi (Google Hotels) — 250 búsquedas/mes gratis. Precios reales por
@@ -83,13 +84,17 @@ export async function googleHotels(
     hl: "es",
     sort_by: "13", // mejor puntuación primero; después ordenamos por precio
     rating: "7", // 3.5+ estrellas de reseñas: evita opciones malas
-    api_key: apiKey,
   });
-  const data = await cached<GoogleHotelsResponse>(`gh2:${dest.id}-${checkin}-${nights}-${adults}`, 24 * 3600, async () => {
-    const r = await fetchJSON<GoogleHotelsResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-hotels");
-    return r && !r.error ? r : null;
+  // Guardamos la cotización ya armada, no la respuesta cruda (pesa mucho).
+  return cached<HotelQuote>(`gh3:${dest.id}-${checkin}-${nights}-${adults}`, 24 * 3600, async () => {
+    // googleSearch revisa el presupuesto del mes y anota la búsqueda.
+    const data = await googleSearch<GoogleHotelsResponse>(apiKey, params, "serpapi-hotels");
+    return data ? toHotelQuote(data, dest, checkin, checkout, nights) : null;
   });
-  if (!data?.properties?.length) return null;
+}
+
+function toHotelQuote(data: GoogleHotelsResponse, dest: Destination, checkin: string, checkout: string, nights: number): HotelQuote | null {
+  if (!data.properties?.length) return null;
 
   const hotels: RealHotel[] = data.properties
     .filter((p) => p.name && p.rate_per_night?.extracted_lowest && nearDestination(dest, p))

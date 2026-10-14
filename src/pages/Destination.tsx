@@ -179,8 +179,9 @@ export default function DestinationPage() {
   useEffect(() => {
     setQuote(null);
     if (!day || !google) return;
-    // El servidor decide si puede consultar Google (y si no, devuelve lo que ya tiene guardado).
-    const t = setTimeout(() => fetchQuote(false, day), 400);
+    // Solo el día inicial del mes busca en Google; los demás, solo si ya está guardado
+    // (así tocar días del calendario no gasta búsquedas). El servidor además frena por mes.
+    const t = setTimeout(() => fetchQuote(dayKey !== autoKey, day), 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayKey, autoKey, google, id, profile.origin]);

@@ -1,5 +1,6 @@
 import type { Destination, ExtraDestination, RealPrice } from "../../shared/types.ts";
-import { cached, fetchJSON } from "../cache.ts";
+import { cached } from "../cache.ts";
+import { googleSearch } from "../google-budget.ts";
 import { DESTINATIONS } from "../data/destinations.ts";
 import { addDays } from "../engine.ts";
 import { offersFor } from "../escapes.ts";
@@ -77,11 +78,11 @@ async function googleExploreRaw(apiKey: string, origin: string, month: number | 
       hl: "es",
       gl: "ar",
       adults: "1", // precio por persona
-      api_key: apiKey,
     });
     if (month) params.set("month", String(month));
-    const r = await fetchJSON<GoogleExploreResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-explore");
-    if (!r || r.error || !r.destinations?.length) return null;
+    // googleSearch revisa el presupuesto del mes (si quedan pocas, no busca) y anota la búsqueda.
+    const r = await googleSearch<GoogleExploreResponse>(apiKey, params, "serpapi-explore");
+    if (!r?.destinations?.length) return null;
     // Guardamos solo los campos que usamos: la respuesta completa es pesada.
     return r.destinations.map((d) => ({
       name: d.name,

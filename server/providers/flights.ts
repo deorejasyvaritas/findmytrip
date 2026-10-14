@@ -1,6 +1,7 @@
 import type { Destination, FlightCalendar, FlightDay, FlightOffer, FlightQuote } from "../../shared/types.ts";
 import { cached, fetchJSON, peek } from "../cache.ts";
 import { addDays, estimatedCalendar } from "../engine.ts";
+import { googleSearch } from "../google-budget.ts";
 
 // ---------------------------------------------------------------------------
 // Travelpayouts (Aviasales Data API) — gratis con token.
@@ -9,13 +10,6 @@ import { addDays, estimatedCalendar } from "../engine.ts";
 // ---------------------------------------------------------------------------
 
 const TP = "https://api.travelpayouts.com";
-
-async function tp<T>(token: string, path: string, params: Record<string, string>, ttl: number): Promise<T | null> {
-  const qs = new URLSearchParams(params).toString();
-  return cached<T>(`tp:${path}?${qs}`, ttl, () =>
-    fetchJSON<T>(`${TP}${path}?${qs}`, "travelpayouts", { headers: { "X-Access-Token": token } }),
-  );
-}
 
 interface PricesForDatesItem {
   price: number;
@@ -38,28 +32,47 @@ const NIGHTS_TOLERANCE = 2;
 
 /** Precios reales de Aviasales para un mes, de tres fuentes de la Data API (todas gratis). */
 async function aviasalesMonth(token: string, origin: string, dest: string, month: string, nights: number): Promise<CalendarItem[]> {
+  // Guardamos en KV solo lo que usamos (el más barato por par de fechas), no las
+  // respuestas crudas: prices_for_dates trae hasta 1000 filas y releerlas gasta CPU.
+  const items = await cached<CalendarItem[]>(`avm1:${origin}-${dest}-${month}-${nights}`, 3 * 3600, async () => {
+    const out = await aviasalesMonthRaw(token, origin, dest, month, nights);
+    if (!out) return null; // Travelpayouts no respondió: no guardamos nada.
+    const best = new Map<string, CalendarItem>();
+    for (const i of out) {
+      const k = `${i.depart.slice(0, 10)}_${i.ret?.slice(0, 10) ?? ""}`;
+      const prev = best.get(k);
+      if (!prev || i.price < prev.price) best.set(k, i);
+    }
+    // Lista vacía también se guarda: evita repetir la búsqueda en rutas sin datos.
+    return [...best.values()];
+  });
+  return items ?? [];
+}
+
+const tpFetch = <T,>(token: string, path: string, params: Record<string, string>) =>
+  fetchJSON<T>(`${TP}${path}?${new URLSearchParams(params)}`, "travelpayouts", { headers: { "X-Access-Token": token } });
+
+async function aviasalesMonthRaw(token: string, origin: string, dest: string, month: string, nights: number): Promise<CalendarItem[] | null> {
   const [forDates, calendar, matrix] = await Promise.all([
-    tp<{ success: boolean; data: PricesForDatesItem[] }>(
+    tpFetch<{ success: boolean; data: PricesForDatesItem[] }>(
       token,
       "/aviasales/v3/prices_for_dates",
       { origin, destination: dest, departure_at: month, one_way: "false", currency: "usd", sorting: "price", limit: "1000" },
-      3 * 3600,
     ),
     // Más barato por día de salida para una estadía de `nights` días.
-    tp<{ success: boolean; data: Record<string, { price: number; airline?: string; transfers?: number; departure_at?: string; return_at?: string }> }>(
+    tpFetch<{ success: boolean; data: Record<string, { price: number; airline?: string; transfers?: number; departure_at?: string; return_at?: string }> }>(
       token,
       "/v1/prices/calendar",
       { origin, destination: dest, depart_date: month, calendar_type: "departure_date", length: String(nights), currency: "usd" },
-      3 * 3600,
     ),
     // Matriz del mes: todas las combinaciones vistas, de cualquier duración.
-    tp<{ success: boolean; data: { value: number; depart_date: string; return_date?: string; number_of_changes?: number; gate?: string }[] }>(
+    tpFetch<{ success: boolean; data: { value: number; depart_date: string; return_date?: string; number_of_changes?: number; gate?: string }[] }>(
       token,
       "/v2/prices/month-matrix",
       { origin, destination: dest, month: `${month}-01`, currency: "usd", show_to_affiliates: "true" },
-      3 * 3600,
     ),
   ]);
+  if (!forDates && !calendar && !matrix) return null;
 
   const out: CalendarItem[] = [];
   if (forDates?.success && Array.isArray(forDates.data)) {
@@ -252,19 +265,16 @@ export async function googleFlights(
     currency: "USD",
     hl: "es",
     gl: "ar",
-    api_key: apiKey,
   });
-  if (!ret) return googleOneWay(params, origin, dest.iata, depart, cacheOnly);
-  const key = `gf:${origin}-${dest.iata}-${depart}-${ret}`;
-  const data = cacheOnly
-    ? await peek<GoogleFlightsResponse>(key)
-    : await cached<GoogleFlightsResponse>(key, 12 * 3600, async () => {
-        const r = await fetchJSON<GoogleFlightsResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-flights");
-        return r && !r.error ? r : null;
-      });
-  if (!data) return null;
-
-  return toQuote(data, depart, ret, 6);
+  if (!ret) return googleOneWay(apiKey, params, origin, dest.iata, depart, cacheOnly);
+  // Guardamos la cotización ya armada (no la respuesta cruda de SerpApi, que pesa mucho).
+  const key = `gf2:${origin}-${dest.iata}-${depart}-${ret}`;
+  if (cacheOnly) return peek<FlightQuote>(key);
+  return cached<FlightQuote>(key, 12 * 3600, async () => {
+    // googleSearch revisa el presupuesto del mes y anota la búsqueda.
+    const data = await googleSearch<GoogleFlightsResponse>(apiKey, params, "serpapi-flights");
+    return data ? toQuote(data, depart, ret, 6) : null;
+  });
 }
 
 const toOffer = (f: GoogleFlight): FlightOffer | null =>
@@ -302,11 +312,18 @@ function toQuote(data: GoogleFlightsResponse, depart: string, ret: string | null
  * Google Flights solo ida (type=2). Guarda en caché la cotización ya armada y
  * recortada (3 ofertas), no la respuesta cruda: ocupa poco en KV.
  */
-async function googleOneWay(params: URLSearchParams, origin: string, dest: string, depart: string, cacheOnly: boolean): Promise<FlightQuote | null> {
+async function googleOneWay(
+  apiKey: string,
+  params: URLSearchParams,
+  origin: string,
+  dest: string,
+  depart: string,
+  cacheOnly: boolean,
+): Promise<FlightQuote | null> {
   const key = `gf1:${origin}-${dest}-${depart}`;
   if (cacheOnly) return peek<FlightQuote>(key);
   return cached<FlightQuote>(key, 12 * 3600, async () => {
-    const r = await fetchJSON<GoogleFlightsResponse>(`https://serpapi.com/search.json?${params}`, "serpapi-flights");
-    return r && !r.error ? toQuote(r, depart, null, 3) : null;
+    const r = await googleSearch<GoogleFlightsResponse>(apiKey, params, "serpapi-flights");
+    return r ? toQuote(r, depart, null, 3) : null;
   });
 }

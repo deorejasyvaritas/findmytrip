@@ -254,6 +254,8 @@ export async function runAgent(
     }),
   ];
 
+  const limited = withBudget(tools);
+
   const context = `Hoy es ${today.toISOString().slice(0, 10)}.
 Perfil del usuario:
 - Nombre: ${profile.name || "(sin nombre)"}
@@ -264,8 +266,8 @@ Perfil del usuario:
 - Ya visitó: ${profile.visited.join(", ") || "(nada cargado)"}
 - Máx. horas de vuelo: ${profile.maxFlightHours ?? "sin límite"}`;
 
-  if (env.ANTHROPIC_API_KEY) return runClaude(env.ANTHROPIC_API_KEY, tools, context, messages, proposals);
-  if (env.AI) return runWorkersAI(env.AI, tools, context, messages, proposals);
+  if (env.ANTHROPIC_API_KEY) return runClaude(env.ANTHROPIC_API_KEY, limited, context, messages, proposals);
+  if (env.AI) return runWorkersAI(env.AI, limited, context, messages, proposals);
   throw new Error("El agente no está configurado.");
 }
 
@@ -284,6 +286,30 @@ function tool<S extends z.ZodObject>(t: AgentTool<S>): AgentTool<S> {
   return t;
 }
 
+// El plan gratuito de Workers permite 50 subpedidos (fetch) por pedido. Cada
+// herramienta gasta algunos (explorar: Google + hasta 6 meses de Aviasales;
+// calendario y paquete: 3) y el modelo otros tantos: ponemos un tope.
+export const MAX_TOOL_CALLS = 8;
+export const TOOL_FETCH_BUDGET = 28;
+const TOOL_FETCHES: Record<string, number> = { explorar_destinos: 10, calendario_vuelos: 3, proponer_paquete: 3 };
+export const TOOL_LIMIT_MSG = "Límite de consultas de este mensaje alcanzado: respondé con los datos que ya tenés.";
+
+/** Envuelve las herramientas con un tope de llamadas y de subpedidos por mensaje. */
+export function withBudget(tools: AgentTool[]): AgentTool[] {
+  let calls = 0;
+  let budget = TOOL_FETCH_BUDGET;
+  return tools.map((t) => ({
+    ...t,
+    run: async (input) => {
+      const cost = TOOL_FETCHES[t.name] ?? 0;
+      if (calls >= MAX_TOOL_CALLS || cost > budget) return TOOL_LIMIT_MSG;
+      calls++;
+      budget -= cost;
+      return t.run(input);
+    },
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Claude (pago por uso, mejor calidad)
 // ---------------------------------------------------------------------------
@@ -295,7 +321,8 @@ async function runClaude(
   messages: AgentMessage[],
   proposals: TripPackage[],
 ): Promise<AgentReply> {
-  const client = new Anthropic({ apiKey });
+  // Sin respuesta en 30 s, cortamos (y un solo reintento) para no colgar el pedido.
+  const client = new Anthropic({ apiKey, timeout: 30_000, maxRetries: 1 });
   const final = await client.beta.messages.toolRunner({
     model: CLAUDE_MODEL,
     max_tokens: 16000,
