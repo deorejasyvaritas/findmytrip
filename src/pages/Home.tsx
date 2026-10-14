@@ -362,6 +362,11 @@ export default function Home() {
         ) : (
           <div className="stack-lg">
             <TripForm />
+            <Link to="/rutas" className="routes-hint">
+              <Icon name="compass" size={18} />
+              ¿Sin ideas para combinar? Mirá rutas armadas
+              <Icon name="chevronRight" size={16} />
+            </Link>
             <div className="stack">
             <p className="catalog-title">O elegí un destino con ficha completa</p>
             <div className="dest-search">
@@ -397,6 +402,17 @@ export default function Home() {
       </section>
 
       <RadarSection />
+
+      <Link to="/rutas" className="card map-teaser">
+        <span className="map-teaser-art" aria-hidden="true">
+          <Icon name="compass" size={28} />
+        </span>
+        <span className="grow">
+          <strong>Rutas armadas</strong>
+          <span className="small muted">Nordeste de Brasil, Perú clásico, Europa y más: viajes de varias paradas listos para ajustar.</span>
+        </span>
+        <Icon name="chevronRight" size={18} />
+      </Link>
 
       {meta?.liveFlights && (
         <Link to="/mapa" className="card map-teaser">

@@ -19,6 +19,7 @@ const ComparePage = lazy(() => import("./pages/Compare.tsx"));
 
 // El mapa trae Leaflet: se baja solo cuando alguien lo abre.
 const FlightMapPage = lazy(() => import("./pages/FlightMap.tsx"));
+const RoutesPage = lazy(() => import("./pages/Routes.tsx"));
 
 function TabLink({ tab, badge, withIcon }: { tab: (typeof TABS)[number]; badge?: number; withIcon: boolean }) {
   const content = (
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/buscar" element={<SearchPage />} />
           <Route path="/comparar" element={<ComparePage />} />
+          <Route path="/rutas" element={<Suspense fallback={null}><RoutesPage /></Suspense>} />
           <Route
             path="/mapa"
             element={

@@ -1339,3 +1339,45 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .chat-retry p { margin: 0; }
 .error-detail-wrap { font-size: 13px; color: var(--label-2); max-width: 100%; }
 .error-detail-wrap summary { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; }
+
+/* ==========================================================================
+   Rutas armadas (/rutas)
+   ========================================================================== */
+.routes-page .subhead { max-width: 60ch; }
+.routes-filters { display: flex; flex-direction: column; gap: 16px; }
+.routes-group { display: flex; flex-direction: column; gap: 8px; }
+.routes-group .eyebrow { margin: 0; }
+.routes-filters .chip { min-height: var(--control); padding: 0 16px; font-size: 15px; }
+.routes-chip-more { color: var(--tint-ink); font-weight: 600; }
+.routes-more { align-self: flex-start; gap: 8px; margin-left: -12px; color: var(--tint-ink); }
+.routes-more .badge-count { position: static; }
+.routes-more-panel { gap: 16px; }
+.routes-count { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--separator); }
+.routes-count .plain { min-height: var(--control); }
+.routes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 16px; }
+.route-card { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.route-card .photo { color: rgba(254, 254, 254, 0.9); }
+.route-body { display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 0; }
+.route-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.route-line { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 15px; font-weight: 600; }
+.route-line li { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.route-line .icon { color: var(--brand-ink); }
+.route-price { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: var(--r-md); background: var(--fill-2); }
+.route-price .price { color: var(--label); }
+.route-price button.link { align-self: flex-start; min-height: var(--control); font-size: 17px; }
+.route-season { display: flex; align-items: center; gap: 6px; }
+.route-season .icon { color: var(--orange); }
+.route-cta { width: 100%; margin-top: auto; }
+.routes-hint { display: inline-flex; align-items: center; gap: 8px; min-height: var(--control); color: #fefefe; font-weight: 600; margin-top: -32px; }
+.routes-hint:hover { text-decoration: underline; }
+.route-sheet { width: min(720px, calc(100vw - 16px)); max-height: calc(100dvh - 32px); background: transparent; box-shadow: none; overflow: auto; }
+.route-sheet .search-panel { border-radius: 24px; }
+.route-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.route-sheet-head h2 { color: #fefefe; margin-top: 4px; }
+.route-sheet-head .small { color: rgba(254, 254, 254, 0.94); margin-top: 4px; }
+.route-sheet-close { color: #fefefe; margin: -8px -8px 0 0; }
+.route-sheet-close:hover { background: rgba(0, 0, 0, 0.12); color: #fefefe; }
+@media (max-width: 767px) {
+  .route-sheet { width: 100vw; max-width: 100vw; margin: auto 0 0; max-height: calc(100dvh - 24px); border-radius: 24px 24px 0 0; }
+  .route-sheet .search-panel { border-radius: 24px 24px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+}

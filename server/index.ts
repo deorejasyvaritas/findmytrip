@@ -48,6 +48,7 @@ import { googleHotels } from "./providers/hotels.ts";
 import { xoteloHotels } from "./providers/xotelo.ts";
 import { escapes } from "./escapes.ts";
 import { crossAndFly } from "./cross.ts";
+import { routeQuotes } from "./routes.ts";
 import { partnerLinks } from "./partner-links.ts";
 import { searchFlights, searchMulti, searchPlaces } from "./search.ts";
 import { geocode, nearestCatalog, planTrip, refreshLeg } from "./trip.ts";
@@ -758,6 +759,12 @@ app.get("/cross", async (c) => {
 app.get("/escapes", async (c) => {
   const { origin, travelers } = z.object({ origin: originCode, travelers: travelersQ }).parse(c.req.query());
   return c.json(await escapes(env(c).TRAVELPAYOUTS_TOKEN, origin, new Date(), partyQ(c.req.query(), travelers)));
+});
+
+// Rutas armadas: precio "desde" con vuelos vistos del mes y alojamiento promedio (sin Google).
+app.get("/routes", async (c) => {
+  const { origin, month } = z.object({ origin: originCode, month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }).parse(c.req.query());
+  return c.json(await routeQuotes(env(c).TRAVELPAYOUTS_TOKEN, origin, month));
 });
 
 // Barrido manual (además de los automáticos). Limitado para no abusar de la API.
