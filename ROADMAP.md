@@ -28,3 +28,8 @@ Ordenadas por impacto para el viajero. Las marcadas con (gratis) no suman costos
 ## Ideas de turismocity
 18. **Mapa de vuelos baratos** (hecho): tocar un destino en el mapa y ver el precio desde tu ciudad (con los datos del radar).
 19. **Crear alerta desde un resultado** (hecho): botón "Avisarme si baja" también en las tarjetas de la búsqueda.
+
+## Próximo
+20. **Rutas armadas** (idea de Trailfinders): itinerarios modelo de varios países ("Nordeste de Brasil, 12 días", "Europa clásica, 15 días") con precio "desde" por persona, filtros por país, duración y estilo; se abren en "Ya sé a dónde" con precios reales del día.
+21. **Filtro por duración** del viaje (idea de trip-finder.org).
+22. **Pantallas** (auditoría): contraste de textos grises y del mensaje verde sobre el rosa, mensajes en inglés sin conexión, app instalada después de una actualización, avisos que fallan sin mostrar error, zonas táctiles chicas.
