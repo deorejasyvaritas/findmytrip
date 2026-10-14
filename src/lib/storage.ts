@@ -22,7 +22,9 @@ export function save<T>(key: string, value: T): void {
 
 export function useStored<T>(key: string, fallback: T): [T, (v: T | ((prev: T) => T)) => void] {
   const [value, setValue] = useState<T>(() => load(key, fallback));
-  useEffect(() => save(key, value), [key, value]);
+  useEffect(() => {
+    save(key, value);
+  }, [key, value]);
   const set = useCallback((v: T | ((prev: T) => T)) => setValue(v), []);
   return [value, set];
 }

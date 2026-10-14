@@ -28,7 +28,10 @@ export default function Agent() {
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [messages, loading]);
+  // Con llaves: en Chrome nuevo scrollIntoView devuelve una promesa, y un efecto que la devuelve rompe la pantalla al salir.
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
   async function send(text: string) {
     const content = text.trim();

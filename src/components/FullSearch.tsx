@@ -46,7 +46,9 @@ export function PlaceInput({
   const [active, setActive] = useState(0);
   const typed = useRef(false);
 
-  useEffect(() => setText(value?.label ?? ""), [value?.code, value?.label]);
+  useEffect(() => {
+    setText(value?.label ?? "");
+  }, [value?.code, value?.label]);
 
   useEffect(() => {
     if (!typed.current || text.trim().length < 2) return setItems([]);
@@ -212,7 +214,9 @@ export function FlightForm({ kind }: { kind: "vuelos" | "paquete" }) {
   const [roundTrip, setRoundTrip] = useState<"rt" | "ow">(pre && !pre.get("ret") ? "ow" : "rt");
   const [origin, setOrigin] = useState<PlaceValue | null>(readPlace(pre?.get("from") ?? null) ?? home);
   // El nombre de la ciudad de salida llega con los datos del sitio: lo completamos cuando aparece.
-  useEffect(() => setOrigin((o) => (o && o.code === home.code && o.label !== home.label ? home : o)), [home.code, home.label]);
+  useEffect(() => {
+    setOrigin((o) => (o && o.code === home.code && o.label !== home.label ? home : o));
+  }, [home.code, home.label]);
   const [dest, setDest] = useState<PlaceValue | null>(readPlace(pre?.get("to") ?? null));
   const [depart, setDepart] = useState(pre?.get("depart") ?? plusDays(today(), 30));
   const [ret, setRet] = useState(pre?.get("ret") ?? plusDays(today(), 37));
@@ -337,10 +341,9 @@ export function MultiForm() {
   });
   const [party, setParty] = useParty(pre);
   const [error, setError] = useState<string | null>(null);
-  useEffect(
-    () => setLegs((ls) => ls.map((l, i) => (i === 0 && l.origin?.code === home.code && l.origin.label !== home.label ? { ...l, origin: home } : l))),
-    [home.code, home.label],
-  );
+  useEffect(() => {
+    setLegs((ls) => ls.map((l, i) => (i === 0 && l.origin?.code === home.code && l.origin.label !== home.label ? { ...l, origin: home } : l)));
+  }, [home.code, home.label]);
 
   const update = (i: number, patch: Partial<LegDraft>) =>
     setLegs((ls) =>
@@ -417,7 +420,9 @@ export function GeoInput({ label, value, onChange }: { label: string; value: Geo
   const [active, setActive] = useState(0);
   const typed = useRef(false);
 
-  useEffect(() => setText(value ? geoLabel(value) : ""), [value?.lat, value?.lon, value?.name]);
+  useEffect(() => {
+    setText(value ? geoLabel(value) : "");
+  }, [value?.lat, value?.lon, value?.name]);
 
   useEffect(() => {
     if (!typed.current || text.trim().length < 2) return setItems([]);
@@ -511,7 +516,9 @@ export function TripForm() {
   const home = useOrigin();
   const pre = usePrefill("viaje");
   const [origin, setOrigin] = useState<PlaceValue | null>(readPlace(pre?.get("from") ?? null) ?? home);
-  useEffect(() => setOrigin((o) => (o && o.code === home.code && o.label !== home.label ? home : o)), [home.code, home.label]);
+  useEffect(() => {
+    setOrigin((o) => (o && o.code === home.code && o.label !== home.label ? home : o));
+  }, [home.code, home.label]);
   const [depart, setDepart] = useState(pre?.get("depart") ?? plusDays(today(), 30));
   const [stops, setStops] = useState<StopDraft[]>(() => {
     const fromUrl = (pre?.getAll("stop") ?? []).map(readStop).filter((s): s is NonNullable<typeof s> => Boolean(s));

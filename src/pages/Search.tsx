@@ -42,7 +42,9 @@ export default function SearchPage() {
   const depart = params.get("depart") ?? "";
   const ret = params.get("ret");
 
-  useEffect(() => setEditing(false), [params]);
+  useEffect(() => {
+    setEditing(false);
+  }, [params]);
 
   const tripStops = params.getAll("stop").map(readStop).filter((x): x is NonNullable<typeof x> => Boolean(x));
   const summary =
@@ -184,7 +186,13 @@ function FlightResults({ origin, dest, depart, ret }: { origin: string; dest: st
               className={`strip-day ${d.date === depart ? "on" : ""} ${d.price === Math.min(...data.strip.map((x) => x.price)) ? "cheap" : ""}`}
               onClick={() => moveTo(d.date)}
               aria-current={d.date === depart ? "date" : undefined}
-              ref={d.date === depart ? (el) => el?.scrollIntoView({ block: "nearest", inline: "center" }) : undefined}
+              ref={
+                d.date === depart
+                  ? (el) => {
+                      el?.scrollIntoView({ block: "nearest", inline: "center" });
+                    }
+                  : undefined
+              }
             >
               <span>{capitalize(shortDate(d.date))}</span>
               <strong>{money(d.price)}</strong>
