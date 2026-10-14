@@ -29,6 +29,8 @@ const S = {
   norteamerica: [0.95, 0.9, 1.0, 1.05, 1.0, 1.2, 1.35, 1.25, 0.95, 0.95, 1.05, 1.3],
   andes: [1.15, 1.1, 1.0, 1.0, 0.9, 0.95, 1.25, 1.15, 0.95, 0.95, 0.9, 1.05],
   asia: [1.15, 1.1, 1.05, 1.15, 0.95, 0.9, 1.1, 1.1, 0.9, 1.0, 1.0, 1.15],
+  // Sierra gaúcha: picos en vacaciones de invierno (julio) y en Natal Luz (noviembre a enero).
+  serraGaucha: [1.15, 0.95, 0.85, 0.85, 0.9, 1.1, 1.4, 1.05, 0.9, 0.95, 1.1, 1.3],
 };
 
 export const DESTINATIONS: Destination[] = [
@@ -144,6 +146,60 @@ export const DESTINATIONS: Destination[] = [
     areas: ["Ponta Verde", "Pajuçara", "Maragogi"],
   },
   {
+    id: "maragogi", name: "Maragogi", country: "Brasil", region: "Sudamérica", iata: "MCZ",
+    lat: -9.012, lon: -35.222, tags: ["playa", "relax", "naturaleza"], hiddenGem: true,
+    baseFlightUSD: 460, flightHours: 5.0, dailyUSD: { low: 30, mid: 60, high: 130 },
+    lodgingUSD: { low: 45, mid: 110, high: 280 }, season: S.brasilPlaya, bestMonths: [9, 10, 11, 12, 1, 2],
+    docs: "DNI", blurb: "El Caribe brasileño: piscinas naturales en alta mar y resorts all inclusive frente a la playa. Se llega desde Maceió o Recife (unas 2 horas por ruta).",
+    highlights: ["Galés de Maragogi", "Praia de Antunes", "São Miguel dos Milagres", "Ruta Ecológica"],
+    areas: ["Centro de Maragogi", "Barra Grande", "São Miguel dos Milagres"],
+  },
+  {
+    id: "porto-de-galinhas", name: "Porto de Galinhas", country: "Brasil", region: "Sudamérica", iata: "REC",
+    lat: -8.505, lon: -35.006, tags: ["playa", "relax", "gastronomía", "naturaleza"],
+    baseFlightUSD: 470, flightHours: 5.0, dailyUSD: { low: 30, mid: 60, high: 130 },
+    lodgingUSD: { low: 40, mid: 100, high: 260 }, season: S.brasilPlaya, bestMonths: [9, 10, 11, 12, 1, 2],
+    docs: "DNI", blurb: "Piscinas naturales con peces, resorts all inclusive en Muro Alto y un pueblito lleno de restaurantes. A 60 km del aeropuerto de Recife.",
+    highlights: ["Piscinas naturales en jangada", "Praia de Muro Alto", "Maracaípe", "Praia dos Carneiros"],
+    areas: ["Vila de Porto de Galinhas", "Muro Alto (resorts)", "Cupe"],
+  },
+  {
+    id: "natal", name: "Natal y Pipa", country: "Brasil", region: "Sudamérica", iata: "NAT",
+    lat: -5.79, lon: -35.21, tags: ["playa", "aventura", "naturaleza"], hiddenGem: true,
+    baseFlightUSD: 480, flightHours: 5.5, dailyUSD: { low: 30, mid: 55, high: 120 },
+    lodgingUSD: { low: 35, mid: 85, high: 210 }, season: S.brasilPlaya, bestMonths: [9, 10, 11, 12, 1, 2],
+    docs: "DNI", blurb: "Dunas en buggy, lagunas y la playa de Pipa con delfines. Sol casi todo el año.",
+    highlights: ["Dunas de Genipabu en buggy", "Praia da Pipa", "Ponta Negra", "Piscinas de Maracajaú"],
+    areas: ["Ponta Negra", "Pipa"],
+  },
+  {
+    id: "fortaleza", name: "Fortaleza", country: "Brasil", region: "Sudamérica", iata: "FOR",
+    lat: -3.73, lon: -38.52, tags: ["playa", "parques", "aventura", "noche"], hiddenGem: true,
+    baseFlightUSD: 500, flightHours: 6.0, dailyUSD: { low: 30, mid: 55, high: 120 },
+    lodgingUSD: { low: 35, mid: 85, high: 210 }, season: S.brasilPlaya, bestMonths: [7, 8, 9, 10, 11, 12],
+    docs: "DNI", blurb: "Playas con viento constante, el parque acuático Beach Park y excursiones a Jericoacoara y Canoa Quebrada.",
+    highlights: ["Beach Park (parque acuático)", "Jericoacoara", "Canoa Quebrada", "Praia do Futuro"],
+    areas: ["Meireles", "Praia de Iracema", "Porto das Dunas (Beach Park)"],
+  },
+  {
+    id: "beto-carrero", name: "Beto Carrero y Penha", country: "Brasil", region: "Sudamérica", iata: "NVT",
+    lat: -26.8, lon: -48.62, tags: ["parques", "playa", "naturaleza"],
+    baseFlightUSD: 320, flightHours: 3.0, dailyUSD: { low: 35, mid: 65, high: 130 },
+    lodgingUSD: { low: 35, mid: 80, high: 180 }, season: S.brasilPlaya, bestMonths: [1, 2, 3, 10, 11, 12],
+    docs: "DNI", blurb: "El parque temático más grande de Latinoamérica, con playas tranquilas al lado y Balneário Camboriú a 40 km.",
+    highlights: ["Beto Carrero World", "Praia de Armação", "Balneário Camboriú y Unipraias", "Florianópolis (a 120 km)"],
+    areas: ["Penha (cerca del parque)", "Armação do Itapocorói", "Balneário Camboriú"],
+  },
+  {
+    id: "gramado", name: "Gramado y Canela", country: "Brasil", region: "Sudamérica", iata: "POA",
+    lat: -29.38, lon: -50.87, tags: ["parques", "gastronomía", "relax", "naturaleza"],
+    baseFlightUSD: 260, flightHours: 2.0, dailyUSD: { low: 40, mid: 75, high: 150 },
+    lodgingUSD: { low: 45, mid: 110, high: 260 }, season: S.serraGaucha, bestMonths: [4, 5, 6, 7, 8, 11, 12],
+    docs: "DNI", blurb: "Pueblo de estilo alpino en la sierra gaúcha: fondue, chocolate, Snowland y Mini Mundo. A 2 horas de Porto Alegre; en invierno hace frío de verdad.",
+    highlights: ["Snowland", "Mini Mundo", "Natal Luz (noviembre a enero)", "Cascata do Caracol"],
+    areas: ["Centro de Gramado", "Canela"],
+  },
+  {
     id: "punta-del-este", name: "Punta del Este", country: "Uruguay", region: "Sudamérica", iata: "PDP",
     lat: -34.96, lon: -54.95, tags: ["playa", "noche", "relax", "gastronomía"],
     baseFlightUSD: 180, flightHours: 0.8, dailyUSD: { low: 50, mid: 95, high: 200 },
@@ -255,11 +311,11 @@ export const DESTINATIONS: Destination[] = [
   },
   {
     id: "cancun", name: "Cancún y Riviera Maya", country: "México", region: "Caribe y Centroamérica", iata: "CUN",
-    lat: 21.16, lon: -86.85, tags: ["playa", "noche", "cultura", "relax"],
+    lat: 21.16, lon: -86.85, tags: ["playa", "noche", "cultura", "relax", "parques"],
     baseFlightUSD: 850, flightHours: 9.0, dailyUSD: { low: 45, mid: 90, high: 200 },
     lodgingUSD: { low: 60, mid: 160, high: 420 }, season: S.caribe, bestMonths: [1, 2, 3, 4, 11, 12],
     docs: "Pasaporte", blurb: "Playas, cenotes y ruinas mayas. Tulum y Bacalar valen la pena.",
-    highlights: ["Tulum", "Cenotes", "Bacalar", "Isla Mujeres"],
+    highlights: ["Tulum", "Cenotes", "Xcaret y Xel-Há", "Bacalar", "Isla Mujeres"],
     areas: ["Zona Hotelera", "Playa del Carmen", "Tulum"],
   },
   {
@@ -309,6 +365,24 @@ export const DESTINATIONS: Destination[] = [
     highlights: ["Central Park", "Brooklyn", "Broadway"],
     areas: ["Midtown", "Lower East Side", "Brooklyn"],
   },
+  {
+    id: "orlando", name: "Orlando", country: "Estados Unidos", region: "Norteamérica", iata: "MCO",
+    lat: 28.54, lon: -81.38, tags: ["parques", "compras", "ciudad"],
+    baseFlightUSD: 950, flightHours: 10.5, dailyUSD: { low: 80, mid: 150, high: 300 },
+    lodgingUSD: { low: 90, mid: 170, high: 380 }, season: S.norteamerica, bestMonths: [2, 3, 4, 5, 10, 11],
+    docs: "Pasaporte + visa EE.UU.", blurb: "La capital de los parques: Disney, Universal y SeaWorld, más outlets. Las entradas se pagan aparte; en julio y enero hay más filas.",
+    highlights: ["Walt Disney World (Magic Kingdom, EPCOT)", "Universal Orlando y Epic Universe", "SeaWorld", "Outlets de Orlando"],
+    areas: ["Lake Buena Vista (Disney)", "International Drive (Universal)", "Kissimmee"],
+  },
+  {
+    id: "los-angeles", name: "Los Ángeles y Anaheim", country: "Estados Unidos", region: "Norteamérica", iata: "LAX",
+    lat: 34.05, lon: -118.24, tags: ["parques", "ciudad", "playa", "compras"],
+    baseFlightUSD: 1150, flightHours: 14.0, dailyUSD: { low: 80, mid: 150, high: 300 },
+    lodgingUSD: { low: 110, mid: 210, high: 450 }, season: S.norteamerica, bestMonths: [4, 5, 6, 9, 10],
+    docs: "Pasaporte + visa EE.UU.", blurb: "Disneyland en Anaheim, Universal Studios Hollywood y playas del Pacífico. Conviene auto para moverse.",
+    highlights: ["Disneyland y Disney California Adventure", "Universal Studios Hollywood", "Santa Mónica y Venice", "Hollywood"],
+    areas: ["Anaheim (Disneyland)", "Santa Mónica", "Hollywood"],
+  },
 
   // ---------- Europa ----------
   {
@@ -344,16 +418,16 @@ export const DESTINATIONS: Destination[] = [
     baseFlightUSD: 1180, flightHours: 13.0, dailyUSD: { low: 60, mid: 110, high: 230 },
     lodgingUSD: { low: 80, mid: 170, high: 380 }, season: S.europa, bestMonths: [5, 6, 9, 10],
     docs: "Pasaporte", blurb: "Gaudí, playa urbana y la Costa Brava cerca.",
-    highlights: ["Sagrada Familia", "El Born", "Costa Brava"],
+    highlights: ["Sagrada Familia", "El Born", "Costa Brava", "PortAventura (en Salou, a 1 hora)"],
     areas: ["Eixample", "Gràcia", "El Born"],
   },
   {
     id: "paris", name: "París", country: "Francia", region: "Europa", iata: "PAR",
-    lat: 48.86, lon: 2.35, tags: ["ciudad", "cultura", "gastronomía", "compras"],
+    lat: 48.86, lon: 2.35, tags: ["ciudad", "cultura", "gastronomía", "compras", "parques"],
     baseFlightUSD: 1250, flightHours: 13.5, dailyUSD: { low: 70, mid: 130, high: 280 },
     lodgingUSD: { low: 100, mid: 210, high: 500 }, season: S.europa, bestMonths: [4, 5, 6, 9, 10],
     docs: "Pasaporte", blurb: "Siempre vale la pena. Combiná con tren a Bruselas o Ámsterdam.",
-    highlights: ["Louvre", "Montmartre", "Versalles"],
+    highlights: ["Louvre", "Montmartre", "Versalles", "Disneyland Paris"],
     areas: ["Le Marais", "Saint-Germain", "Canal Saint-Martin"],
   },
   {
@@ -387,11 +461,11 @@ export const DESTINATIONS: Destination[] = [
   },
   {
     id: "japon", name: "Japón", country: "Japón", region: "Asia", iata: "TYO",
-    lat: 35.68, lon: 139.69, tags: ["cultura", "ciudad", "gastronomía", "naturaleza"],
+    lat: 35.68, lon: 139.69, tags: ["cultura", "ciudad", "gastronomía", "naturaleza", "parques"],
     baseFlightUSD: 1700, flightHours: 26.0, dailyUSD: { low: 50, mid: 95, high: 220 },
     lodgingUSD: { low: 60, mid: 140, high: 380 }, season: S.asia, bestMonths: [3, 4, 10, 11],
     docs: "Pasaporte", blurb: "Tokio, Kioto y el JR Pass. Con el yen bajo está más accesible que nunca.",
-    highlights: ["Tokio", "Kioto", "Monte Fuji"],
+    highlights: ["Tokio", "Kioto", "Monte Fuji", "Tokyo Disneyland y DisneySea"],
     areas: ["Shinjuku", "Asakusa", "Kioto - Gion"],
   },
 

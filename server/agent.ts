@@ -17,7 +17,7 @@ const BAGS = ["personal", "cabin", "checked1", "checked2"] as const satisfies re
 
 const INTERESTS = [
   "playa", "montaña", "ciudad", "gastronomía", "aventura", "nieve",
-  "cultura", "naturaleza", "relax", "noche", "compras",
+  "cultura", "naturaleza", "relax", "noche", "compras", "parques",
 ] as const satisfies readonly Interest[];
 const REGIONS = [
   "Argentina", "Sudamérica", "Caribe y Centroamérica", "Norteamérica",

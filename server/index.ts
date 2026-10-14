@@ -201,7 +201,7 @@ app.put("/me/data/:key", async (c) => {
 
 const INTERESTS = [
   "playa", "montaña", "ciudad", "gastronomía", "aventura", "nieve",
-  "cultura", "naturaleza", "relax", "noche", "compras",
+  "cultura", "naturaleza", "relax", "noche", "compras", "parques",
 ] as const;
 const REGIONS = [
   "Argentina", "Sudamérica", "Caribe y Centroamérica", "Norteamérica",

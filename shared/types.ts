@@ -13,7 +13,8 @@ export type Interest =
   | "naturaleza"
   | "relax"
   | "noche"
-  | "compras";
+  | "compras"
+  | "parques";
 
 export type Region =
   | "Argentina"

@@ -63,7 +63,11 @@ export const ICONS = {
   waves:
     '<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  ferrisWheel:
+    '<circle cx="12" cy="10" r="2"/><circle cx="12" cy="10" r="7"/><path d="M12 3v5"/><path d="M12 12v5"/><path d="M5 10h5"/><path d="M14 10h5"/><path d="m7.05 5.05 3.54 3.54"/><path d="m13.41 11.41 3.54 3.54"/><path d="m7.05 14.95 3.54-3.54"/><path d="m13.41 8.59 3.54-3.54"/><path d="m8 22 4-5 4 5"/><path d="M6 22h12"/>',
   bag: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  ship:
+    '<path d="M12 10.19V14"/><path d="M12 2v3"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M19.38 20A11.6 11.6 0 0 0 21 14l-8.19-3.64a2 2 0 0 0-1.62 0L3 14a11.6 11.6 0 0 0 2.81 7.76"/><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1s1.2 1 2.5 1c2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>',
   // Clima y requisitos de entrada
   cloudRain:
     '<path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 2.5 8.24"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/>',
@@ -99,6 +103,7 @@ export const INTEREST_ICON: Record<string, IconName> = {
   relax: "waves",
   noche: "moon",
   compras: "bag",
+  parques: "ferrisWheel",
 };
 
 /** Pestañas principales (barra superior en escritorio, barra inferior en celular). */

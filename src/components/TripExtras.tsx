@@ -10,6 +10,7 @@ const ICON: Record<Extra["kind"], IconName> = {
   esim: "globe",
   excursiones: "star",
   entradas: "ticket",
+  parques: "ferrisWheel",
   seguro: "shield",
 };
 

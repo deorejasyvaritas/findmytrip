@@ -414,6 +414,17 @@ export default function Home() {
         <Icon name="chevronRight" size={18} />
       </Link>
 
+      <Link to="/cruceros" className="card map-teaser">
+        <span className="map-teaser-art" aria-hidden="true">
+          <Icon name="ship" size={28} />
+        </span>
+        <span className="grow">
+          <strong>Cruceros</strong>
+          <span className="small muted">Brasil desde Buenos Aires, Caribe, Mediterráneo, fiordos y Cabo de Hornos: rutas, temporadas y dónde ver las salidas.</span>
+        </span>
+        <Icon name="chevronRight" size={18} />
+      </Link>
+
       {meta?.liveFlights && (
         <Link to="/mapa" className="card map-teaser">
           <span className="map-teaser-art" aria-hidden="true">

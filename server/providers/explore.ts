@@ -33,6 +33,8 @@ const EXTRA_AIRPORTS: Record<string, string[]> = {
   japon: ["HND", "NRT", "KIX"],
   marruecos: ["RAK", "CMN"],
   cancun: ["CUN", "TQO"],
+  orlando: ["MCO", "SFB"],
+  "los-angeles": ["LAX", "SNA"],
 };
 
 const BY_AIRPORT = new Map<string, Destination>();

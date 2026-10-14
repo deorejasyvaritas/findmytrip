@@ -4,7 +4,7 @@ import type { Destination } from "./types.ts";
 // convierten en links con comisión en el servidor (API de links de Travelpayouts).
 
 export interface Extra {
-  kind: "traslado" | "auto" | "esim" | "excursiones" | "entradas" | "seguro";
+  kind: "traslado" | "auto" | "esim" | "excursiones" | "entradas" | "parques" | "seguro";
   title: string;
   description: string;
   provider: string;
@@ -50,14 +50,43 @@ const CAR_COUNTRY: Record<string, string> = {
   "san-martin": "argentina",
   florianopolis: "brazil",
   maceio: "brazil",
+  maragogi: "brazil",
+  "porto-de-galinhas": "brazil",
+  natal: "brazil",
+  fortaleza: "brazil",
+  "beto-carrero": "brazil",
+  gramado: "brazil",
   "punta-del-este": "uruguay",
   "costa-rica": "costa-rica",
   aruba: "aruba",
   cancun: "mexico",
   miami: "usa",
+  orlando: "usa",
+  "los-angeles": "usa",
   lisboa: "portugal",
   grecia: "greece",
   croacia: "croatia",
+};
+
+// Entradas a parques de atracciones (destinos con el interés "parques").
+// Klook (programa 4110 de Travelpayouts) vende entradas de Disney y Universal;
+// los parques de Brasil se venden en su sitio oficial (sin comisión, pero es
+// donde está el precio real). Sin precios: se ven en el sitio al elegir fecha.
+interface ParkTickets {
+  parks: string;
+  provider: string;
+  url: string;
+}
+const klook = (q: string) => `https://www.klook.com/es/search/result/?query=${encodeURIComponent(q)}`;
+export const PARK_TICKETS: Record<string, ParkTickets> = {
+  orlando: { parks: "Walt Disney World, Universal y SeaWorld", provider: "Klook", url: klook("Walt Disney World") },
+  "los-angeles": { parks: "Disneyland y Universal Studios Hollywood", provider: "Klook", url: klook("Disneyland California") },
+  paris: { parks: "Disneyland Paris", provider: "Klook", url: klook("Disneyland Paris") },
+  japon: { parks: "Tokyo Disneyland, DisneySea y Universal Studios Japan", provider: "Klook", url: klook("Tokyo Disney Resort") },
+  cancun: { parks: "Xcaret y Xel-Há", provider: "Klook", url: klook("Xcaret") },
+  "beto-carrero": { parks: "Beto Carrero World", provider: "Beto Carrero World (sitio oficial)", url: "https://www.betocarrero.com.br/" },
+  gramado: { parks: "Snowland", provider: "Snowland (sitio oficial)", url: "https://www.snowland.com.br/" },
+  fortaleza: { parks: "Beach Park", provider: "Beach Park (sitio oficial)", url: "https://beachpark.com.br/" },
 };
 
 /** Máximo de tarjetas de extras para que la grilla quede prolija. */
@@ -92,8 +121,20 @@ export function extrasFor(dest: Destination): Extra[] {
       url: `https://localrent.com/es/${car}/`,
     });
   }
+  // Entradas a parques: van segundas para que no queden afuera del máximo de tarjetas.
+  // Reemplazan a la tarjeta genérica de Tiqets (no hace falta mostrar las dos).
+  const park = dest.tags.includes("parques") ? PARK_TICKETS[dest.id] : undefined;
+  if (park) {
+    out.splice(1, 0, {
+      kind: "parques",
+      title: "Entradas a parques",
+      description: `${park.parks}: entradas con fecha. El precio se ve en el sitio al elegir el día.`,
+      provider: park.provider,
+      url: park.url,
+    });
+  }
   // Entradas a museos y atracciones: Tiqets casi no tiene oferta dentro de Argentina.
-  if (abroad) {
+  if (abroad && !park) {
     out.push({
       kind: "entradas",
       title: "Entradas y atracciones",
