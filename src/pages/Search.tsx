@@ -115,7 +115,7 @@ export default function SearchPage() {
       {kind === "paquete" && from && to && depart && ret && <PackageResults />}
       {kind === "hoteles" && to && depart && ret && <HotelResults place={to.code} name={to.label} checkin={depart} checkout={ret} party={party} />}
       {kind === "multi" && <MultiResults />}
-      {kind === "viaje" && from && depart && tripStops.length > 0 && <TripResults />}
+      {kind === "viaje" && from && (depart || tripWin) && tripStops.length > 0 && <TripResults />}
     </div>
   );
 }
