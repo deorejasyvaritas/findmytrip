@@ -2,6 +2,7 @@ import type { Destination, FlightCalendar, FlightDay, FlightOffer, FlightQuote }
 import { cached, fetchJSON, peek } from "../cache.ts";
 import { estimatedCalendar } from "../engine.ts";
 import { googleSearch } from "../google-budget.ts";
+import { bagNotes } from "../../shared/flight-details.ts";
 
 // ---------------------------------------------------------------------------
 // Travelpayouts (Aviasales Data API) — gratis con token.
@@ -293,7 +294,9 @@ interface GoogleFlight {
   price?: number;
   total_duration?: number;
   layovers?: unknown[];
-  flights?: { airline?: string; departure_airport?: { time?: string } }[];
+  flights?: { airline?: string; departure_airport?: { time?: string }; arrival_airport?: { time?: string }; extensions?: string[] }[];
+  /** Notas de la tarifa (por ejemplo, equipaje con cargo). */
+  extensions?: string[];
 }
 interface GoogleFlightsResponse {
   best_flights?: GoogleFlight[];
@@ -342,6 +345,8 @@ const toOffer = (f: GoogleFlight): FlightOffer | null =>
         stops: f.layovers?.length ?? Math.max(0, (f.flights?.length ?? 1) - 1),
         durationMin: f.total_duration ?? null,
         departTime: f.flights?.[0]?.departure_airport?.time ?? null,
+        arriveTime: f.flights?.[f.flights.length - 1]?.arrival_airport?.time ?? null,
+        bags: bagNotes([...(f.extensions ?? []), ...(f.flights ?? []).flatMap((s) => s.extensions ?? [])]),
       }
     : null;
 

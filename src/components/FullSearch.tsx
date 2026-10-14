@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } fr
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { GeoPlace, Party, Place } from "../../shared/types.ts";
 import { DEFAULT_PARTY, describeParty, partyFromParams, partyToParams } from "../../shared/pricing.ts";
+import { describeWindow, quickWindows, tripDatesFromParams, tripDatesToParams, validWindow, type DateWindow } from "../../shared/trip-window.ts";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import Icon from "./Icon.tsx";
@@ -519,7 +520,11 @@ export function TripForm() {
   useEffect(() => {
     setOrigin((o) => (o && o.code === home.code && o.label !== home.label ? home : o));
   }, [home.code, home.label]);
-  const [depart, setDepart] = useState(pre?.get("depart") ?? plusDays(today(), 30));
+  const preDates = pre ? tripDatesFromParams(pre) : null;
+  const [depart, setDepart] = useState(preDates?.depart || plusDays(today(), 30));
+  // Fechas flexibles: una ventana (por ejemplo, la segunda quincena de julio) y el servidor elige el día más barato.
+  const [flex, setFlex] = useState<"exact" | "flex">(preDates?.window ? "flex" : "exact");
+  const [win, setWin] = useState<DateWindow>(() => preDates?.window ?? defaultWindow(plusDays(today(), 30)));
   const [stops, setStops] = useState<StopDraft[]>(() => {
     const fromUrl = (pre?.getAll("stop") ?? []).map(readStop).filter((s): s is NonNullable<typeof s> => Boolean(s));
     return fromUrl.length ? fromUrl.map((s) => ({ place: s, nights: s.nights })) : [{ place: null, nights: 5 }];
@@ -533,9 +538,12 @@ export function TripForm() {
     if (!origin) return setError("Elegí desde dónde salís.");
     if (stops.some((s) => !s.place)) return setError("Elegí cada lugar de la lista de sugerencias.");
     if (stops.some((s) => !s.nights || s.nights < 1)) return setError("Cada parada necesita al menos 1 noche.");
-    if (!depart) return setError("Elegí la fecha de salida.");
+    if (flex === "exact" && !depart) return setError("Elegí la fecha de salida.");
+    if (flex === "flex" && !validWindow(win)) return setError("Elegí una ventana de fechas de hasta 31 días, con el desde antes del hasta.");
+    if (flex === "flex" && win.to < today()) return setError("La ventana de fechas ya pasó: elegí otra.");
     setError(null);
-    const q = new URLSearchParams({ tipo: "viaje", from: placeParam(origin), depart, ...partyToParams(party) });
+    const dates = flex === "flex" ? { depart: win.from, window: win, pinned: null } : { depart, window: null, pinned: null };
+    const q = new URLSearchParams({ tipo: "viaje", from: placeParam(origin), ...tripDatesToParams(dates), ...partyToParams(party) });
     stops.forEach((s) => q.append("stop", stopParam(s.place!, s.nights)));
     navigate(`/buscar?${q}`);
   }
@@ -579,11 +587,93 @@ export function TripForm() {
         )}
         {stops.length > 1 && <span className="trip-nights">{totalNights} noches en total</span>}
       </div>
+      <div className="search-row">
+        <Segmented
+          label="Fechas"
+          value={flex}
+          onChange={setFlex}
+          options={[
+            { value: "exact", label: "Fecha exacta" },
+            { value: "flex", label: "Fechas flexibles" },
+          ]}
+        />
+      </div>
+      {flex === "flex" && <WindowPicker value={win} onChange={setWin} />}
       <div className="search-grid trip">
         <PlaceInput label="Salís desde" value={origin} onChange={setOrigin} placeholder="Ciudad o aeropuerto" />
-        <DateTile label="Fecha de salida" value={depart} min={today()} onChange={setDepart} />
+        {flex === "exact" ? (
+          <DateTile label="Fecha de salida" value={depart} min={today()} onChange={setDepart} />
+        ) : (
+          <div className="tile window-summary" aria-live="polite">
+            <span>Salida entre</span>
+            <strong>{capitalizeFirst(describeWindow(win))}</strong>
+          </div>
+        )}
         <PartyTile party={party} onChange={setParty} />
       </div>
     </FormShell>
+  );
+}
+
+const capitalizeFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Ventana que contiene la fecha: primera o segunda quincena de su mes. */
+function defaultWindow(iso: string): DateWindow {
+  const q = quickWindows(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)));
+  return Number(iso.slice(8, 10)) <= 15 ? q[0].window : q[1].window;
+}
+
+/** Próximos 12 meses para elegir la ventana. */
+function nextMonths(): { year: number; month: number }[] {
+  const t = today();
+  let y = Number(t.slice(0, 4));
+  let m = Number(t.slice(5, 7));
+  return Array.from({ length: 12 }, () => {
+    const out = { year: y, month: m };
+    m = m === 12 ? 1 : m + 1;
+    if (m === 1) y++;
+    return out;
+  });
+}
+
+const MONTH_NAMES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+/** "Fechas flexibles": mes, atajos (quincenas, todo el mes) y desde–hasta a mano. */
+function WindowPicker({ value, onChange }: { value: DateWindow; onChange: (w: DateWindow) => void }) {
+  const year = Number(value.from.slice(0, 4));
+  const month = Number(value.from.slice(5, 7));
+  const quick = quickWindows(year, month);
+  const current = quick.findIndex((q) => q.window.from === value.from && q.window.to === value.to);
+  return (
+    <div className="window-picker">
+      <label className="tile window-month">
+        <span>Mes</span>
+        <select
+          value={`${year}-${month}`}
+          onChange={(e) => {
+            const [y, m] = e.target.value.split("-").map(Number);
+            onChange(quickWindows(y, m)[current >= 0 ? current : 1].window);
+          }}
+        >
+          {nextMonths().map((x) => (
+            <option key={`${x.year}-${x.month}`} value={`${x.year}-${x.month}`}>
+              {MONTH_NAMES[x.month - 1]} {x.year}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="chips" role="group" aria-label="Atajos de fechas">
+        {quick.map((q, i) => (
+          <button key={q.label} type="button" className={`chip ${i === current ? "on" : ""}`} aria-pressed={i === current} onClick={() => onChange(q.window)}>
+            {q.label}
+          </button>
+        ))}
+      </div>
+      <div className="search-grid window-dates">
+        <DateTile label="Desde" value={value.from} min={today()} onChange={(v) => v && onChange({ from: v, to: value.to < v ? v : value.to })} />
+        <DateTile label="Hasta" value={value.to} min={value.from} onChange={(v) => v && onChange({ ...value, to: v })} />
+      </div>
+      <p className="window-hint">Buscamos el día de salida más barato de tu ventana con los precios vistos en Aviasales.</p>
+    </div>
   );
 }

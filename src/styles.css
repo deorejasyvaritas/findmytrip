@@ -1389,3 +1389,41 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .price-down { color: var(--green); }
 .buy-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: var(--r-md); background: var(--orange-soft); color: var(--label); }
 .buy-note .link { min-height: var(--control); }
+
+/* ---------- "Ya sé a dónde": fechas flexibles, detalle de vuelos, traslados ---------- */
+.window-picker { display: flex; flex-direction: column; gap: 12px; }
+.window-month { max-width: 260px; }
+.search-grid.window-dates { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 420px; }
+.window-hint { font-size: 13px; color: rgba(254, 254, 254, 0.86); }
+.window-summary strong { font-size: 17px; font-weight: 600; min-height: 28px; display: flex; align-items: center; }
+.window-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.window-card-head { display: flex; gap: 12px; align-items: flex-start; }
+.window-card-head > .icon { color: var(--brand-ink); flex-shrink: 0; margin-top: 2px; }
+.window-card-head .grow { display: flex; flex-direction: column; gap: 2px; }
+.flight-info { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.flight-line { display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
+.flight-line-head { display: flex; flex-wrap: wrap; gap: 0 4px; color: var(--label); }
+.flight-line-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; margin-right: 4px; }
+.flight-line-times { font-size: 15px; font-variant-numeric: tabular-nums; }
+.flight-line-times .muted { font-size: 13px; }
+.plus-day { font-size: 11px; font-weight: 600; color: var(--brand-ink); margin-left: 1px; }
+.flight-line-note { color: var(--brand-ink); }
+.flight-line-bags { font-size: 13px; }
+.leg-options, .leg-days { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--separator); padding-top: 12px; }
+.leg-option-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.leg-option-list li { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--r-md); background: var(--fill-2); }
+.leg-option-list li.on { box-shadow: inset 0 0 0 2px var(--tint); }
+.leg-option-list .grow { min-width: 0; flex: 1; }
+.leg-option-list .flight-info { margin-top: 0; }
+.leg-option-price { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.leg-option-price strong { font-variant-numeric: tabular-nums; }
+.trip-leg.transfer { background: var(--fill-2); box-shadow: none; }
+.trip-leg.transfer.off strong:first-child { color: var(--label-2); }
+.installments { margin-top: 4px; }
+.package .flight-info { margin-top: 2px; }
+@media (max-width: 767px) {
+  .leg-option-list li { flex-direction: column; align-items: stretch; }
+  .leg-option-price { flex-direction: row; justify-content: space-between; align-items: center; }
+  .window-month { max-width: none; }
+  .search-grid.window-dates { max-width: none; }
+}

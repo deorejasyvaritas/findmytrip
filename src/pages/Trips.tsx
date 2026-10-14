@@ -12,6 +12,9 @@ import { useApp } from "../lib/app-context.tsx";
 import { copyText, shareOrCopy, shareUrl, type ShareOutcome } from "../lib/share.ts";
 import { usePriceCheck } from "../lib/price-check.ts";
 import { isDomestic, pesoRate } from "../lib/format.ts";
+import { packageQuoteInput, quoteText, whatsappUrl } from "../../shared/quote-text.ts";
+import { itemQuote } from "../../shared/recheck.ts";
+import { priceLabel } from "../../shared/price-age.ts";
 
 const STATUS: { value: TripPackage["status"]; label: string }[] = [
   { value: "idea", label: "Idea" },
@@ -131,7 +134,8 @@ function TripCard({
   shareId: string | null;
   onShares: (fn: (prev: Record<string, string>) => Record<string, string>) => void;
 }) {
-  const { updatePackage, removePackage, destinations, me, shareWithOthers, updateSharedTrip, deleteSharedTrip } = useApp();
+  const app = useApp();
+  const { updatePackage, removePackage, destinations, me, shareWithOthers, updateSharedTrip, deleteSharedTrip } = app;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<"share" | "unshare" | "invite" | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -145,6 +149,8 @@ function TripCard({
 
   const country = destinations.find((d) => d.id === p.destinationId)?.country;
   const abroad = country ? country !== "Argentina" : true;
+  // Mismos montos que la tarjeta: dentro de Argentina, pesos al oficial.
+  const quoteMoney = (usd: number) => app.money(usd, { domestic: isDomestic(destinations.find((d) => d.id === p.destinationId)?.region) });
   const title = `Viaje a ${p.destinationName}`;
   const text = `Mirá el viaje a ${p.destinationName} que armé en FindMyTrip`;
   const isOwner = !ctrip || ctrip.owner === me;
@@ -308,6 +314,19 @@ function TripCard({
               {busy === "invite" ? "Creando invitación…" : "Invitar a alguien"}
             </button>
           )}
+          <a
+            className="button secondary"
+            href={whatsappUrl(quoteText(packageQuoteInput(p, quoteMoney, (i) => {
+              const q = i.kind === "vuelo" || i.kind === "alojamiento" ? itemQuote(i, p) : null;
+              return q ? priceLabel(q) : null;
+            })))}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Pedir cotización por WhatsApp del viaje a ${p.destinationName}`}
+          >
+            <Icon name="message" size={18} />
+            Pedir cotización por WhatsApp
+          </a>
         </div>
         <button
           type="button"

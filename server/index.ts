@@ -573,10 +573,19 @@ const stopSchema = z.object({
 });
 
 app.post("/trip/plan", async (c) => {
-  const body = z.object({ origin: iata, depart: isoDate, stops: z.array(stopSchema).min(1).max(5) }).parse(await c.req.json());
+  const body = z
+    .object({
+      origin: iata,
+      depart: isoDate,
+      stops: z.array(stopSchema).min(1).max(5),
+      // Fechas flexibles (hasta 31 días; si no es válida, se usa `depart`).
+      window: z.object({ from: isoDate, to: isoDate }).nullable().optional(),
+      pinned: z.boolean().optional(),
+    })
+    .parse(await c.req.json());
   const e = env(c);
   const google = has(e.SERPAPI_KEY) && (await canUseGoogle(e.SERPAPI_KEY)) ? e.SERPAPI_KEY : undefined;
-  return c.json(await planTrip(e.TRAVELPAYOUTS_TOKEN, body, e.TRAVELPAYOUTS_MARKER, google));
+  return c.json(await planTrip(e.TRAVELPAYOUTS_TOKEN, body, e.TRAVELPAYOUTS_MARKER, google, e.TRAVELPAYOUTS_TRS));
 });
 
 // Vuelve a mirar un tramo (solo el día exacto, sin la caché de 3 h) después de
