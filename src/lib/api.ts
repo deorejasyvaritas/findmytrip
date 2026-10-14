@@ -30,11 +30,22 @@ import type {
 } from "../../shared/types.ts";
 import type { CTrip, InvitePreview } from "../../shared/ctrip.ts";
 
+/** Mensaje para cuando el pedido ni siquiera llega (sin internet, corte, DNS). */
+export const OFFLINE_MESSAGE = "Sin conexión. Revisá tu internet y probá de nuevo.";
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+  } catch (err) {
+    // Un pedido cancelado a propósito sigue siendo AbortError para quien lo canceló.
+    if ((err as Error)?.name === "AbortError") throw err;
+    // Chrome dice "Failed to fetch" y Safari "Load failed": mostramos algo entendible.
+    throw new Error(OFFLINE_MESSAGE);
+  }
   const data = await res.json().catch(() => ({}));
   // Sesión vencida o sin iniciar: avisamos a la app para mostrar el ingreso.
   if (res.status === 401 && (data as { auth?: boolean }).auth) window.dispatchEvent(new Event("fmt:unauthorized"));

@@ -39,6 +39,11 @@ export default function Agent() {
     const next = [...messages, { role: "user" as const, content }];
     setMessages(next);
     setInput("");
+    await ask(next);
+  }
+
+  /** Pide la respuesta para una conversación que termina en un mensaje del usuario. */
+  async function ask(next: ChatMessage[]) {
     setLoading(true);
     setError(null);
     try {
@@ -53,6 +58,9 @@ export default function Agent() {
       setLoading(false);
     }
   }
+
+  // El último mensaje quedó sin respuesta (falló el pedido o se cerró la página): se puede reintentar.
+  const unanswered = !loading && messages.length > 0 && messages[messages.length - 1].role === "user";
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -140,10 +148,15 @@ export default function Agent() {
             </div>
           </div>
         )}
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
+        {(error || unanswered) && (
+          <div className="chat-retry" role="alert">
+            <p className="error small">{error ? `No llegó la respuesta. ${error}` : "Tu último mensaje quedó sin respuesta."}</p>
+            {unanswered && (
+              <button type="button" className="secondary" onClick={() => ask(messages)}>
+                Reintentar
+              </button>
+            )}
+          </div>
         )}
         <div ref={endRef} />
       </div>

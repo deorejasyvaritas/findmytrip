@@ -106,6 +106,7 @@ export default function DestinationPage() {
   const [hotelsCheckin, setHotelsCheckin] = useState<string | null>(null);
   const [loading, setLoading] = useState({ quote: false, hotels: false });
   const [saved, setSaved] = useState<string | null>(null);
+  const [watchError, setWatchError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -313,7 +314,13 @@ export default function DestinationPage() {
   function follow() {
     if (!dest) return;
     const m = month ? Number(month.slice(5, 7)) : null;
-    app.addWatch({ destinationId: dest.id, targetUSD: Math.round(total), month: m, nights: stayNights }, { party, style });
+    setWatchError(null);
+    app
+      .addWatch({ destinationId: dest.id, targetUSD: Math.round(total), month: m, nights: stayNights }, { party, style })
+      .catch((err: Error) => {
+        setSaved((s) => (s === "watch" ? null : s));
+        setWatchError(`No pudimos crear la alerta. ${err.message}`);
+      });
     setSaved("watch");
   }
 
@@ -337,7 +344,7 @@ export default function DestinationPage() {
           <h1>{dest.name}</h1>
           {photos[dest.id] && (
             <div className="dest-hero">
-              <img src={photos[dest.id]} alt={`Foto ilustrativa de ${dest.name}`} referrerPolicy="no-referrer" />
+              <img src={photos[dest.id]} alt={`Foto ilustrativa de ${dest.name}`} width={1260} height={540} decoding="async" referrerPolicy="no-referrer" />
             </div>
           )}
           <div className="meta">
@@ -795,6 +802,11 @@ export default function DestinationPage() {
                 <Icon name="check" size={14} />
                 {saved === "watch" ? "Lo vas a ver en Explorar con el precio al día." : "Guardado en Mis viajes."}
                 <Link to={saved === "watch" ? "/" : "/viajes"}>Ver</Link>
+              </p>
+            )}
+            {watchError && (
+              <p className="error small" role="alert">
+                {watchError}
               </p>
             )}
           </>

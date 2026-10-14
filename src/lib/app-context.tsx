@@ -35,7 +35,8 @@ interface AppState extends SharedTripsState {
   updatePackage: (id: string, patch: Partial<TripPackage>) => void;
   removePackage: (id: string) => void;
   watchlist: WatchItem[];
-  addWatch: (w: Omit<WatchItem, "id" | "createdAt">, extra?: { party: Party; style: Style }) => void;
+  /** Se muestra al instante; si el servidor no guarda la alerta, se deshace y la promesa falla. */
+  addWatch: (w: Omit<WatchItem, "id" | "createdAt">, extra?: { party: Party; style: Style }) => Promise<void>;
   removeWatch: (id: string) => void;
   /** Formatea en la moneda del perfil. `domestic`: viaje dentro de Argentina (pesos al oficial). */
   money: (usd: number, opts?: { domestic?: boolean }) => string;
@@ -112,8 +113,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       removePackage: (id) => setPackages((prev) => prev.filter((x) => x.id !== id)),
       watchlist,
       addWatch: (w, extra) => {
+        const item: WatchItem = { ...w, id: `w_${Date.now().toString(36)}`, createdAt: new Date().toISOString() };
+        let replaced: WatchItem | undefined;
+        setWatchlist((prev) => {
+          replaced = prev.find((x) => x.destinationId === w.destinationId);
+          return [item, ...prev.filter((x) => x.destinationId !== w.destinationId)];
+        });
         // También se guarda en el servidor para que el radar pueda avisar por Telegram.
-        api
+        // Si falla, no fingimos que existe: volvemos atrás y quien llamó muestra el error.
+        return api
           .saveAlert({
             destinationId: w.destinationId,
             origin: profile.origin,
@@ -123,11 +131,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
             party: extra?.party ?? { adults: profile.travelers, childAges: profile.childAges ?? [], bags: profile.bags ?? "cabin" },
             style: extra?.style ?? profile.style,
           })
-          .catch(() => {});
-        setWatchlist((prev) => [
-          { ...w, id: `w_${Date.now().toString(36)}`, createdAt: new Date().toISOString() },
-          ...prev.filter((x) => x.destinationId !== w.destinationId),
-        ]);
+          .then(
+            () => undefined,
+            (err: unknown) => {
+              setWatchlist((prev) => {
+                const rest = prev.filter((x) => x.id !== item.id);
+                return replaced ? [replaced, ...rest] : rest;
+              });
+              throw err;
+            },
+          );
       },
       removeWatch: (id) =>
         setWatchlist((prev) => {
