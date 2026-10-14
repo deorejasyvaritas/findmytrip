@@ -88,10 +88,12 @@ async function photoFor(title: string): Promise<string | null> {
 
 /** { idDestino: urlFoto } para todo el catálogo. */
 export async function destinationPhotos(): Promise<Record<string, string>> {
-  const all = await cached<Record<string, string>>("photos:all:v2", 7 * 86400, async () => {
+  const ids = DESTINATIONS.map((d) => d.id).filter((id) => WIKI_TITLE[id]);
+  // La clave lleva la cantidad de destinos: al sumar destinos al catálogo se
+  // arma un conjunto nuevo (si no, los nuevos quedaban sin foto hasta 7 días).
+  const all = await cached<Record<string, string>>(`photos:all:v3:${ids.length}`, 7 * 86400, async () => {
     const map: Record<string, string> = {};
     // De a 8 por vez, para no recibir "demasiados pedidos" de Wikipedia.
-    const ids = DESTINATIONS.map((d) => d.id).filter((id) => WIKI_TITLE[id]);
     for (let i = 0; i < ids.length; i += 8) {
       const batch = await Promise.all(ids.slice(i, i + 8).map(async (id) => [id, await photoFor(WIKI_TITLE[id])] as const));
       for (const [id, url] of batch) if (url) map[id] = url;
