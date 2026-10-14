@@ -29,6 +29,7 @@ import type {
   SharedTripResponse,
 } from "../../shared/types.ts";
 import type { CTrip, InvitePreview } from "../../shared/ctrip.ts";
+import type { RoutesResponse } from "../../shared/routes.ts";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -155,6 +156,7 @@ export const api = {
   cross: (p: { origin: string; dest: string; month: string }) => request<CrossResult>(`/api/cross?${qs(p)}`),
   escapes: (origin: string, party?: PartyQuery) => request<EscapeWeekend[]>(`/api/escapes?${qs({ origin, ...party })}`),
   radar: (origin: string) => request<RadarSnapshot>(`/api/radar?origin=${origin}`),
+  routes: (origin: string, month: string) => request<RoutesResponse>(`/api/routes?${qs({ origin, month })}`),
   radarRun: (origin: string) => request<RadarSnapshot>(`/api/radar/run?origin=${origin}`, { method: "POST" }),
   radarHistory: (origin: string, dest: string) =>
     request<{ origin: string; dest: string; points: { t: string; p: number }[] }>(`/api/radar/history?${qs({ origin, dest })}`),
