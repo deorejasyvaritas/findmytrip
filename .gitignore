@@ -7,3 +7,4 @@ dist
 .dev.vars
 .wrangler
 partner-head.html
+.claude/worktrees/

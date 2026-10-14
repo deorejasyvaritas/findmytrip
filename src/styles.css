@@ -77,6 +77,9 @@
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* Nada puede ensanchar la página: en el iPhone se podía arrastrar de costado.
+   En html va al viewport; en body se usa clip para no romper la barra fija de arriba. */
+html { overflow-x: hidden; }
 body { overflow-x: clip; }
 body {
   background: var(--bg);
