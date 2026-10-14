@@ -6,13 +6,16 @@ import Icon, { BrandMark } from "./components/Icon.tsx";
 import { useApp } from "./lib/app-context.tsx";
 import { TABS } from "./lib/icons.ts";
 import Home from "./pages/Home.tsx";
-import DestinationPage from "./pages/Destination.tsx";
-import Trips from "./pages/Trips.tsx";
-import Agent from "./pages/Agent.tsx";
-import ProfilePage from "./pages/Profile.tsx";
-import SearchPage from "./pages/Search.tsx";
-import ComparePage from "./pages/Compare.tsx";
 import { CompareBar } from "./components/Compare.tsx";
+import PageSkeleton from "./components/PageSkeleton.tsx";
+
+// Explorar (Home) viene en el archivo principal; el resto de las pantallas se baja al abrirlas.
+const DestinationPage = lazy(() => import("./pages/Destination.tsx"));
+const Trips = lazy(() => import("./pages/Trips.tsx"));
+const Agent = lazy(() => import("./pages/Agent.tsx"));
+const ProfilePage = lazy(() => import("./pages/Profile.tsx"));
+const SearchPage = lazy(() => import("./pages/Search.tsx"));
+const ComparePage = lazy(() => import("./pages/Compare.tsx"));
 
 // El mapa trae Leaflet: se baja solo cuando alguien lo abre.
 const FlightMapPage = lazy(() => import("./pages/FlightMap.tsx"));
@@ -58,6 +61,7 @@ export default function App() {
       <main className="main">
         {/* Una por pantalla: al cambiar de sección se reinicia y se puede seguir navegando. */}
         <ErrorBoundary key={location.pathname}>
+        <Suspense fallback={<PageSkeleton />}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/destino/:id" element={<DestinationPage />} />
@@ -75,6 +79,7 @@ export default function App() {
             }
           />
         </Routes>
+        </Suspense>
         </ErrorBoundary>
         <CompareBar />
       </main>

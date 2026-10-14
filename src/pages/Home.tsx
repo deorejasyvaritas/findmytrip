@@ -216,9 +216,10 @@ export default function Home() {
           <HeroPostcards />
         </div>
 
-        <div className="search-tabs" role="tablist" aria-label="Tipo de búsqueda">
+        {/* Botones con aria-pressed (no role="tab"): cada uno cambia el formulario de abajo. */}
+        <div className="search-tabs" role="group" aria-label="Tipo de búsqueda">
           {HOME_TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
+            <button key={t.id} type="button" aria-pressed={tab === t.id} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
               {t.label}
             </button>
           ))}
@@ -614,7 +615,8 @@ function HeroPostcards() {
     <div className="hero-cards" aria-hidden="true">
       {picks.map((d) => (
         <figure key={d!.id} className="postcard">
-          <img src={photos[d!.id]} alt="" referrerPolicy="no-referrer" />
+          {/* lazy: en el celular las postales están ocultas y así no se bajan. */}
+          <img src={photos[d!.id]} alt="" width={128} height={110} loading="lazy" decoding="async" referrerPolicy="no-referrer" />
           <figcaption>{d!.name}</figcaption>
         </figure>
       ))}

@@ -13,10 +13,20 @@ export default function AlertsSettings() {
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [linkOpened, setLinkOpened] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.alerts().then(setData).catch(() => setData(null));
-  }, []);
+  function load() {
+    setLoading(true);
+    setLoadError(null);
+    api
+      .alerts()
+      .then(setData)
+      .catch((e: Error) => setLoadError(e.message))
+      .finally(() => setLoading(false));
+  }
+  useEffect(load, []);
 
   // Desde "Avisarme si baja" se llega con #alertas: bajamos hasta acá cuando ya cargó.
   const loaded = Boolean(data);
@@ -27,7 +37,24 @@ export default function AlertsSettings() {
     });
   }, [loaded]);
 
-  if (!data) return null;
+  if (!data) {
+    if (!loadError && loading) return null;
+    return (
+      <section id="alertas" className="alerts-anchor">
+        <p className="grouped-title">Alertas</p>
+        <div className="grouped">
+          <div className="list-row list-row-block">
+            <p className="small error" role="alert">
+              No pudimos cargar tus alertas. {loadError}
+            </p>
+            <button type="button" className="secondary" onClick={load} disabled={loading}>
+              {loading ? "Cargando…" : "Reintentar"}
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
   const { settings } = data;
   const connected = Boolean(settings.telegramChatId);
 
@@ -78,15 +105,31 @@ export default function AlertsSettings() {
 
   async function update(patch: Partial<Pick<AlertSettings, "radarDeals" | "minDiscount">>) {
     const next = { radarDeals: settings.radarDeals, minDiscount: settings.minDiscount, origin: profile.origin, ...patch };
-    setData({ ...data!, settings: { ...settings, ...next } });
-    await api.alertSettings(next).catch(() => {});
+    const before = settings;
+    setPrefsError(null);
+    setData((d) => (d ? { ...d, settings: { ...d.settings, ...next } } : d));
+    try {
+      await api.alertSettings(next);
+    } catch (e) {
+      // No quedó guardado: volvemos el interruptor a como estaba y lo decimos.
+      setData((d) => (d ? { ...d, settings: before } : d));
+      setPrefsError(`No se guardó el cambio. ${(e as Error).message}`);
+    }
   }
 
   async function remove(sub: AlertSub) {
     const local = watchlist.find((w) => w.destinationId === sub.destinationId);
     if (local) removeWatch(local.id);
-    else await api.deleteAlert(sub.id).catch(() => {});
-    setData({ ...data!, subs: data!.subs.filter((s) => s.id !== sub.id) });
+    else {
+      try {
+        await api.deleteAlert(sub.id);
+      } catch (e) {
+        setPrefsError(`No pudimos dejar de seguir ese destino. ${(e as Error).message}`);
+        return;
+      }
+    }
+    setPrefsError(null);
+    setData((d) => (d ? { ...d, subs: d.subs.filter((s) => s.id !== sub.id) } : d));
   }
 
   return (
@@ -165,6 +208,11 @@ export default function AlertsSettings() {
           </label>
         )}
       </div>
+      {prefsError && (
+        <p className="grouped-note error" role="alert">
+          {prefsError}
+        </p>
+      )}
 
       {data.subs.length > 0 && (
         <>

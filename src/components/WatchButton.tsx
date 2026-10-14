@@ -31,14 +31,21 @@ export default function WatchButton({
 }) {
   const { watchlist, addWatch, money } = useApp();
   const [feedback, setFeedback] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const current = watchlist.find((w) => w.destinationId === destinationId && w.month === month);
 
   function onClick(e: MouseEvent) {
     // La tarjeta entera lleva a la ficha: este botón no.
     e.preventDefault();
     e.stopPropagation();
+    setError(null);
     if (!current) {
-      addWatch({ destinationId, targetUSD: Math.round(targetUSD), month, nights }, party && style ? { party, style } : undefined);
+      addWatch({ destinationId, targetUSD: Math.round(targetUSD), month, nights }, party && style ? { party, style } : undefined).catch(
+        (err: Error) => {
+          setFeedback(false);
+          setError(`No pudimos crear la alerta. ${err.message}`);
+        },
+      );
     }
     setFeedback(true);
   }
@@ -55,7 +62,12 @@ export default function WatchButton({
         <Icon name={current ? "check" : "bell"} size={16} />
         {current ? "Siguiendo" : "Avisarme si baja"}
       </button>
-      {feedback && (
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
+      {feedback && !error && (
         <p className="watch-feedback small" role="status">
           Te avisamos si el viaje baja de {money(target)}.{" "}
           <Link to="/perfil#alertas" onClick={(e) => e.stopPropagation()}>

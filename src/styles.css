@@ -34,6 +34,7 @@
   --orange: #b54708;
   --orange-soft: #fff1df;
   --red: #c4141f;
+  --switch-on: #34c759; /* verde iOS del interruptor (decorativo, con texto al lado) */
 
   /* Forma y profundidad */
   --r-lg: 16px;
@@ -150,7 +151,7 @@ code { font-size: 13px; background: var(--fill); padding: 2px 6px; border-radius
 }
 .tabbar { display: none; }
 .main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px; }
-.footer { text-align: center; color: var(--label-3); font-size: 13px; padding: 24px 16px 32px; }
+.footer { text-align: center; color: var(--label-2); font-size: 13px; padding: 24px 16px 32px; }
 
 /* ---------- Controles ---------- */
 button, .button {
@@ -246,7 +247,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   background: #fefefe; color: #1c1c1e; border-radius: var(--r-md); padding: 8px 12px;
   display: flex; flex-direction: column; justify-content: center; min-height: 64px;
 }
-.tile span { font-size: 13px; font-weight: 500; color: #636366; }
+.tile span { font-size: 13px; font-weight: 500; color: var(--label-2); }
 .tile input, .tile select {
   min-height: 28px; padding: 0; background-color: transparent; border: 0; border-radius: 0;
   font-size: 17px; font-weight: 600; color: #1c1c1e;
@@ -268,7 +269,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .search-cta { min-height: 52px; padding: 0 28px; font-size: 17px; background: var(--tint); color: #fefefe; box-shadow: 0 0 0 2px rgba(254, 254, 254, 0.85), 0 6px 16px rgba(0, 48, 120, 0.3); align-self: flex-start; }
 .search-cta:hover:not(:disabled) { background: #2c2c2e; }
 .dest-search { position: relative; }
-.dest-search .icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #8e8e93; }
+.dest-search .icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--label-3); }
 .dest-search input { padding-left: 44px; background-color: #fefefe; color: #1c1c1e; min-height: 52px; font-size: 17px; }
 .dest-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 8px; max-height: 360px; overflow-y: auto; }
 .dest-item {
@@ -276,8 +277,8 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   background: rgba(254, 254, 254, 0.94); color: #1c1c1e; border-radius: var(--r-md);
 }
 .dest-item:hover { background: #fefefe; }
-.dest-item .sub { font-weight: 400; color: #636366; font-size: 13px; }
-.dest-item .icon { color: #8e8e93; }
+.dest-item .sub { font-weight: 400; color: var(--label-2); font-size: 13px; }
+.dest-item .icon { color: var(--label-3); }
 
 /* ---------- Tarjetas de sugerencias ---------- */
 .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 16px; }
@@ -338,13 +339,13 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .month-bar.best .bar { background: color-mix(in srgb, var(--tint) 35%, var(--fill)); }
 .month-bar.on { color: var(--label); }
 .month-bar.on .bar { background: var(--tint); }
-.month-bar .bar-value { font-size: 11px; font-variant-numeric: tabular-nums; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; color: var(--label-3); }
+.month-bar .bar-value { font-size: 11px; font-variant-numeric: tabular-nums; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; color: var(--label-2); }
 .month-bar.on .bar-value { color: var(--label); font-weight: 600; }
 .month-label { display: inline-flex; align-items: center; gap: 2px; }
 .month-label .icon { color: var(--brand); fill: var(--brand); }
 
 .calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.cal-head { text-align: center; font-size: 11px; font-weight: 600; color: var(--label-3); text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 4px; }
+.cal-head { text-align: center; font-size: 11px; font-weight: 600; color: var(--label-2); text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 4px; }
 .cal-day {
   flex-direction: column; gap: 0; min-height: 52px; padding: 4px; border-radius: var(--r-sm);
   background: var(--surface); box-shadow: var(--shadow-sm); font-weight: 500;
@@ -353,7 +354,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .cal-day:disabled { background: transparent; box-shadow: none; opacity: 0.35; }
 .cal-day.cheap { background: var(--green-soft); }
 .cal-day.pricey { background: var(--orange-soft); }
-.cal-day.est .cal-price { color: var(--label-3); font-weight: 500; }
+.cal-day.est .cal-price { color: var(--label-2); font-weight: 500; }
 .cal-day.on { background: var(--tint); }
 .cal-day.on .small, .cal-day.on .cal-price { color: var(--on-tint); }
 .cal-price { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -466,7 +467,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   }
   .tabbar a {
     display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 48px; justify-content: center;
-    color: var(--label-3); font-size: 11px; font-weight: 500; position: relative;
+    color: var(--label-2); font-size: 11px; font-weight: 500; position: relative;
   }
   .tabbar a:hover { text-decoration: none; }
   .tabbar a.active { color: var(--tint); }
@@ -524,8 +525,9 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .stepper { display: inline-flex; align-items: center; gap: 4px; }
 .stepper button { min-height: 36px; width: 36px; padding: 0; border-radius: 50%; background: var(--fill); color: var(--label); }
 .stepper output { min-width: 28px; text-align: center; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.form-error { background: #fefefe; color: var(--red); border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; font-weight: 600; }
-.search-status { color: var(--green, #1f8a4c); font-size: 13px; font-weight: 600; margin: 0; text-align: center; }
+/* Avisos sobre el panel rosa: pastilla blanca con texto oscuro fijo (no cambia en modo oscuro: el fondo es siempre blanco). */
+.form-error { background: #fefefe; color: #c4141f; border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; font-weight: 600; }
+.search-status { background: #fefefe; color: #1f7a37; border-radius: var(--r-md); padding: 8px 12px; font-size: 13px; font-weight: 600; margin: 0; text-align: center; }
 .scroll-anchor { scroll-margin-top: 72px; }
 
 /* CTA principal de búsqueda: negro de la marca sobre el panel rosa. */
@@ -599,7 +601,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 /* Interruptor estilo iOS */
 .switch { appearance: none; width: 51px; min-width: 51px; height: 31px; min-height: 31px; padding: 0; border-radius: 999px; background: var(--fill); border: 0; position: relative; cursor: pointer; transition: background-color 160ms var(--ease-out); }
 .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fefefe; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); transition: transform 160ms var(--ease-out); }
-.switch:checked { background: #34c759; }
+.switch:checked { background: var(--switch-on); }
 .switch:checked::after { transform: translateX(20px); }
 .switch:focus { box-shadow: 0 0 0 3px var(--tint-soft); }
 .list-row .switch { width: 51px; min-width: 51px; }
@@ -681,7 +683,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .extra-provider { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; margin-top: 4px; }
 
 /* ---------- Información legal ---------- */
-.legal-footer { text-align: center; color: var(--label-3); font-size: 12px; line-height: 1.5; padding: 24px 16px 32px; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; }
+.legal-footer { text-align: center; color: var(--label-2); font-size: 12px; line-height: 1.5; padding: 24px 16px 32px; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; }
 .legal-footer p { margin: 0; }
 .legal-footer nav, .auth-legal { display: flex; justify-content: center; gap: 16px; margin-top: 4px; }
 .legal-footer a, .auth-legal a { color: var(--label-2); font-weight: 500; text-decoration: underline; text-decoration-thickness: 1px; }
@@ -715,11 +717,11 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   max-height: 320px; overflow-y: auto; min-width: min(320px, 90vw);
 }
 .place-list li { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
-.place-list li .icon { color: #8e8e93; flex-shrink: 0; }
+.place-list li .icon { color: var(--label-3); flex-shrink: 0; }
 .place-list li.on, .place-list li:hover { background: rgba(118, 118, 128, 0.12); }
 .place-list li strong { display: block; font-size: 15px; font-weight: 600; }
-.place-list li .small { display: block; color: #636366; }
-.place-code { font-size: 13px; font-weight: 600; color: #636366; font-variant-numeric: tabular-nums; }
+.place-list li .small { display: block; color: var(--label-2); }
+.place-code { font-size: 13px; font-weight: 600; color: var(--label-2); font-variant-numeric: tabular-nums; }
 .swap {
   width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 50%; justify-self: center;
   background: rgba(254, 254, 254, 0.94); color: #1c1c1e; box-shadow: 0 2px 8px rgba(60, 10, 25, 0.2);
@@ -766,7 +768,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .flight-airline img { border-radius: 8px; background: #fefefe; flex-shrink: 0; }
 .flight-legs { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .leg-row { display: grid; grid-template-columns: 52px 92px 52px minmax(0, 1fr); align-items: baseline; gap: 8px; }
-.leg-label { font-size: 13px; color: var(--label-3); }
+.leg-label { font-size: 13px; color: var(--label-2); }
 .leg-date { font-size: 13px; color: var(--label-2); }
 .leg-time { font-size: 17px; font-variant-numeric: tabular-nums; }
 .leg-meta { font-size: 13px; color: var(--label-2); }
@@ -894,8 +896,8 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .todo-list li + li { border-top: 1px solid var(--separator); }
 .todo-list .check { min-height: 44px; min-width: 0; }
 .todo-list .check span { overflow-wrap: anywhere; }
-.todo-done { color: var(--label-3); text-decoration: line-through; }
-.todo-remove { width: 36px; min-height: 36px; color: var(--label-3); }
+.todo-done { color: var(--label-2); text-decoration: line-through; }
+.todo-remove { width: 36px; min-height: 36px; color: var(--label-2); }
 .todo-add { display: flex; gap: 8px; min-width: 0; }
 .todo-add input { flex: 1; min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
@@ -984,7 +986,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 /* Traslados por tierra con costo estimado */
 .ground-cost { color: var(--label); font-weight: 500; margin-top: 2px; }
 .ground-links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-.items li.off { color: var(--label-3); }
+.items li.off { color: var(--label-2); }
 .ground-toggle { font-size: 13px; }
 .alerts-anchor { scroll-margin-top: 72px; }
 @media (max-width: 767px) {
@@ -1229,7 +1231,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   border-radius: var(--r-sm); font-size: 11px; line-height: 1.2; font-variant-numeric: tabular-nums; overflow: hidden;
 }
 .climate-cell .hi { color: var(--label); font-weight: 600; letter-spacing: -0.02em; white-space: nowrap; }
-.climate-cell .lo { color: var(--label-3); letter-spacing: -0.02em; white-space: nowrap; }
+.climate-cell .lo { color: var(--label-2); letter-spacing: -0.02em; white-space: nowrap; }
 .climate-cell .rain { display: block; width: 60%; max-width: 20px; margin-top: 2px; border-radius: 2px; background: var(--fill); }
 .climate-cell.on { background: var(--fill-2); }
 .climate-cell.on .rain { background: var(--tint); }
@@ -1301,3 +1303,39 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   .leg-actions { justify-content: flex-start; }
   .manual-price { max-width: none; }
 }
+
+/* ==========================================================================
+   Auditoría de accesibilidad y robustez (zona de toque, estados de carga y error)
+   ========================================================================== */
+
+/* Zona de toque de 44 px sin cambiar el tamaño visible: el ::after invisible se
+   extiende alrededor del control. En los que van en fila, solo hacia arriba y abajo,
+   para no pisar al vecino de al lado. */
+.chip, .mini-action, .pill-link, .segmented button, .stepper button, .leg-remove, .todo-remove,
+.cmp-remove, .cmp-go, .day-more, .map-sheet-close, .share-status button.link.destructive { position: relative; }
+.chip::after, .mini-action::after, .pill-link::after, .cmp-go::after, .day-more::after {
+  content: ""; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px;
+}
+.segmented button::after, .share-status button.link.destructive::after {
+  content: ""; position: absolute; left: 0; right: 0; top: -6px; bottom: -6px;
+}
+.stepper button::after, .leg-remove::after, .todo-remove::after, .cmp-remove::after, .map-sheet-close::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
+}
+/* Pestañas del buscador: en pantallas táctiles van dentro de un contenedor con scroll
+   (que recortaría el ::after), así que ahí crecen de verdad a 44 px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .search-tabs button, .search-tab-link { min-height: 44px; }
+}
+
+/* Esqueletos */
+.page-skeleton { max-width: 720px; padding-top: 8px; }
+.sk-price { display: inline-block; width: 72px; height: 14px; vertical-align: middle; }
+.sk-price.sk-total { width: 112px; height: 24px; }
+
+/* Errores con salida */
+.grouped-note.error { color: var(--red); }
+.chat-retry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.chat-retry p { margin: 0; }
+.error-detail-wrap { font-size: 13px; color: var(--label-2); max-width: 100%; }
+.error-detail-wrap summary { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; }

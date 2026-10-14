@@ -562,14 +562,17 @@ function HotelResults(p: { place: string; name: string; checkin: string; checkou
   );
 }
 
+/** Foto del hotel; si no carga, queda el recuadro gris (con estado de React, sin tocar el DOM a mano). */
+function HotelThumb({ src }: { src?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <div className="hotel-card-img" aria-hidden="true" />;
+  return <img src={src} alt="" width={320} height={140} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
+}
+
 function HotelCard({ h, rooms, money, selected, onSelect }: { h: RealHotel; rooms: number; money: (n: number) => string; selected?: boolean; onSelect?: () => void }) {
   return (
     <article className={`card hotel-card ${selected ? "on" : ""}`}>
-      {h.thumbnail ? (
-        <img src={h.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => e.currentTarget.replaceWith(Object.assign(document.createElement("div"), { className: "hotel-card-img" }))} />
-      ) : (
-        <div className="hotel-card-img" />
-      )}
+      <HotelThumb src={h.thumbnail} />
       <div className="stack-sm grow">
         <strong>{h.name}</strong>
         {h.rating != null && (
@@ -1114,7 +1117,8 @@ function TripResults() {
       <aside className="card summary">
         <h2>Tu viaje</h2>
         <p className="small muted">
-          {plan ? `${shortDate(plan.depart)} al ${shortDate(plan.ret)}` : ""} · {describeParty(party)}
+          {plan ? `${shortDate(plan.depart)} al ${shortDate(plan.ret)} · ` : ""}
+          {describeParty(party)}
         </p>
         <ul className="items">
           <li>
@@ -1122,7 +1126,8 @@ function TripResults() {
               <Icon name="plane" size={16} />
               Vuelos{missingFlights ? ` (${missingFlights} sin precio)` : approxFlights ? " (aproximado)" : ""}
             </span>
-            <span>{money(flightsTotal)}</span>
+            {/* Hasta que llega el plan no hay precio: un esqueleto, nunca "USD 0". */}
+            <span>{plan ? money(flightsTotal) : <span className="sk sk-price" aria-label="Cargando" />}</span>
           </li>
           {plan?.stops.map((st, i) => (
             <li key={i}>
@@ -1152,7 +1157,7 @@ function TripResults() {
         )}
         <div className="total">
           <span className="headline">Total</span>
-          <span className="price">{money(total)}</span>
+          <span className="price">{plan ? money(total) : <span className="sk sk-price sk-total" aria-label="Cargando" />}</span>
         </div>
         <p className="small muted">
           {missingFlights ? "Hay tramos sin precio: buscalos en Aviasales o cargá el precio que viste. " : ""}
@@ -1510,20 +1515,7 @@ function TripHotelCard({
   const kind = h.stars ? `${h.stars} ${h.stars === 1 ? "estrella" : "estrellas"}` : h.type;
   return (
     <article className={`card hotel-card trip-hotel ${selected ? "on" : ""}`}>
-      {h.thumbnail ? (
-        <img
-          src={h.thumbnail}
-          alt=""
-          width={320}
-          height={140}
-          loading="lazy"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          onError={(e) => e.currentTarget.replaceWith(Object.assign(document.createElement("div"), { className: "hotel-card-img" }))}
-        />
-      ) : (
-        <div className="hotel-card-img" aria-hidden="true" />
-      )}
+      <HotelThumb src={h.thumbnail} />
       <div className="stack-sm grow">
         <strong>{h.name}</strong>
         {(kind || km != null) && (

@@ -5,7 +5,8 @@
 //   generales) queda de respaldo; nunca respuestas con datos de la cuenta.
 // - Otros dominios (mapas, fotos, socios): no se tocan.
 
-const VERSION = "v1";
+// v2: se descartan cachés de v1 que podían tener index.html guardado como si fuera un .js.
+const VERSION = "v2";
 const SHELL = `fmt-shell-${VERSION}`;
 const ASSETS = `fmt-assets-${VERSION}`;
 const API = `fmt-api-${VERSION}`;
@@ -86,14 +87,20 @@ async function networkFirst(req, name) {
 
 async function cacheFirst(req) {
   const hit = await caches.match(req);
-  if (hit) return hit;
+  if (hit && !isHtml(hit)) return hit;
   const res = await fetch(req);
-  if (res.ok && res.type === "basic") {
+  // El sitio responde index.html (200) para cualquier ruta que no existe, también para
+  // un archivo de un deploy anterior. Eso no se guarda: la app detecta el error y recarga.
+  if (res.ok && res.type === "basic" && !isHtml(res)) {
     const cache = await caches.open(ASSETS);
     await cache.put(req, res.clone());
     trim(cache);
   }
   return res;
+}
+
+function isHtml(res) {
+  return (res.headers.get("content-type") || "").includes("text/html");
 }
 
 /** Guarda una página como respuesta "limpia" (Safari no acepta redirecciones en navegación). */
