@@ -1,6 +1,9 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type { GeoPlace, Party, Place } from "../../shared/types.ts";
+import type { GeoPlace, MealPlan, Party, Place } from "../../shared/types.ts";
+import { countryByCode, matchCountries, type Country } from "../../shared/countries.ts";
+import { countrySearchFromParams, countrySearchToParams } from "../../shared/country-search.ts";
+import { MEAL_PLANS, MEAL_PLAN_LABEL } from "../../shared/meal-plan.ts";
 import { DEFAULT_PARTY, describeParty, partyFromParams, partyToParams } from "../../shared/pricing.ts";
 import { describeWindow, quickWindows, tripDatesFromParams, tripDatesToParams, validWindow, type DateWindow } from "../../shared/trip-window.ts";
 import { api } from "../lib/api.ts";
@@ -12,7 +15,7 @@ import { PartyPicker } from "./TripPickers.tsx";
 // Buscador completo (estilo Despegar): vuelos, hoteles, vuelo + hotel y multidestino.
 // Cada formulario lleva a /buscar con los datos en la URL (se puede compartir y volver atrás).
 
-export type SearchKind = "vuelos" | "hoteles" | "paquete" | "multi" | "viaje";
+export type SearchKind = "vuelos" | "hoteles" | "paquete" | "multi" | "viaje" | "pais";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (iso: string, n: number) => {
@@ -412,27 +415,50 @@ export function MultiForm() {
 
 const geoLabel = (p: GeoPlace) => [p.name, p.region, p.country].filter(Boolean).join(", ");
 
-/** Campo de lugar (ciudad, pueblo o playa) con sugerencias. */
-export function GeoInput({ label, value, onChange }: { label: string; value: GeoPlace | null; onChange: (v: GeoPlace | null) => void }) {
+type GeoItem = { kind: "country"; country: Country } | { kind: "place"; place: GeoPlace };
+const countryLabel = (c: Country) => `${c.name} · todo el país`;
+
+/**
+ * Campo de lugar (ciudad, pueblo o playa) con sugerencias. Con `onCountry`,
+ * también ofrece el país entero ("Brasil · todo el país") como primera opción.
+ */
+export function GeoInput({
+  label,
+  value,
+  onChange,
+  country,
+  onCountry,
+}: {
+  label: string;
+  value: GeoPlace | null;
+  onChange: (v: GeoPlace | null) => void;
+  country?: Country | null;
+  onCountry?: (c: Country | null) => void;
+}) {
   const id = useId();
-  const [text, setText] = useState(value ? geoLabel(value) : "");
-  const [items, setItems] = useState<GeoPlace[]>([]);
+  const [text, setText] = useState(country ? countryLabel(country) : value ? geoLabel(value) : "");
+  const [places, setPlaces] = useState<GeoPlace[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const typed = useRef(false);
 
   useEffect(() => {
-    setText(value ? geoLabel(value) : "");
-  }, [value?.lat, value?.lon, value?.name]);
+    if (country) setText(countryLabel(country));
+    else setText(value ? geoLabel(value) : "");
+  }, [value?.lat, value?.lon, value?.name, country?.code]);
+
+  // Los países salen al instante (lista local); las ciudades, de /api/geo.
+  const countries = onCountry && typed.current ? matchCountries(text) : [];
+  const items: GeoItem[] = [...countries.map((c) => ({ kind: "country" as const, country: c })), ...places.map((p) => ({ kind: "place" as const, place: p }))];
 
   useEffect(() => {
-    if (!typed.current || text.trim().length < 2) return setItems([]);
+    if (!typed.current || text.trim().length < 2) return setPlaces([]);
     let cancelled = false;
     const t = setTimeout(() => {
       api
         .geo(text)
-        .then((r) => !cancelled && (setItems(r), setActive(0)))
-        .catch(() => !cancelled && setItems([]));
+        .then((r) => !cancelled && setPlaces(r))
+        .catch(() => !cancelled && setPlaces([]));
     }, 220);
     return () => {
       cancelled = true;
@@ -440,11 +466,18 @@ export function GeoInput({ label, value, onChange }: { label: string; value: Geo
     };
   }, [text]);
 
-  function pick(p: GeoPlace) {
+  function pick(item: GeoItem) {
     typed.current = false;
-    setText(geoLabel(p));
     setOpen(false);
-    onChange(p);
+    if (item.kind === "country") {
+      setText(countryLabel(item.country));
+      onCountry?.(item.country);
+      if (value) onChange(null);
+      return;
+    }
+    setText(geoLabel(item.place));
+    if (country) onCountry?.(null);
+    onChange(item.place);
   }
 
   return (
@@ -458,12 +491,14 @@ export function GeoInput({ label, value, onChange }: { label: string; value: Geo
         aria-activedescendant={open && items[active] ? `${id}-${active}` : undefined}
         autoComplete="off"
         value={text}
-        placeholder="Ciudad, pueblo o playa"
+        placeholder={onCountry ? "Ciudad, playa o país" : "Ciudad, pueblo o playa"}
         onChange={(e) => {
           typed.current = true;
           setText(e.target.value);
           setOpen(true);
+          setActive(0);
           if (value) onChange(null);
+          if (country) onCountry?.(null);
         }}
         onFocus={(e) => e.target.select()}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
@@ -471,29 +506,47 @@ export function GeoInput({ label, value, onChange }: { label: string; value: Geo
           if (!open || !items.length) return;
           if (e.key === "ArrowDown") (e.preventDefault(), setActive((a) => Math.min(items.length - 1, a + 1)));
           if (e.key === "ArrowUp") (e.preventDefault(), setActive((a) => Math.max(0, a - 1)));
-          if (e.key === "Enter") (e.preventDefault(), pick(items[active]));
+          if (e.key === "Enter") (e.preventDefault(), items[active] && pick(items[active]));
           if (e.key === "Escape") setOpen(false);
         }}
       />
       {open && items.length > 0 && (
         <ul className="place-list" id={`${id}-list`} role="listbox">
-          {items.map((p, i) => (
-            <li
-              key={`${p.name}-${p.lat}-${p.lon}`}
-              id={`${id}-${i}`}
-              role="option"
-              aria-selected={i === active}
-              className={i === active ? "on" : ""}
-              onMouseDown={(e) => (e.preventDefault(), pick(p))}
-            >
-              <Icon name="pin" size={16} />
-              <span className="grow">
-                <strong>{p.name}</strong>
-                <span className="small muted">{[p.region, p.country].filter(Boolean).join(", ")}</span>
-              </span>
-              {p.destinationId && <span className="place-code">Con ficha</span>}
-            </li>
-          ))}
+          {items.map((item, i) =>
+            item.kind === "country" ? (
+              <li
+                key={`pais-${item.country.code}`}
+                id={`${id}-${i}`}
+                role="option"
+                aria-selected={i === active}
+                className={`place-country${i === active ? " on" : ""}`}
+                onMouseDown={(e) => (e.preventDefault(), pick(item))}
+              >
+                <Icon name="globe" size={16} />
+                <span className="grow">
+                  <strong>{item.country.name} · todo el país</strong>
+                  <span className="small muted">Te mostramos destinos y paquetes en {item.country.name}</span>
+                </span>
+                <span className="place-code">País</span>
+              </li>
+            ) : (
+              <li
+                key={`${item.place.name}-${item.place.lat}-${item.place.lon}`}
+                id={`${id}-${i}`}
+                role="option"
+                aria-selected={i === active}
+                className={i === active ? "on" : ""}
+                onMouseDown={(e) => (e.preventDefault(), pick(item))}
+              >
+                <Icon name="pin" size={16} />
+                <span className="grow">
+                  <strong>{item.place.name}</strong>
+                  <span className="small muted">{[item.place.region, item.place.country].filter(Boolean).join(", ")}</span>
+                </span>
+                {item.place.destinationId && <span className="place-code">Con ficha</span>}
+              </li>
+            ),
+          )}
         </ul>
       )}
     </label>
@@ -515,7 +568,10 @@ export function readStop(raw: string): (GeoPlace & { nights: number }) | null {
 export function TripForm() {
   const navigate = useNavigate();
   const home = useOrigin();
-  const pre = usePrefill("viaje");
+  // Una búsqueda por país (tipo=pais) también precarga el formulario.
+  const preCountry = usePrefill("pais");
+  const cs = preCountry ? countrySearchFromParams(preCountry) : null;
+  const pre = usePrefill("viaje") ?? preCountry;
   const [origin, setOrigin] = useState<PlaceValue | null>(readPlace(pre?.get("from") ?? null) ?? home);
   useEffect(() => {
     setOrigin((o) => (o && o.code === home.code && o.label !== home.label ? home : o));
@@ -527,15 +583,20 @@ export function TripForm() {
   const [win, setWin] = useState<DateWindow>(() => preDates?.window ?? defaultWindow(plusDays(today(), 30)));
   const [stops, setStops] = useState<StopDraft[]>(() => {
     const fromUrl = (pre?.getAll("stop") ?? []).map(readStop).filter((s): s is NonNullable<typeof s> => Boolean(s));
-    return fromUrl.length ? fromUrl.map((s) => ({ place: s, nights: s.nights })) : [{ place: null, nights: 5 }];
+    return fromUrl.length ? fromUrl.map((s) => ({ place: s, nights: s.nights })) : [{ place: null, nights: cs?.nights ?? 5 }];
   });
   const [party, setParty] = useParty(pre);
   const [error, setError] = useState<string | null>(null);
+  // País entero ("Brasil · todo el país"): solo con una parada.
+  const [country, setCountry] = useState<Country | null>(() => countryByCode(cs?.country));
+  const [budget, setBudget] = useState(cs?.budget ? String(cs.budget) : "");
+  const [meal, setMeal] = useState<MealPlan>(cs?.meal ?? "room");
   const totalNights = stops.reduce((n, s) => n + (s.nights || 0), 0);
 
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!origin) return setError("Elegí desde dónde salís.");
+    if (country && stops.length === 1) return submitCountry(country);
     if (stops.some((s) => !s.place)) return setError("Elegí cada lugar de la lista de sugerencias.");
     if (stops.some((s) => !s.nights || s.nights < 1)) return setError("Cada parada necesita al menos 1 noche.");
     if (flex === "exact" && !depart) return setError("Elegí la fecha de salida.");
@@ -548,8 +609,31 @@ export function TripForm() {
     navigate(`/buscar?${q}`);
   }
 
+  function submitCountry(c: Country) {
+    const nights = stops[0].nights;
+    if (!nights || nights < 1 || nights > 30) return setError("Elegí entre 1 y 30 noches.");
+    if (flex === "exact" && !depart) return setError("Elegí la fecha de salida.");
+    if (flex === "flex" && !validWindow(win)) return setError("Elegí una ventana de fechas de hasta 31 días, con el desde antes del hasta.");
+    if (flex === "flex" && win.to < today()) return setError("La ventana de fechas ya pasó: elegí otra.");
+    const max = budget.trim() ? Number(budget.replace(/\D/g, "")) : null;
+    if (max != null && !(max > 0)) return setError("Escribí el presupuesto total en dólares, sin puntos (por ejemplo, 4500).");
+    setError(null);
+    const q = countrySearchToParams({
+      country: c.code,
+      from: placeParam(origin!),
+      dates: flex === "flex" ? { depart: win.from, window: win, pinned: null } : { depart, window: null, pinned: null },
+      nights,
+      party,
+      budget: max,
+      meal: meal === "room" ? null : meal,
+      interests: cs?.country === c.code ? cs.interests : [],
+      sort: cs?.sort ?? "barato",
+    });
+    navigate(`/buscar?${q}`);
+  }
+
   return (
-    <FormShell onSubmit={submit} error={error} cta="Armar el viaje">
+    <FormShell onSubmit={submit} error={error} cta={country && stops.length === 1 ? `Ver destinos en ${country.name}` : "Armar el viaje"}>
       <ol className="legs">
         {stops.map((s, i) => (
           <li key={i} className="leg">
@@ -557,9 +641,14 @@ export function TripForm() {
               {i + 1}
             </span>
             <div className="search-grid stop">
-              <GeoInput label={stops.length > 1 ? `Parada ${i + 1}` : "¿A dónde vas?"} value={s.place} onChange={(place) => setStops((ls) => ls.map((l, j) => (j === i ? { ...l, place } : l)))} />
+              <GeoInput
+                label={stops.length > 1 ? `Parada ${i + 1}` : "¿A dónde vas?"}
+                value={s.place}
+                onChange={(place) => setStops((ls) => ls.map((l, j) => (j === i ? { ...l, place } : l)))}
+                {...(stops.length === 1 ? { country, onCountry: setCountry } : {})}
+              />
               <label className="tile">
-                <span>Noches</span>
+                <span>{country && stops.length === 1 ? "Noches en total" : "Noches"}</span>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -579,7 +668,7 @@ export function TripForm() {
         ))}
       </ol>
       <div className="search-row">
-        {stops.length < 5 && (
+        {stops.length < 5 && !country && (
           <button type="button" className="chip" onClick={() => setStops((ls) => [...ls, { place: null, nights: 4 }])}>
             <Icon name="plus" size={16} />
             Agregar otra parada
@@ -611,6 +700,30 @@ export function TripForm() {
         )}
         <PartyTile party={party} onChange={setParty} />
       </div>
+      {country && stops.length === 1 && (
+        <div className="search-grid country-extras">
+          <label className="tile">
+            <span>Presupuesto total (USD)</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="Opcional, por ejemplo 4500"
+              value={budget}
+              onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ""))}
+            />
+          </label>
+          <label className="tile">
+            <span>Régimen</span>
+            <select value={meal} onChange={(e) => setMeal(e.target.value as MealPlan)}>
+              {MEAL_PLANS.map((m) => (
+                <option key={m} value={m}>
+                  {MEAL_PLAN_LABEL[m]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
     </FormShell>
   );
 }

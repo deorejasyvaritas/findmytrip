@@ -132,6 +132,11 @@ export interface ExploreRequest {
   style: Style;
   interests: Interest[];
   regions?: Region[];
+  /**
+   * Solo destinos de estos países (ISO alfa-2, ej. "BR"). Búsqueda por país:
+   * devuelve todos los destinos del país, aunque se pasen del presupuesto.
+   */
+  countries?: string[];
   exclude?: string[]; // ids a excluir (ej. ya visitados)
   maxFlightHours?: number | null;
   /** Ids que el usuario ya tiene en mente: se usan para destacar alternativas. */

@@ -20,6 +20,7 @@ import { DESTINATIONS, ORIGINS, getOrigin } from "./data/destinations.ts";
 import { bagsCost, dailyUnits, fareUnits, headcount, occupancyFactor, roomsForParty } from "../shared/pricing.ts";
 import { allInclusiveFor, allInclusiveUnits, boardPerPersonNight, dailyFactor, MEAL_PLAN_LABEL } from "../shared/meal-plan.ts";
 import { longWeekends, type LongWeekend } from "./holidays.ts";
+import { countryCodeOf } from "../shared/countries.ts";
 export { headcount };
 
 // ---------------------------------------------------------------------------
@@ -344,12 +345,16 @@ export function explore(
     DESTINATIONS.filter((d) => known.has(d.id)).map((d) => d.region),
   );
   const months = window.months;
+  // Búsqueda por país ("Ya sé a dónde" > Brasil): van todos los destinos del
+  // país, también los que se pasan del presupuesto (la app marca cuánto).
+  const countries = req.countries?.length ? new Set(req.countries.map((c) => c.toUpperCase())) : null;
 
   const candidates = DESTINATIONS.filter(
     (d) =>
       !exclude.has(d.id) &&
       !isSameCity(req.origin, d) &&
       (!req.regions?.length || req.regions.includes(d.region)) &&
+      (!countries || countries.has(countryCodeOf(d.country) ?? "")) &&
       (req.maxFlightHours == null || d.flightHours <= req.maxFlightHours) &&
       // All inclusive: solo destinos donde se consigue.
       (req.mealPlan !== "all" || allInclusiveFor(d) !== null),
@@ -409,7 +414,7 @@ export function explore(
         req.mealPlan,
       );
       const ratio = cost.total / destBudget;
-      if (ratio > 1.15) continue;
+      if (ratio > 1.15 && !countries) continue;
 
       const reasons: string[] = [];
       let score = 0;
@@ -425,10 +430,10 @@ export function explore(
       if (ratio <= 1) {
         score += 30 - Math.abs(0.8 - ratio) * 20;
         const left = destBudget - cost.total;
-        if (ratio < 0.7) reasons.push(`Te sobran ~USD ${left.toLocaleString("es-AR")} del presupuesto`);
+        if (ratio < 0.7 && !countries) reasons.push(`Te sobran ~USD ${left.toLocaleString("es-AR")} del presupuesto`);
       } else {
         score += 5;
-        reasons.push(`Se pasa ~${Math.round((ratio - 1) * 100)}%: bajando el estilo o las noches entra`);
+        if (!countries) reasons.push(`Se pasa ~${Math.round((ratio - 1) * 100)}%: bajando el estilo o las noches entra`);
       }
 
       if (cost.mealPlan === "all") {
@@ -487,6 +492,14 @@ export function explore(
   }
 
   scored.sort((a, b) => b.score - a.score || a.cost.total - b.cost.total);
+  if (countries) {
+    // Por país no hay "alternativas": se muestran todos los destinos del país.
+    const extra = (real?.extra ?? [])
+      .filter((e) => countries.has(countryCodeOf(e.country) ?? ""))
+      .filter((e) => !window.from || (e.depart >= window.from && e.depart <= (window.to ?? window.from)))
+      .slice(0, 8);
+    return { suggestions: scored, alternatives: [], extra, considered: candidates.length };
+  }
   // Las alternativas ("quizás no lo estabas considerando") salen de fuera del
   // top 6 y no se repiten en la lista principal.
   const topIds = new Set(scored.slice(0, 6).map((s) => s.destination.id));

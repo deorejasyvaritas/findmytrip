@@ -37,6 +37,9 @@ import { EntryLine } from "../components/EntryRequirements.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { capitalize, formatDate } from "../lib/format.ts";
+import { countrySearchFromParams } from "../../shared/country-search.ts";
+import { countryByCode } from "../../shared/countries.ts";
+import CountryResults from "./CountryResults.tsx";
 
 // Resultados del buscador completo. Los precios de vuelos son los que vieron
 // usuarios de Aviasales en los últimos días; cada uno lleva a Aviasales para
@@ -48,6 +51,7 @@ const TITLES: Record<SearchKind, string> = {
   paquete: "Vuelo + Hotel",
   multi: "Multidestino",
   viaje: "Tu viaje",
+  pais: "Destinos en el país",
 };
 
 const shortDate = (iso: string) => formatDate(iso.slice(0, 10), { weekday: "short", day: "numeric", month: "short" });
@@ -76,8 +80,16 @@ export default function SearchPage() {
 
   const tripStops = params.getAll("stop").map(readStop).filter((x): x is NonNullable<typeof x> => Boolean(x));
   const tripWin = kind === "viaje" ? windowFromParam(params.get("win")) : null;
+  const countrySearch = kind === "pais" ? countrySearchFromParams(params) : null;
+  const countryName = countrySearch ? countryByCode(countrySearch.country)?.name : null;
   const summary =
-    kind === "viaje"
+    kind === "pais"
+      ? countrySearch
+        ? `${countrySearch.nights} noches · ${
+            countrySearch.dates.window ? `salida flexible, ${describeWindow(countrySearch.dates.window)}` : `desde ${shortDate(countrySearch.dates.depart)}`
+          } · ${describeParty(countrySearch.party)}`
+        : "Faltan datos de la búsqueda"
+      : kind === "viaje"
       ? `${tripStops.map((t) => `${t.name} (${t.nights} ${t.nights === 1 ? "noche" : "noches"})`).join(", ")} · ${
           tripWin ? `salida flexible, ${describeWindow(tripWin)}` : `desde ${depart && shortDate(depart)}`
         } · ${describeParty(party)}`
@@ -96,7 +108,7 @@ export default function SearchPage() {
         </Link>
         <div className="search-head-row">
           <div>
-            <h1>{TITLES[kind]}</h1>
+            <h1>{kind === "pais" && countryName ? `Viajar a ${countryName}` : TITLES[kind]}</h1>
             <p className="muted">{summary}</p>
           </div>
           <button className="secondary" aria-expanded={editing} onClick={() => setEditing((e) => !e)}>
@@ -106,7 +118,7 @@ export default function SearchPage() {
         </div>
         {editing && (
           <div className="search-panel compact">
-            {kind === "hoteles" ? <HotelForm /> : kind === "multi" ? <MultiForm /> : kind === "viaje" ? <TripForm /> : <FlightForm kind={kind} />}
+            {kind === "hoteles" ? <HotelForm /> : kind === "multi" ? <MultiForm /> : kind === "viaje" || kind === "pais" ? <TripForm /> : <FlightForm kind={kind} />}
           </div>
         )}
       </section>
@@ -116,6 +128,18 @@ export default function SearchPage() {
       {kind === "hoteles" && to && depart && ret && <HotelResults place={to.code} name={to.label} checkin={depart} checkout={ret} party={party} />}
       {kind === "multi" && <MultiResults />}
       {kind === "viaje" && from && (depart || tripWin) && tripStops.length > 0 && <TripResults />}
+      {kind === "pais" &&
+        (countrySearch ? (
+          <CountryResults search={countrySearch} />
+        ) : (
+          <div className="card empty">
+            <Icon name="globe" size={28} />
+            <p>Esta búsqueda no tiene país, salida o fecha. Completala para ver los destinos.</p>
+            <button className="primary" onClick={() => setEditing(true)}>
+              Completar la búsqueda
+            </button>
+          </div>
+        ))}
     </div>
   );
 }

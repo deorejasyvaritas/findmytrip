@@ -1442,3 +1442,40 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .hotel-finder-form input { flex: 1 1 auto; min-width: 0; padding-left: 36px; }
 .hotel-finder-form button { flex: none; }
 .meal-note { padding: 10px 12px; border-radius: var(--r-md); background: var(--orange-soft); color: var(--label); font-size: 13px; }
+
+/* ---------- Ya sé a dónde: búsqueda por país ---------- */
+.place-list li.place-country .icon { color: var(--brand-ink); }
+.search-grid.country-extras { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 560px; }
+.country-controls { display: flex; flex-direction: column; gap: 16px; }
+.country-controls .segmented { align-self: flex-start; }
+.country-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 560px; }
+.country-subhead { font-size: 17px; font-weight: 600; margin-top: 8px; }
+.country-note { padding: 12px 16px; color: var(--label-2); }
+.country-card .suggestion-head h3 { font-size: 20px; }
+.country-card .badge { white-space: normal; text-align: right; }
+.country-highlights { list-style: none; margin: 0; padding: 0; }
+.country-highlights .chip { min-height: 28px; font-size: 13px; padding: 0 10px; }
+.country-price .price { font-variant-numeric: tabular-nums; }
+.country-lines { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.country-lines > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.country-lines dt { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.country-lines dd { margin: 0; text-align: right; }
+.country-lines dd.real { color: var(--green); font-weight: 600; }
+.country-season { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.country-season .muted { display: inline-flex; align-items: center; gap: 6px; }
+.country-actions .button, .country-actions button { flex: 1 1 140px; }
+.country-city {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 12px; text-align: left;
+  background: var(--fill-2); color: var(--label); border-radius: var(--r-md); font-weight: 400;
+}
+.country-city:hover { background: var(--fill); }
+.country-city strong { display: block; font-size: 17px; font-weight: 600; }
+.country-city .small { display: block; }
+.country-other { display: flex; flex-wrap: wrap; align-items: stretch; gap: 12px; }
+.country-other .tile { flex: 1 1 260px; box-shadow: inset 0 0 0 1px var(--separator); }
+.country-other > button { align-self: center; }
+@media (max-width: 560px) {
+  .country-fields { grid-template-columns: minmax(0, 1fr); }
+  .country-controls .segmented { align-self: stretch; }
+  .country-other > button { width: 100%; }
+}

@@ -250,6 +250,7 @@ const exploreSchema = z.object({
   style,
   interests: z.array(z.enum(INTERESTS)).default([]),
   regions: z.array(z.enum(REGIONS)).optional(),
+  countries: z.array(z.string().regex(/^[A-Za-z]{2}$/)).max(5).optional(),
   exclude: z.array(z.string()).optional(),
   known: z.array(z.string()).optional(),
   maxFlightHours: z.number().nullable().optional(),
