@@ -1,5 +1,5 @@
-import { withRadarScore } from "../shared/radar-score.ts";
-import type { Destination, RadarItem, RadarSnapshot } from "../shared/types.ts";
+import { likeForLikeBaseline, withRadarScore, type BaselineObs } from "../shared/radar-score.ts";
+import type { Destination, RadarItem, RadarMonth, RadarSnapshot } from "../shared/types.ts";
 import { fetchJSON, loadJSON, trySaveJSON } from "./cache.ts";
 import { DESTINATIONS } from "./data/destinations.ts";
 import { flightEstimate, isSameCity, upcomingMonths } from "./engine.ts";
@@ -34,12 +34,6 @@ for (const d of DESTINATIONS) {
   for (const code of [d.iata, ...airportsFor(d.iata).split(",")]) if (!BY_CODE.has(code)) BY_CODE.set(code, d);
 }
 
-const median = (xs: number[]) => {
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-};
-
 function cheapForMonth(token: string, origin: string, month: string) {
   const qs = new URLSearchParams({ origin, destination: "-", depart_date: month, return_date: month, currency: "usd" });
   // Sin caché: cada barrido quiere el dato del momento.
@@ -60,6 +54,39 @@ interface MonthBest {
 }
 /** Datos guardados por mes: cuándo se revisó y el mejor precio por destino del catálogo. */
 type MonthStore = Record<string, { at: string; d: Record<string, MonthBest> }>;
+/**
+ * Precios vistos antes para el mismo destino y mes (base del "precio habitual"
+ * comparable): mes -> destino -> observaciones [precio, noches, día].
+ */
+type BaseStore = Record<string, Record<string, BaselineObs[]>>;
+/** Observaciones por destino y mes, y cuántos días se guardan. */
+const BASE_POINTS = 8;
+const BASE_DAYS = 30;
+
+const dayOf = (iso: string) => Math.floor(Date.parse(iso) / 86400000);
+/** Noches del viaje de una oferta (-1 si no trae las dos fechas). */
+const nightsOf = (o: { dep?: string; ret?: string }) =>
+  o.dep && o.ret ? Math.round((Date.parse(o.ret) - Date.parse(o.dep)) / 86400000) : -1;
+
+/**
+ * Al reemplazar los datos de un mes, lo que había pasa al historial de ese mes
+ * (cada observación entra una sola vez). Se recorta por antigüedad y cantidad.
+ */
+export function pushBaseline(prev: Record<string, BaselineObs[]> | undefined, old: { at: string; d: Record<string, MonthBest> } | undefined, today: number): Record<string, BaselineObs[]> {
+  const out: Record<string, BaselineObs[]> = {};
+  const keep = (xs: BaselineObs[]) => xs.filter((o) => o[2] >= today - BASE_DAYS).slice(-BASE_POINTS);
+  for (const [id, xs] of Object.entries(prev ?? {})) out[id] = xs;
+  if (old) {
+    const day = dayOf(old.at);
+    for (const [id, o] of Object.entries(old.d)) out[id] = [...(out[id] ?? []), [o.p, nightsOf(o), day]];
+  }
+  for (const id of Object.keys(out)) {
+    const kept = keep(out[id]);
+    if (kept.length) out[id] = kept;
+    else delete out[id];
+  }
+  return out;
+}
 
 /** Meses a revisar en este barrido: los que nunca se revisaron o los más viejos. */
 export function monthsToSweep(window: string[], store: MonthStore, n: number): string[] {
@@ -103,10 +130,18 @@ export async function runRadar(token: string, origin: string, now = new Date(), 
   // Solo los meses que siguen en la ventana.
   const store: MonthStore = Object.fromEntries(window.filter((m) => prevStore[m]).map((m) => [m, prevStore[m]]));
   const toSweep = monthsToSweep(window, store, Math.max(1, Math.min(MONTHS_AHEAD, opts.monthsPerRun ?? 1)));
-  const responses = await Promise.all(toSweep.map(async (m) => [m, await cheapForMonth(token, origin, m)] as const));
+  const baseKey = `radar:base:${origin}`;
+  const [responses, prevBase] = await Promise.all([
+    Promise.all(toSweep.map(async (m) => [m, await cheapForMonth(token, origin, m)] as const)),
+    loadJSON<BaseStore>(baseKey),
+  ]);
+  const base: BaseStore = Object.fromEntries(window.filter((m) => prevBase?.[m]).map((m) => [m, prevBase![m]]));
+  const today = dayOf(now.toISOString());
   let fresh = false;
   for (const [m, res] of responses) {
     if (res?.success && res.data) {
+      // Lo que se veía antes en este mes pasa a ser historial comparable.
+      base[m] = pushBaseline(base[m], store[m], today);
       store[m] = { at: now.toISOString(), d: compactMonth(origin, res) };
       fresh = true;
     } else if (store[m]) {
@@ -115,16 +150,22 @@ export async function runRadar(token: string, origin: string, now = new Date(), 
     }
   }
 
-  // Mejor precio por destino del catálogo, global y por mes.
-  const best = new Map<string, { offer: MonthBest; dest: Destination }>();
+  // Mejor precio por destino del catálogo, global y por mes, cada uno con su
+  // precio habitual del mismo mes y estadía parecida.
+  const best = new Map<string, { offer: MonthBest; dest: Destination; month: string }>();
   const byMonth: RadarSnapshot["byMonth"] = {};
+  const baselines = new Map<string, ReturnType<typeof likeForLikeBaseline>>();
   for (const monthKey of window) {
     for (const [destId, offer] of Object.entries(store[monthKey]?.d ?? {})) {
       const dest = DEST_BY_ID.get(destId);
       if (!dest) continue;
-      (byMonth[destId] ??= {})[monthKey] = { p: offer.p, dep: offer.dep, ret: offer.ret, al: offer.al };
+      const estimate = flightEstimate(origin, dest, Number(monthKey.slice(5, 7)));
+      const bl = likeForLikeBaseline(base[monthKey]?.[destId] ?? [], nightsOf(offer), estimate);
+      baselines.set(`${destId}|${monthKey}`, bl);
+      const entry: RadarMonth = { p: offer.p, dep: offer.dep, ret: offer.ret, al: offer.al, t: bl.typical, b: bl.baseline };
+      (byMonth[destId] ??= {})[monthKey] = entry;
       const prev = best.get(destId);
-      if (!prev || offer.p < prev.offer.p) best.set(destId, { offer, dest });
+      if (!prev || offer.p < prev.offer.p) best.set(destId, { offer, dest, month: monthKey });
     }
   }
 
@@ -135,14 +176,16 @@ export async function runRadar(token: string, origin: string, now = new Date(), 
   const items: RadarItem[] = [];
   const stats = { deals: 0, down: 0, up: 0, minimums: 0 };
 
-  for (const { offer, dest } of best.values()) {
+  for (const { offer, dest, month } of best.values()) {
     const price = offer.p;
     const past = (history[dest.id] ?? []).filter((o) => Date.parse(o.t) >= cutoff);
-    const depMonth = Number(offer.dep?.slice(5, 7)) || months[0].month;
-    const useHistory = past.length >= 3;
-    const typical = Math.round(useHistory ? median(past.map((o) => o.p)) : flightEstimate(origin, dest, depMonth));
+    // "Lo habitual" del mismo viaje (destino, mes y ±2 noches); si no hay
+    // suficientes datos comparables, la estimación (puntaje topeado).
+    const bl = baselines.get(`${dest.id}|${month}`)!;
+    const typical = bl.typical;
     const discountPct = Math.max(0, Math.round((1 - price / typical) * 100));
-    const isMinimum = useHistory && price < Math.min(...past.map((o) => o.p));
+    // Mínimo también contra viajes comparables: no contra otro mes u otra estadía.
+    const isMinimum = bl.lowest != null && price < bl.lowest;
     const last = prevSnap?.items.find((i) => i.destinationId === dest.id)?.priceUSD;
     const trend: RadarItem["trend"] = last == null ? "new" : price < last * 0.98 ? "down" : price > last * 1.02 ? "up" : "same";
     const isDeal = discountPct >= DEAL_DISCOUNT || isMinimum;
@@ -159,7 +202,7 @@ export async function runRadar(token: string, origin: string, now = new Date(), 
       priceUSD: price,
       typicalUSD: typical,
       discountPct,
-      baseline: useHistory ? "historial" : "estimado",
+      baseline: bl.baseline,
       trend,
       isMinimum,
       isDeal,
@@ -183,7 +226,11 @@ export async function runRadar(token: string, origin: string, now = new Date(), 
     live: items.length > 0,
   };
   // Si Travelpayouts no devolvió nada, no pisamos el historial ni la última foto buena.
-  if (fresh) await trySaveJSON(storeKey, store);
+  if (fresh) {
+    await trySaveJSON(storeKey, store);
+    await trySaveJSON(baseKey, base);
+    monthsMemo.delete(origin);
+  }
   if (items.length && fresh) {
     // Sin cuota de escritura en KV el barrido igual responde (no se guarda hasta el próximo).
     await trySaveJSON(histKey, history);
@@ -191,6 +238,37 @@ export async function runRadar(token: string, origin: string, now = new Date(), 
     await trySaveJSON(`radar:snap:${origin}`, snapshot);
   }
   return items.length && fresh ? snapshot : (prevSnap ?? snapshot);
+}
+
+// Copia en memoria de los meses del radar para /explore (se lee en cada búsqueda).
+const monthsMemo = new Map<string, { until: number; store: MonthStore }>();
+const MONTHS_MEMO_MS = 5 * 60000;
+/** Datos de un mes del radar más viejos que esto no se usan como precio actual. */
+export const RADAR_MONTH_MAX_AGE_H = 30;
+
+/**
+ * Mínimo real por destino del catálogo (IATA de ciudad -> precio) que vio el
+ * radar en cada mes pedido, si ese mes se revisó hace poco. Es un dato chico y
+ * ya resumido: /explore lo usa en vez de bajar y parsear la respuesta cruda.
+ */
+export async function radarMonthFares(origin: string, months: string[], now = Date.now()): Promise<Record<string, Map<string, number>>> {
+  let memo = monthsMemo.get(origin);
+  if (!memo || memo.until < now) {
+    memo = { until: now + MONTHS_MEMO_MS, store: (await loadJSON<MonthStore>(`radar:months:${origin}`)) ?? {} };
+    monthsMemo.set(origin, memo);
+  }
+  const out: Record<string, Map<string, number>> = {};
+  for (const m of months) {
+    const entry = memo.store[m];
+    if (!entry || now - Date.parse(entry.at) > RADAR_MONTH_MAX_AGE_H * 3600000) continue;
+    const prices = new Map<string, number>();
+    for (const [id, o] of Object.entries(entry.d)) {
+      const dest = DEST_BY_ID.get(id);
+      if (dest && o.p) prices.set(dest.iata, o.p);
+    }
+    if (prices.size) out[m] = prices;
+  }
+  return out;
 }
 
 /** Última foto del radar; si es vieja (o no existe), hace un barrido nuevo. */

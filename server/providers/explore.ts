@@ -4,7 +4,8 @@ import { googleSearch } from "../google-budget.ts";
 import { DESTINATIONS } from "../data/destinations.ts";
 import { addDays } from "../engine.ts";
 import { offersFor } from "../escapes.ts";
-import { airportsFor, cheapestAnywhere } from "./flights.ts";
+import { radarMonthFares } from "../radar.ts";
+import { airportsFor, cheapestAnywhereMonths } from "./flights.ts";
 
 // Precios reales para la búsqueda inicial ("¿a dónde me alcanza?").
 // 1) Google Travel Explore (SerpApi): una sola búsqueda trae vuelo + hotel
@@ -106,6 +107,21 @@ async function googleExploreRaw(apiKey: string, origin: string, month: number | 
   return data ?? [];
 }
 
+/**
+ * Mínimos reales del mes de Aviasales para hasta 6 meses, sin pasar el límite
+ * de CPU: primero lo cacheado y la foto compacta del radar (si esa ciudad la
+ * tiene); de Travelpayouts se baja como mucho un mes nuevo por búsqueda.
+ */
+async function travelpayoutsMonths(token: string, origin: string, months: { month: number; year: number }[]) {
+  const keys = months.map(({ month, year }) => `${year}-${String(month).padStart(2, "0")}`);
+  const radar = await radarMonthFares(origin, keys);
+  const found = await cheapestAnywhereMonths(token, origin, keys, radar);
+  return months.flatMap(({ month }, i) => {
+    const prices = found.get(keys[i]);
+    return prices ? [[month, prices] as const] : [];
+  });
+}
+
 export interface RealPrices {
   /** Precios reales conocidos de un destino del catálogo (uno por mes). */
   forDest: (dest: Destination) => RealPrice[];
@@ -131,13 +147,7 @@ export async function realPrices(
     keys.travelpayouts && weekends
       ? Promise.resolve([])
       : keys.travelpayouts
-      ? Promise.all(
-          // Hasta 6 meses: alcanza para comparar y no pasa el límite de CPU del plan gratuito.
-          months.slice(0, 6).map(async ({ month, year }) => [
-            month,
-            await cheapestAnywhere(keys.travelpayouts!, origin, `${year}-${String(month).padStart(2, "0")}`),
-          ] as const),
-        )
+      ? travelpayoutsMonths(keys.travelpayouts, origin, months.slice(0, 6))
       : Promise.resolve([]),
   ]);
 

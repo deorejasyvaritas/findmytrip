@@ -21,7 +21,9 @@ export function itemsForMonth(snap: RadarSnapshot, month: string): RadarItem[] {
   for (const item of snap.items) {
     const m = snap.byMonth[item.destinationId]?.[month];
     if (!m) continue;
-    const discountPct = Math.max(0, Math.round((1 - m.p / item.typicalUSD) * 100));
+    // Precio habitual de ese mismo mes y estadía (fotos viejas: el general).
+    const typicalUSD = m.t ?? item.typicalUSD;
+    const discountPct = Math.max(0, Math.round((1 - m.p / typicalUSD) * 100));
     const isMinimum = item.isMinimum && m.p <= item.priceUSD;
     out.push(withRadarScore({
       ...item,
@@ -30,6 +32,8 @@ export function itemsForMonth(snap: RadarSnapshot, month: string): RadarItem[] {
       ret: m.ret,
       airline: m.al,
       flightNumber: m.p === item.priceUSD ? item.flightNumber : undefined,
+      typicalUSD,
+      baseline: m.b ?? item.baseline,
       discountPct,
       isMinimum,
       isDeal: discountPct >= 15 || isMinimum,

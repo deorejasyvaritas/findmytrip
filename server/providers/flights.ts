@@ -213,6 +213,40 @@ export async function cheapestAnywhere(token: string, origin: string, month: str
   return new Map(Object.entries(compact ?? {}));
 }
 
+/** Cuántos meses sin caché puede bajar una búsqueda (cada respuesta cruda pesa ~100 KB de JSON). */
+export const MAX_UNCACHED_MONTHS = 1;
+
+/**
+ * Precios reales del mes (destino -> precio) para varios meses, cuidando el
+ * límite de CPU del plan gratuito: parsear la respuesta cruda de
+ * /v1/prices/cheap (todos los destinos) cuesta ~1 ms por mes, y seis de golpe
+ * más el resto de la búsqueda pasaban los 10 ms.
+ * 1) lo ya resumido en KV (tpc:), 2) la foto compacta del radar para esa
+ * ciudad (`fallback`), 3) baja de Travelpayouts como mucho `maxFetch` meses.
+ * Los meses que quedan afuera no aparecen en el resultado: la búsqueda los
+ * estima (y los marca como estimados).
+ */
+export async function cheapestAnywhereMonths(
+  token: string,
+  origin: string,
+  months: string[],
+  fallback: Record<string, Map<string, number>> = {},
+  maxFetch = MAX_UNCACHED_MONTHS,
+): Promise<Map<string, Map<string, number>>> {
+  const out = new Map<string, Map<string, number>>();
+  const hits = await Promise.all(months.map((m) => peek<Record<string, number>>(`tpc:${origin}-${m}`)));
+  const missing: string[] = [];
+  months.forEach((m, i) => {
+    const hit = hits[i];
+    if (hit) out.set(m, new Map(Object.entries(hit)));
+    else if (fallback[m]?.size) out.set(m, fallback[m]);
+    else missing.push(m);
+  });
+  const fetched = await Promise.all(missing.slice(0, Math.max(0, maxFetch)).map(async (m) => [m, await cheapestAnywhere(token, origin, m)] as const));
+  for (const [m, prices] of fetched) if (prices.size) out.set(m, prices);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // SerpApi (Google Flights) — 250 búsquedas/mes gratis. Se usa solo a pedido
 // ("confirmar precio") y con caché de 12 h para cuidar la cuota.

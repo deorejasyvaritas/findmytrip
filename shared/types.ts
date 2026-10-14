@@ -406,6 +406,18 @@ export interface RadarItem {
 
 export type RadarTier = "Ofertón" | "Excelente" | "Muy buena" | "Buena";
 
+/** Mejor precio de un destino en un mes, con su precio habitual para ese mismo mes y estadía. */
+export interface RadarMonth {
+  p: number;
+  dep?: string;
+  ret?: string;
+  al?: string;
+  /** Precio habitual de ese mes (falta en fotos viejas). */
+  t?: number;
+  /** De dónde sale `t`: historial comparable o estimación. */
+  b?: "historial" | "estimado";
+}
+
 export interface RadarSnapshot {
   origin: string;
   updatedAt: string;
@@ -413,7 +425,7 @@ export interface RadarSnapshot {
   stats: { deals: number; down: number; up: number; minimums: number };
   items: RadarItem[];
   /** Mejor precio por destino y mes (YYYY-MM), para evaluar alertas. */
-  byMonth: Record<string, Record<string, { p: number; dep?: string; ret?: string; al?: string }>>;
+  byMonth: Record<string, Record<string, RadarMonth>>;
   live: boolean;
 }
 
