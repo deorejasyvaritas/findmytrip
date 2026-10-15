@@ -109,7 +109,6 @@ export const INTEREST_ICON: Record<string, IconName> = {
 /** Pestañas principales (barra superior en escritorio, barra inferior en celular). */
 export const TABS: { to: string; label: string; icon: IconName; external?: boolean }[] = [
   { to: "/", label: "Explorar", icon: "compass" },
-  { to: "/agente", label: "Agente", icon: "message" },
   { to: "/viajes", label: "Mis viajes", icon: "bookmark" },
   { to: "/perfil", label: "Perfil", icon: "user" },
 ];

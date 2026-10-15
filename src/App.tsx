@@ -6,13 +6,13 @@ import Icon, { BrandMark } from "./components/Icon.tsx";
 import { useApp } from "./lib/app-context.tsx";
 import { TABS } from "./lib/icons.ts";
 import Home from "./pages/Home.tsx";
+import Trippy from "./components/Trippy.tsx";
 import { CompareBar } from "./components/Compare.tsx";
 import PageSkeleton from "./components/PageSkeleton.tsx";
 
 // Explorar (Home) viene en el archivo principal; el resto de las pantallas se baja al abrirlas.
 const DestinationPage = lazy(() => import("./pages/Destination.tsx"));
 const Trips = lazy(() => import("./pages/Trips.tsx"));
-const Agent = lazy(() => import("./pages/Agent.tsx"));
 const ProfilePage = lazy(() => import("./pages/Profile.tsx"));
 const SearchPage = lazy(() => import("./pages/Search.tsx"));
 const ComparePage = lazy(() => import("./pages/Compare.tsx"));
@@ -68,7 +68,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/destino/:id" element={<DestinationPage />} />
           <Route path="/viajes" element={<Trips />} />
-          <Route path="/agente" element={<Agent />} />
+          <Route path="/agente" element={<Home />} />
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/buscar" element={<SearchPage />} />
           <Route path="/comparar" element={<ComparePage />} />
@@ -88,10 +88,13 @@ export default function App() {
         <CompareBar />
       </main>
       <LegalFooter />
+      <Trippy />
       <nav className="tabbar" aria-label="Principal">
         {TABS.map((t) => (
           <TabLink key={t.to} tab={t} badge={badgeFor(t.to)} withIcon />
         ))}
+        {/* Lugar para Trippy: en el celular la burbuja se apoya acá y no tapa contenido. */}
+        <span className="tabbar-slot" aria-hidden="true" />
       </nav>
     </div>
   );

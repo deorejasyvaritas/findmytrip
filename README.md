@@ -11,7 +11,7 @@ pero sin ruido, todo personalizado y pensado para **llegar al mejor viaje posibl
 - **Lugares que quizás no estabas considerando.** Destinos menos obvios que también entran en el presupuesto.
 - **Ficha de destino:** costo por mes, calendario de vuelos día por día con precios reales,
   precio exacto de Google Flights a pedido, hoteles reales de Google Hotels y armado del paquete.
-- **Mis viajes**, **seguir destinos** con presupuesto objetivo, **perfil** y **agente conversacional** (opcional).
+- **Mis viajes**, **seguir destinos** con presupuesto objetivo, **perfil** y **Trippy**, el agente conversacional (burbuja flotante en todas las pantallas).
 
 ## Precios reales: de dónde salen (todo gratis)
 

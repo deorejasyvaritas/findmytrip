@@ -408,9 +408,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .actions select { width: auto; }
 
-/* ---------- Agente (estilo Mensajes) ---------- */
-.chat { display: flex; flex-direction: column; gap: 16px; max-width: 720px; margin: 0 auto; }
-.chat-log { display: flex; flex-direction: column; gap: 8px; min-height: 40vh; }
+/* ---------- Trippy: mensajes (estilo Mensajes de iOS) ---------- */
 .msg { display: flex; flex-direction: column; gap: 8px; }
 .msg.user { align-items: flex-end; }
 .bubble { white-space: pre-wrap; padding: 8px 14px; border-radius: 20px; max-width: 80%; font-size: 15px; line-height: 1.4; }
@@ -428,12 +426,59 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .starter { justify-content: flex-start; text-align: left; min-height: 56px; padding: 12px 16px; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); font-weight: 400; line-height: 1.35; }
 .starter:hover { box-shadow: var(--shadow-md); }
-.chat-input {
-  position: sticky; bottom: 0; display: flex; gap: 8px; align-items: flex-end; padding: 12px 0 16px;
-  background: linear-gradient(to top, var(--bg) 70%, transparent);
+
+/* ---------- Trippy: burbuja flotante y panel ---------- */
+.trippy-bubble {
+  position: fixed; right: 24px; bottom: 24px; z-index: 40; min-height: 56px; padding: 0 20px 0 16px; gap: 8px;
+  border-radius: 999px; background: var(--brand); color: #fefefe; font-size: 16px; font-weight: 700;
+  box-shadow: 0 0 0 3px var(--surface), 0 10px 28px rgba(200, 40, 80, 0.38), 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
 }
-.chat-input textarea { border-radius: 22px; padding: 11px 16px; min-height: 44px; background-color: var(--surface); border: 1px solid var(--separator); }
-.chat-input button { width: 44px; padding: 0; border-radius: 50%; flex-shrink: 0; }
+.trippy-bubble:hover { transform: translateY(-2px); box-shadow: 0 0 0 3px var(--surface), 0 14px 32px rgba(200, 40, 80, 0.45), 0 2px 6px rgba(0, 0, 0, 0.12); }
+.trippy-bubble:focus-visible { outline: 3px solid var(--tint); outline-offset: 3px; }
+.trippy-backdrop { display: none; }
+.trippy-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 50; width: min(420px, 100vw);
+  display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--separator);
+  box-shadow: -12px 0 40px rgba(17, 17, 26, 0.14);
+  transform: translateX(105%); visibility: hidden;
+  transition: transform 260ms var(--ease-out), visibility 0s linear 260ms;
+}
+.trippy-panel.open { transform: none; visibility: visible; transition: transform 260ms var(--ease-out); }
+.trippy-head {
+  display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; min-height: 64px;
+  background: var(--surface); border-bottom: 1px solid var(--separator);
+}
+.trippy-head .grow { display: flex; flex-direction: column; line-height: 1.2; }
+.trippy-avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: #fefefe; flex-shrink: 0; }
+.trippy-log { flex: 1; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+.trippy-log .bubble { max-width: 88%; }
+.trippy-log .msg .package { max-width: 100%; }
+.trippy-starters { display: flex; flex-direction: column; gap: 8px; }
+.trippy-starters .starter { min-height: 48px; padding: 10px 14px; font-size: 14px; }
+.trippy-input {
+  display: flex; gap: 8px; align-items: flex-end; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--separator);
+}
+.trippy-input textarea { border-radius: 22px; padding: 11px 16px; min-height: 44px; max-height: 140px; background-color: var(--bg); border: 1px solid var(--separator); }
+.trippy-input button { width: 44px; padding: 0; border-radius: 50%; flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) { .trippy-panel, .trippy-panel.open, .trippy-bubble { transition: none; } }
+@media (max-width: 767px) {
+  /* Dentro de la barra de pestañas, en el último lugar, como una pestaña más: no tapa contenido. */
+  .trippy-bubble, .trippy-bubble:hover {
+    right: 0; bottom: calc(8px + env(safe-area-inset-bottom)); width: 25vw; min-height: 48px; padding: 0; z-index: 21;
+    flex-direction: column; justify-content: center; gap: 2px; background: transparent; box-shadow: none; transform: none;
+    color: var(--brand-ink); font-size: 11px; font-weight: 600;
+  }
+  .trippy-bubble-icon {
+    width: 32px; height: 28px; border-radius: 999px; display: grid; place-items: center;
+    background: var(--brand); color: #fefefe; box-shadow: 0 4px 10px rgba(200, 40, 80, 0.35);
+  }
+  .trippy-bubble-icon .icon { width: 18px; height: 18px; }
+  .trippy-panel { width: 100vw; border-left: 0; top: env(safe-area-inset-top); border-radius: 16px 16px 0 0; transform: translateY(105%); }
+  .trippy-head { border-radius: 16px 16px 0 0; }
+  .trippy-backdrop { display: block; position: fixed; inset: 0; z-index: 45; background: rgba(0, 0, 0, 0.3); }
+}
 
 /* ---------- Buscador en vivo (White Label) ---------- */
 .wl-panel { background-color: var(--brand-strong); background-image: radial-gradient(120% 140% at 0% 0%, #e8436c 0%, transparent 60%); border-radius: 24px; padding: 24px; color: #fefefe; }
@@ -457,7 +502,7 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   .topbar-inner { padding: 0 16px; height: 52px; }
   .nav { display: none; }
   .tabbar {
-    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
     padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
     background: color-mix(in srgb, var(--surface) 82%, transparent);
@@ -1537,4 +1582,10 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
   .country-fields { grid-template-columns: minmax(0, 1fr); }
   .country-controls .segmented { align-self: stretch; }
   .country-other > button { width: 100%; }
+}
+
+/* Con la barra de "Comparar" abierta, Trippy sube para no taparla. */
+.app:has(.compare-bar) .trippy-bubble { bottom: 96px; }
+@media (max-width: 767px) {
+  .app:has(.compare-bar) .trippy-bubble { bottom: calc(6px + env(safe-area-inset-bottom)); }
 }

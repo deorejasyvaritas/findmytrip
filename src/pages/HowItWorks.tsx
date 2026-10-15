@@ -62,7 +62,7 @@ const FREE: Row[] = [
   { icon: "check", title: "Radar, historial de precios y alertas", text: "Funcionan solos, todos los días.", tone: "green" },
   {
     icon: "check",
-    title: "Agente de viajes",
+    title: "Trippy, el agente de viajes",
     text: "Usa una inteligencia artificial gratuita. Quien administra el sitio puede sumar Claude como opción, pero a vos no te cuesta nada.",
     tone: "green",
   },

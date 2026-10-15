@@ -31,5 +31,5 @@ Sitio: https://findmytrip.deorejasyvaritas.workers.dev
 - `server/providers/`: flights, explore, hotels, xotelo, photos, fx.
 - `server/radar.ts`, `server/alerts.ts` (Telegram), `server/holidays.ts` + `server/escapes.ts` (fines de semana largos),
   `server/cross.ts` (Cruzá y volá), `server/auth.ts` (cuentas en KV).
-- `src/pages/`: Home (Explorar), Destination, Trips, Agent, Profile.
+- `src/pages/`: Home (Explorar), Destination, Trips, Profile, Legal. El agente es Trippy: burbuja flotante en `src/components/Trippy.tsx`.
 - Pendientes: ver `ROADMAP.md`.
