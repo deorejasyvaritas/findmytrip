@@ -1,6 +1,8 @@
 import type { Extra } from "../../shared/extras.ts";
 import type { ClimateMonth } from "../../shared/climate.ts";
+import type { TripBrief } from "../../shared/brief.ts";
 import type {
+  AgentCard,
   GeoPlace,
   TripPlan,
   TripPlanRequest,
@@ -237,9 +239,9 @@ export const api = {
     style: Style;
     flightPP?: number;
   }) => request<TripPackage>("/api/packages/build", { method: "POST", body: JSON.stringify(body) }),
-  agent: (messages: { role: "user" | "assistant"; content: string }[], profile: Profile) =>
-    request<{ text: string; packages: TripPackage[] }>("/api/agent", {
+  agent: (messages: { role: "user" | "assistant"; content: string }[], profile: Profile, brief?: TripBrief) =>
+    request<{ text: string; packages: TripPackage[]; cards?: AgentCard[] }>("/api/agent", {
       method: "POST",
-      body: JSON.stringify({ messages, profile }),
+      body: JSON.stringify({ messages, profile, brief }),
     }),
 };

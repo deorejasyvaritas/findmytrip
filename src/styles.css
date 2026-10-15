@@ -1589,3 +1589,28 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 @media (max-width: 767px) {
   .app:has(.compare-bar) .trippy-bubble { bottom: calc(6px + env(safe-area-inset-bottom)); }
 }
+
+/* ---------- Trippy: resumen del viaje, tarjetas y próximas preguntas ---------- */
+.trippy-brief { padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--separator); display: flex; flex-direction: column; gap: 10px; }
+.trippy-brief-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.trippy-brief-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand-ink); margin-right: 2px; }
+.trippy-brief-row .plain { margin-left: auto; min-height: 28px; padding: 0 6px; }
+.brief-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 4px 0 10px; border-radius: 999px; background: var(--brand-soft); color: var(--label); font-size: 13px; font-weight: 500; }
+.brief-chip button { width: 22px; min-height: 22px; height: 22px; padding: 0; border-radius: 50%; color: var(--label-2); background: transparent; }
+.brief-chip button:hover { background: rgba(0, 0, 0, 0.06); }
+.trippy-brief-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.trippy-brief-form .field:first-child { grid-column: span 2; }
+.trippy-brief-form input, .trippy-brief-form select { min-height: 36px; }
+.trippy-card {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; max-width: 100%;
+  background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); color: var(--label); font-weight: 400;
+}
+.trippy-card:hover { text-decoration: none; box-shadow: var(--shadow-md); }
+.trippy-card img, .trippy-card-img { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background: var(--brand-soft); flex-shrink: 0; }
+.trippy-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.trippy-card-body strong { font-size: 15px; }
+.trippy-card-price { font-weight: 700; font-variant-numeric: tabular-nums; }
+.trippy-card > .icon { color: var(--label-3); }
+.trippy-followups { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.trippy-followups .chip { min-height: 32px; font-size: 13px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--separator); color: var(--label); }
+.trippy-followups .chip:hover { box-shadow: inset 0 0 0 1px var(--label-3); }

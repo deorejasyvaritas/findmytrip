@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import type { TripPackage } from "../../shared/types.ts";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import type { AgentCard, TripPackage } from "../../shared/types.ts";
+import { MONTH_NAMES, briefChips, clearBriefField, updateBrief, type TripBrief } from "../../shared/brief.ts";
+import { capitalize, formatRange, monthName } from "../lib/format.ts";
+import { SOURCE_LABEL } from "./SuggestionCard.tsx";
 import { api } from "../lib/api.ts";
 import { useApp } from "../lib/app-context.tsx";
 import { useStored } from "../lib/storage.ts";
@@ -15,6 +18,19 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   packages?: TripPackage[];
+  cards?: AgentCard[];
+}
+
+const FIT_LABEL = { dentro: "Entra holgado", ajustado: "Entra justo", estirando: "Un poco más" } as const;
+
+/** Próximas preguntas probables, según lo que acaba de responder Trippy. */
+function followUps(last: ChatMessage | undefined, brief: TripBrief): string[] {
+  if (!last || last.role !== "assistant") return [];
+  const first = last.cards?.[0];
+  if (first) return [`Armame el paquete a ${first.name.split(" y ")[0]}`, "¿Hay algo más barato?", "¿Qué otro mes conviene?"];
+  if (last.packages?.length) return ["¿Hay fechas más baratas?", "Mostrame alternativas parecidas"];
+  if (brief.destinationName) return [`¿Cuándo conviene ir a ${brief.destinationName.split(" y ")[0]}?`, "Sorprendeme con algo distinto"];
+  return ["Sorprendeme con algo distinto", "Algo más barato"];
 }
 
 const STARTERS = [
@@ -30,6 +46,9 @@ export default function Trippy() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useStored<ChatMessage[]>("fmt.chat", []);
+  // Resumen del viaje: se arma con lo que el usuario escribe y se manda en cada mensaje.
+  const [brief, setBrief] = useStored<TripBrief>("fmt.brief", {});
+  const [editing, setEditing] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,21 +96,23 @@ export default function Trippy() {
     const content = text.trim();
     if (!content || loading) return;
     const next = [...messages, { role: "user" as const, content }];
+    const nextBrief = updateBrief(brief, content, destinations);
+    setBrief(nextBrief);
     setMessages(next);
     setInput("");
-    await ask(next);
+    await ask(next, nextBrief);
   }
 
   /** Pide la respuesta para una conversación que termina en un mensaje del usuario. */
-  async function ask(next: ChatMessage[]) {
+  async function ask(next: ChatMessage[], currentBrief: TripBrief = brief) {
     setLoading(true);
     setError(null);
     try {
       // Mandamos solo las últimas 20 vueltas para mantener el contexto acotado.
       const history = next.slice(-20).map(({ role, content }) => ({ role, content }));
       while (history.length && history[0].role !== "user") history.shift();
-      const reply = await api.agent(history, profile);
-      setMessages([...next, { role: "assistant", content: reply.text, packages: reply.packages }]);
+      const reply = await api.agent(history, profile, currentBrief);
+      setMessages([...next, { role: "assistant", content: reply.text, packages: reply.packages, cards: reply.cards }]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -129,7 +150,14 @@ export default function Trippy() {
             <span className="small muted">Tu agente de viajes</span>
           </div>
           {messages.length > 0 && (
-            <button className="plain small" onClick={() => setMessages([])}>
+            <button
+              className="plain small"
+              onClick={() => {
+                setMessages([]);
+                setBrief({});
+                setEditing(false);
+              }}
+            >
               Nueva
             </button>
           )}
@@ -137,6 +165,8 @@ export default function Trippy() {
             <Icon name="close" size={20} />
           </button>
         </header>
+
+        <TripBriefBar brief={brief} onChange={setBrief} editing={editing} setEditing={setEditing} />
 
         <div className="trippy-log" aria-live="polite">
           {messages.length === 0 && (
@@ -162,6 +192,9 @@ export default function Trippy() {
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>
               <div className="bubble">{m.content}</div>
+              {m.cards?.map((c) => (
+                <TrippyCard key={c.destinationId} card={c} onOpen={() => window.matchMedia("(max-width: 767px)").matches && setOpen(false)} />
+              ))}
               {m.packages?.map((p) => (
                 <PackageCard
                   key={p.id}
@@ -202,6 +235,15 @@ export default function Trippy() {
               )}
             </div>
           )}
+          {!loading && !error && (
+            <div className="trippy-followups">
+              {followUps(messages[messages.length - 1], brief).map((q) => (
+                <button key={q} className="chip" onClick={() => send(q)}>
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
           <div ref={endRef} />
         </div>
 
@@ -226,5 +268,119 @@ export default function Trippy() {
         </form>
       </aside>
     </>
+  );
+}
+
+/** Tarjeta de un destino recomendado: foto, precio y acceso directo a la ficha. */
+function TrippyCard({ card, onOpen }: { card: AgentCard; onOpen: () => void }) {
+  const { money, photos } = useApp();
+  const q = new URLSearchParams({ month: `${card.year}-${String(card.month).padStart(2, "0")}`, nights: String(card.nights) });
+  if (card.depart) q.set("depart", card.depart);
+  const when = card.depart && card.ret ? formatRange(card.depart, card.ret) : `${capitalize(monthName(card.month))} ${card.year}`;
+  return (
+    <Link to={`/destino/${card.destinationId}?${q}`} className="trippy-card" onClick={onOpen}>
+      {photos[card.destinationId] ? (
+        <img src={photos[card.destinationId]} alt="" loading="lazy" referrerPolicy="no-referrer" />
+      ) : (
+        <span className="trippy-card-img" />
+      )}
+      <span className="trippy-card-body">
+        <strong>{card.name}</strong>
+        <span className="small muted">
+          {card.country} · {when}
+        </span>
+        <span className="trippy-card-price">
+          {money(card.totalUSD)} <span className="small muted">· {money(card.perPersonUSD)} por persona</span>
+        </span>
+        <span className="small muted">
+          {FIT_LABEL[card.fit]} · {SOURCE_LABEL[card.flightSource]}
+        </span>
+      </span>
+      <Icon name="chevronRight" size={18} />
+    </Link>
+  );
+}
+
+/** Resumen del viaje fijo arriba del chat: lo que Trippy ya sabe, editable. */
+function TripBriefBar({
+  brief,
+  onChange,
+  editing,
+  setEditing,
+}: {
+  brief: TripBrief;
+  onChange: (b: TripBrief) => void;
+  editing: boolean;
+  setEditing: (v: boolean) => void;
+}) {
+  const { destinations } = useApp();
+  const chips = briefChips(brief);
+  const num = (v: string) => (v ? Math.max(1, Math.round(Number(v))) : undefined);
+  return (
+    <div className="trippy-brief" aria-label="Resumen del viaje">
+      <div className="trippy-brief-row">
+        <span className="trippy-brief-title">Tu viaje</span>
+        {chips.length === 0 && !editing && <span className="small muted">Se completa solo mientras charlamos.</span>}
+        {chips.map((c) => (
+          <span key={c.field} className="brief-chip">
+            {c.label}
+            <button type="button" aria-label={`Quitar ${c.label}`} onClick={() => onChange(clearBriefField(brief, c.field))}>
+              <Icon name="close" size={12} />
+            </button>
+          </span>
+        ))}
+        <button type="button" className="plain small" onClick={() => setEditing(!editing)} aria-expanded={editing}>
+          {editing ? "Listo" : "Editar"}
+        </button>
+      </div>
+      {editing && (
+        <div className="trippy-brief-form">
+          <label className="field">
+            Destino
+            <select
+              value={brief.destinationId ?? ""}
+              onChange={(e) => {
+                const d = destinations.find((x) => x.id === e.target.value);
+                onChange({ ...brief, destinationId: d?.id, destinationName: d?.name });
+              }}
+            >
+              <option value="">Abierto a ideas</option>
+              {destinations.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Presupuesto total (USD)
+            <input
+              inputMode="numeric"
+              value={brief.budgetUSD ?? ""}
+              onChange={(e) => onChange({ ...brief, budgetUSD: num(e.target.value.replace(/\D/g, "")), budgetPerPersonUSD: undefined })}
+            />
+          </label>
+          <label className="field">
+            Adultos
+            <input type="number" min={1} max={12} value={brief.adults ?? ""} onChange={(e) => onChange({ ...brief, adults: num(e.target.value) })} />
+          </label>
+          <label className="field">
+            Noches
+            <input type="number" min={1} max={60} value={brief.nights ?? ""} onChange={(e) => onChange({ ...brief, nights: num(e.target.value) })} />
+          </label>
+          <label className="field">
+            Mes
+            <select value={brief.month ?? ""} onChange={(e) => onChange({ ...brief, month: e.target.value ? Number(e.target.value) : undefined })}>
+              <option value="">Flexible</option>
+              {MONTH_NAMES.map((m, i) => (
+                <option key={m} value={i + 1}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+    </div>
   );
 }

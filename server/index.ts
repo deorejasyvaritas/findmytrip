@@ -483,13 +483,27 @@ app.post("/agent", async (c) => {
         .min(1)
         .max(40),
       profile: profileSchema,
+      brief: z
+        .object({
+          destinationId: z.string().max(60).optional(),
+          destinationName: z.string().max(80).optional(),
+          budgetUSD: z.number().positive().max(1_000_000).optional(),
+          budgetPerPersonUSD: z.number().positive().max(1_000_000).optional(),
+          adults: z.number().int().min(1).max(12).optional(),
+          childAges: z.array(z.number().int().min(0).max(17)).max(10).optional(),
+          nights: z.number().int().min(1).max(60).optional(),
+          month: z.number().int().min(1).max(12).optional(),
+          interests: z.array(z.enum(INTERESTS)).optional(),
+          style: style.optional(),
+        })
+        .optional(),
     })
     .parse(await c.req.json());
   if (body.messages[0].role !== "user" || body.messages.at(-1)!.role !== "user") {
     return c.json({ error: "La conversación debe empezar y terminar con un mensaje del usuario." }, 400);
   }
   try {
-    return c.json(await runAgent(env(c), body.messages, body.profile));
+    return c.json(await runAgent(env(c), body.messages, body.profile, new Date(), body.brief ?? {}));
   } catch (err) {
     console.error("[agente]", err);
     const free = !has(env(c).ANTHROPIC_API_KEY);

@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import type { Bags, Interest, Party, Profile, Region, Style, TripPackage } from "../shared/types.ts";
+import type { AgentCard, Bags, Interest, Party, Profile, Region, Style, TripPackage } from "../shared/types.ts";
+import { briefBudget, briefForAgent, normalize, type TripBrief } from "../shared/brief.ts";
 import { DESTINATIONS, getDestination } from "./data/destinations.ts";
 import { explore, monthOverview, monthName, resolveWhen, stayOptions } from "./engine.ts";
 import type { Env } from "./env.ts";
@@ -62,6 +63,23 @@ export interface AgentMessage {
 export interface AgentReply {
   text: string;
   packages: TripPackage[];
+  /** Destinos recomendados en la respuesta, con su precio, para mostrar como tarjetas. */
+  cards: AgentCard[];
+}
+
+/** Tarjetas de los destinos que la respuesta nombra, en el orden en que aparecen (hasta 3). */
+export function pickCards(text: string, seen: Map<string, AgentCard>): AgentCard[] {
+  const t = normalize(text);
+  return [...seen.values()]
+    .map((c) => {
+      const names = [c.name, c.name.split(" y ")[0]].map(normalize);
+      const at = Math.min(...names.map((n) => (t.includes(n) ? t.indexOf(n) : Infinity)));
+      return { c, at };
+    })
+    .filter((x) => Number.isFinite(x.at))
+    .sort((a, b) => a.at - b.at)
+    .slice(0, 3)
+    .map((x) => x.c);
 }
 
 export async function runAgent(
@@ -69,6 +87,7 @@ export async function runAgent(
   messages: AgentMessage[],
   profile: Profile,
   today = new Date(),
+  brief: TripBrief = {},
 ): Promise<AgentReply> {
   const tpToken = env.TRAVELPAYOUTS_TOKEN;
   const baseParty: Party = { adults: profile.travelers, childAges: profile.childAges ?? [], bags: profile.bags ?? "cabin" };
@@ -79,6 +98,8 @@ export async function runAgent(
   });
 
   const proposals: TripPackage[] = [];
+  // Destinos con precio que devolvieron las herramientas: se muestran como tarjetas si la respuesta los nombra.
+  const seen = new Map<string, AgentCard>();
   const origin = profile.origin || "BUE";
   const json = (v: unknown) => JSON.stringify(v);
 
@@ -88,8 +109,8 @@ export async function runAgent(
       description:
         "Busca destinos que entran en un presupuesto total (todo el grupo, en USD) y los rankea según intereses, época y presupuesto. Si no se indica mes, busca el mejor mes de los próximos 12. Devuelve sugerencias principales y alternativas que el usuario quizás no consideró.",
       inputSchema: z.object({
-        budgetUSD: z.number().describe("Presupuesto total del grupo en USD"),
-        nights: z.number().int().min(1).max(60),
+        budgetUSD: z.number().optional().describe("Presupuesto total del grupo en USD (si se omite, se usa el del resumen del viaje)"),
+        nights: z.number().int().min(1).max(60).optional().describe("Noches (si se omite, se usa el del resumen o 7)"),
         adults: z.number().int().min(1).max(12).optional(),
         childAges: z.array(z.number().int().min(0).max(17)).optional().describe("Edad de cada menor"),
         bags: z.enum(BAGS).optional().describe("Equipaje por persona"),
@@ -105,11 +126,22 @@ export async function runAgent(
           .optional()
           .describe("Régimen: room = solo alojamiento, breakfast = con desayuno, half = media pensión, all = all inclusive (solo destinos donde hay)"),
       }),
-      run: async (input) => {
+      run: async (raw) => {
+        // Lo que el modelo no pasa sale del resumen del viaje: así no se olvida de lo ya dicho.
+        const input = {
+          ...raw,
+          adults: raw.adults ?? brief.adults,
+          childAges: raw.childAges ?? brief.childAges,
+          month: raw.month ?? brief.month,
+          style: raw.style ?? brief.style,
+          interests: raw.interests ?? brief.interests,
+        };
+        const nightsIn = raw.nights ?? brief.nights ?? 7;
+        const budgetIn = raw.budgetUSD ?? briefBudget(brief, baseParty.adults) ?? 1500 * (partyFrom(input).adults + partyFrom(input).childAges.length);
         const month = input.month ?? null;
         const when =
           input.dateFrom && input.dateTo ? ({ kind: "window", from: input.dateFrom, to: input.dateTo } as const) : undefined;
-        const window = resolveWhen({ when, month, nights: input.nights }, today);
+        const window = resolveWhen({ when, month, nights: nightsIn }, today);
         const live = await realPrices(
           { serpapi: env.SERPAPI_KEY, travelpayouts: tpToken },
           origin,
@@ -119,8 +151,8 @@ export async function runAgent(
         const res = explore(
           {
             origin,
-            budgetUSD: input.budgetUSD,
-            nights: input.nights,
+            budgetUSD: budgetIn,
+            nights: nightsIn,
             travelers: partyFrom(input).adults,
             party: partyFrom(input),
             month,
@@ -153,7 +185,26 @@ export async function runAgent(
           fechas: s.depart ? `${s.depart} a ${s.ret ?? "?"}` : undefined,
           docs: s.destination.docs,
         });
+        for (const s of [...res.suggestions.slice(0, 8), ...res.alternatives]) {
+          if (seen.has(s.destination.id)) continue;
+          seen.set(s.destination.id, {
+            destinationId: s.destination.id,
+            name: s.destination.name,
+            country: s.destination.country,
+            month: s.month,
+            year: s.year,
+            nights: nightsIn,
+            totalUSD: s.cost.total,
+            perPersonUSD: s.cost.perPerson,
+            fit: s.fit,
+            flightSource: s.flightSource,
+            depart: s.depart,
+            ret: s.ret,
+          });
+        }
         return json({
+          presupuestoUsadoUSD: budgetIn,
+          nochesUsadas: nightsIn,
           origen: origin,
           principales: res.suggestions.slice(0, 8).map(compact),
           alternativas: res.alternatives.map(compact),
@@ -271,11 +322,24 @@ Perfil del usuario:
 - Estilo: ${profile.style === "low" ? "económico" : profile.style === "mid" ? "confort" : "premium"}
 - Intereses: ${profile.interests.join(", ") || "(sin definir)"}
 - Ya visitó: ${profile.visited.join(", ") || "(nada cargado)"}
-- Máx. horas de vuelo: ${profile.maxFlightHours ?? "sin límite"}`;
+- Máx. horas de vuelo: ${profile.maxFlightHours ?? "sin límite"}${
+    briefForAgent(brief)
+      ? `
 
-  if (env.ANTHROPIC_API_KEY) return runClaude(env.ANTHROPIC_API_KEY, limited, context, messages, proposals);
-  if (env.AI) return runWorkersAI(env.AI, limited, context, messages, proposals);
-  throw new Error("El agente no está configurado.");
+Resumen del viaje que el usuario fue definiendo (respetalo siempre y no lo vuelvas a preguntar; si en el último mensaje cambia algo, seguí lo nuevo):
+${briefForAgent(brief)}`
+      : ""
+  }`;
+
+  const reply = env.ANTHROPIC_API_KEY
+    ? await runClaude(env.ANTHROPIC_API_KEY, limited, context, messages, proposals)
+    : env.AI
+      ? await runWorkersAI(env.AI, limited, context, messages, proposals)
+      : null;
+  if (!reply) throw new Error("El agente no está configurado.");
+  // Si ya hay un paquete armado para un destino, la tarjeta del paquete alcanza.
+  const packaged = new Set(reply.packages.map((p) => p.destinationId));
+  return { ...reply, cards: pickCards(reply.text, seen).filter((c) => !packaged.has(c.destinationId)) };
 }
 
 // ---------------------------------------------------------------------------
@@ -327,7 +391,7 @@ async function runClaude(
   context: string,
   messages: AgentMessage[],
   proposals: TripPackage[],
-): Promise<AgentReply> {
+): Promise<Omit<AgentReply, "cards">> {
   // Sin respuesta en 30 s, cortamos (y un solo reintento) para no colgar el pedido.
   const client = new Anthropic({ apiKey, timeout: 30_000, maxRetries: 1 });
   const final = await client.beta.messages.toolRunner({
@@ -375,7 +439,7 @@ async function runWorkersAI(
   context: string,
   messages: AgentMessage[],
   proposals: TripPackage[],
-): Promise<AgentReply> {
+): Promise<Omit<AgentReply, "cards">> {
   const specs = tools.map((t) => {
     const { $schema: _ignored, ...parameters } = z.toJSONSchema(t.inputSchema) as Record<string, unknown>;
     return { type: "function", function: { name: t.name, description: t.description, parameters } };

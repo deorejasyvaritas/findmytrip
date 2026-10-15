@@ -769,3 +769,19 @@ export interface TripPlan {
   /** Fechas flexibles: precio por día de la ventana y día elegido. */
   window?: TripWindow | null;
 }
+
+/** Destino que Trippy recomendó en una respuesta, para mostrarlo como tarjeta. */
+export interface AgentCard {
+  destinationId: string;
+  name: string;
+  country: string;
+  month: number;
+  year: number;
+  nights: number;
+  totalUSD: number;
+  perPersonUSD: number;
+  fit: "dentro" | "ajustado" | "estirando";
+  flightSource: PriceSource;
+  depart?: string;
+  ret?: string;
+}
