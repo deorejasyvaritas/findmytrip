@@ -1594,7 +1594,10 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .trippy-brief { padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--separator); display: flex; flex-direction: column; gap: 10px; }
 .trippy-brief-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .trippy-brief-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand-ink); margin-right: 2px; }
-.trippy-brief-row .plain { margin-left: auto; min-height: 28px; padding: 0 6px; }
+.trippy-brief-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.trippy-brief-actions button { min-height: 30px; padding: 0 10px; }
+.trippy-brief-buttons { grid-column: span 2; display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; }
+.trippy-brief-buttons .primary { min-height: 40px; gap: 6px; }
 .brief-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 4px 0 10px; border-radius: 999px; background: var(--brand-soft); color: var(--label); font-size: 13px; font-weight: 500; }
 .brief-chip button { width: 22px; min-height: 22px; height: 22px; padding: 0; border-radius: 50%; color: var(--label-2); background: transparent; }
 .brief-chip button:hover { background: rgba(0, 0, 0, 0.06); }

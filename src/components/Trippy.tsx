@@ -113,13 +113,14 @@ export default function Trippy() {
   const dest = destId ? destinations.find((d) => d.id === destId) : undefined;
   const starters = dest ? [`Armame un viaje a ${dest.name}: cuándo conviene y cuánto sale`, ...STARTERS.slice(0, 2)] : STARTERS;
 
-  async function send(text: string) {
+  async function send(text: string, fromBrief = false) {
     const content = text.trim();
     if (!content || loading) return;
     const next = [...messages, { role: "user" as const, content }];
-    const nextBrief = updateBrief(brief, content, destinations);
+    // Si el mensaje sale del botón de "Tu viaje", el resumen ya está bien: no se vuelve a leer.
+    const nextBrief = fromBrief ? brief : updateBrief(brief, content, destinations);
     setBrief(nextBrief);
-    setPrefs(prefSuggestions(content, profile).filter((p) => !dismissed.includes(p.key)));
+    if (!fromBrief) setPrefs(prefSuggestions(content, profile).filter((p) => !dismissed.includes(p.key)));
     setMessages(next);
     setInput("");
     await ask(next, nextBrief);
@@ -190,7 +191,23 @@ export default function Trippy() {
           </button>
         </header>
 
-        <TripBriefBar brief={brief} onChange={setBrief} editing={editing} setEditing={setEditing} />
+        <TripBriefBar
+          brief={brief}
+          onChange={setBrief}
+          editing={editing}
+          setEditing={setEditing}
+          busy={loading}
+          onSearch={() => {
+            setEditing(false);
+            const labels = briefChips(brief).map((c) => c.label).join(", ");
+            send(
+              brief.destinationName
+                ? `Con lo que puse en Tu viaje (${labels}): ¿cuánto sale y qué fechas convienen?`
+                : `Mostrame qué destinos me recomendás con lo que puse en Tu viaje (${labels}).`,
+              true,
+            );
+          }}
+        />
 
         <div className="trippy-log" aria-live="polite">
           {messages.length === 0 && (
@@ -375,11 +392,16 @@ function TripBriefBar({
   onChange,
   editing,
   setEditing,
+  busy,
+  onSearch,
 }: {
   brief: TripBrief;
   onChange: (b: TripBrief) => void;
   editing: boolean;
   setEditing: (v: boolean) => void;
+  busy: boolean;
+  /** Buscar con lo que hay en el resumen. */
+  onSearch: () => void;
 }) {
   const { destinations } = useApp();
   const chips = briefChips(brief);
@@ -397,9 +419,18 @@ function TripBriefBar({
             </button>
           </span>
         ))}
-        <button type="button" className="plain small" onClick={() => setEditing(!editing)} aria-expanded={editing}>
-          {editing ? "Listo" : "Editar"}
-        </button>
+        <span className="trippy-brief-actions">
+          {!editing && (
+            <button type="button" className="plain small" onClick={() => setEditing(true)} aria-expanded={false}>
+              Editar
+            </button>
+          )}
+          {!editing && chips.length > 0 && (
+            <button type="button" className="primary small" onClick={onSearch} disabled={busy}>
+              Buscar
+            </button>
+          )}
+        </span>
       </div>
       {editing && (
         <div className="trippy-brief-form">
@@ -447,6 +478,15 @@ function TripBriefBar({
               ))}
             </select>
           </label>
+          <div className="trippy-brief-buttons">
+            <button type="button" className="plain small" onClick={() => setEditing(false)}>
+              Cerrar
+            </button>
+            <button type="button" className="primary" onClick={onSearch} disabled={busy || chips.length === 0}>
+              <Icon name="search" size={16} />
+              Mostrame opciones con esto
+            </button>
+          </div>
         </div>
       )}
     </div>
