@@ -53,6 +53,13 @@ export function sanitizeTrip(raw: unknown): TripPackage | null {
         .filter((t) => t.id && t.label)
     : undefined;
   const notes = text(p.notes, 2000);
+  const activities = Array.isArray(p.activities)
+    ? p.activities
+        .slice(0, 60)
+        .filter((a) => a && typeof a.day === "number" && typeof a.title === "string")
+        .map((a) => ({ day: Math.max(1, Math.min(60, Math.round(a.day))), title: a.title.trim().slice(0, 200) }))
+        .filter((a) => a.title)
+    : undefined;
   const createdAt = typeof p.createdAt === "string" && !Number.isNaN(Date.parse(p.createdAt)) ? p.createdAt.slice(0, 40) : new Date().toISOString();
   return {
     id,
@@ -61,6 +68,7 @@ export function sanitizeTrip(raw: unknown): TripPackage | null {
     createdAt,
     ...(notes ? { notes } : {}),
     ...(checklist ? { checklist } : {}),
+    ...(activities?.length ? { activities } : {}),
   };
 }
 

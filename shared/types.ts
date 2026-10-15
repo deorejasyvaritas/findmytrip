@@ -350,6 +350,14 @@ export interface TripPackage {
   window?: DateWindow;
   /** Paradas con sus noches ("Ya sé a dónde"). */
   stops?: { name: string; nights: number }[];
+  /** Qué hacer cada día (armado con Trippy). */
+  activities?: DayActivity[];
+}
+
+export interface DayActivity {
+  /** 1 = día de salida. */
+  day: number;
+  title: string;
 }
 
 export interface ChecklistItem {

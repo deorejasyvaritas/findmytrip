@@ -239,9 +239,14 @@ export const api = {
     style: Style;
     flightPP?: number;
   }) => request<TripPackage>("/api/packages/build", { method: "POST", body: JSON.stringify(body) }),
-  agent: (messages: { role: "user" | "assistant"; content: string }[], profile: Profile, brief?: TripBrief) =>
+  agent: (
+    messages: { role: "user" | "assistant"; content: string }[],
+    profile: Profile,
+    brief?: TripBrief,
+    viewing?: { destinationId: string; month?: string; nights?: number; depart?: string },
+  ) =>
     request<{ text: string; packages: TripPackage[]; cards?: AgentCard[] }>("/api/agent", {
       method: "POST",
-      body: JSON.stringify({ messages, profile, brief }),
+      body: JSON.stringify({ messages, profile, brief, viewing }),
     }),
 };

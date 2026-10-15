@@ -1,4 +1,4 @@
-import type { Interest, Style } from "./types.ts";
+import type { Interest, MealPlan, Profile, Style } from "./types.ts";
 
 // Resumen del viaje que se va armando con lo que el usuario le cuenta a Trippy.
 // Se calcula en el navegador (sin IA, siempre igual), se puede editar a mano y se
@@ -193,3 +193,62 @@ export function briefForAgent(b: TripBrief): string {
 }
 
 export const MONTH_NAMES = MONTH_LABEL;
+
+// ---------------------------------------------------------------------------
+// Aprender gustos: cosas que el usuario dijo y conviene guardar en su perfil.
+// ---------------------------------------------------------------------------
+
+
+export interface PrefSuggestion {
+  key: string;
+  label: string;
+  patch: Partial<Profile>;
+}
+
+/** Preferencias que aparecen en el mensaje y todavía no están en el perfil. */
+export function prefSuggestions(text: string, profile: Profile): PrefSuggestion[] {
+  const t = normalize(text);
+  const out: PrefSuggestion[] = [];
+
+  const hours = t.match(/(?:no mas de|maximo|hasta)\s+(\d{1,2})\s*(?:h|hs|horas)\s*(?:de vuelo)?/);
+  if (hours && /vuelo|volar/.test(t)) {
+    const h = Number(hours[1]);
+    if (h >= 1 && profile.maxFlightHours !== h) out.push({ key: `hours:${h}`, label: `Vuelos de hasta ${h} horas`, patch: { maxFlightHours: h } });
+  }
+
+  const meal: [RegExp, MealPlan, string][] = [
+    [/all ?inclusive|todo incluido/, "all", "All inclusive"],
+    [/media pension/, "half", "Media pensión"],
+    [/con desayuno/, "breakfast", "Con desayuno"],
+  ];
+  for (const [re, plan, label] of meal) {
+    if (re.test(t) && profile.mealPlan !== plan) {
+      out.push({ key: `meal:${plan}`, label: `Régimen: ${label}`, patch: { mealPlan: plan } });
+      break;
+    }
+  }
+
+  if (/frente al mar|sobre la playa|vista al mar/.test(t) && !profile.beachfront) {
+    out.push({ key: "beachfront", label: "Alojamiento frente al mar", patch: { beachfront: true } });
+  }
+
+  const said = updateBrief({}, text, []);
+  const newInterests = (said.interests ?? []).filter((i) => !profile.interests.includes(i));
+  if (newInterests.length) {
+    out.push({
+      key: `interests:${newInterests.join(",")}`,
+      label: `Te gusta: ${newInterests.map((i) => i.charAt(0).toUpperCase() + i.slice(1)).join(", ")}`,
+      patch: { interests: [...profile.interests, ...newInterests] },
+    });
+  }
+  if (said.style && said.style !== profile.style) {
+    out.push({ key: `style:${said.style}`, label: `Estilo ${said.style === "low" ? "económico" : said.style === "mid" ? "confort" : "premium"}`, patch: { style: said.style } });
+  }
+  if (said.adults && said.adults !== profile.travelers) {
+    out.push({ key: `adults:${said.adults}`, label: `Viajan ${said.adults} ${said.adults === 1 ? "adulto" : "adultos"}`, patch: { travelers: said.adults } });
+  }
+  if (said.childAges?.length && said.childAges.join() !== (profile.childAges ?? []).join()) {
+    out.push({ key: `kids:${said.childAges.join(",")}`, label: `Menores de ${said.childAges.join(", ")} años`, patch: { childAges: said.childAges } });
+  }
+  return out;
+}

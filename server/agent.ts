@@ -45,6 +45,7 @@ Cómo trabajar:
 - Cuando el usuario muestre interés concreto en un destino y fechas, proponé un paquete con la herramienta proponer_paquete para que pueda guardarlo.
 - Respondé breve y escaneable: listas cortas, montos redondeados, y siempre una recomendación clara. Nada de relleno.
 - Mencioná documentación necesaria (DNI/pasaporte/visa) cuando sea relevante, recordando que es orientativo.
+- Si te piden el itinerario o qué hacer cada día, escribí un día por línea con este formato exacto: "Día 1: ...", "Día 2: ..." (una oración corta por día, con lugares concretos). Si piden cambiar un día, devolvé el itinerario completo actualizado con el mismo formato. No inventes precios de actividades.
 
 Catálogo de destinos disponibles (id: nombre · intereses):
 ${catalog}`;
@@ -88,6 +89,7 @@ export async function runAgent(
   profile: Profile,
   today = new Date(),
   brief: TripBrief = {},
+  viewing?: { destinationId: string; month?: string; nights?: number; depart?: string },
 ): Promise<AgentReply> {
   const tpToken = env.TRAVELPAYOUTS_TOKEN;
   const baseParty: Party = { adults: profile.travelers, childAges: profile.childAges ?? [], bags: profile.bags ?? "cabin" };
@@ -328,6 +330,12 @@ Perfil del usuario:
 
 Resumen del viaje que el usuario fue definiendo (respetalo siempre y no lo vuelvas a preguntar; si en el último mensaje cambia algo, seguí lo nuevo):
 ${briefForAgent(brief)}`
+      : ""
+  }${
+    viewing && getDestination(viewing.destinationId)
+      ? `
+
+Pantalla actual: el usuario está mirando la ficha de ${getDestination(viewing.destinationId)!.name} (id ${viewing.destinationId})${viewing.month ? `, mes ${viewing.month}` : ""}${viewing.nights ? `, ${viewing.nights} noches` : ""}${viewing.depart ? `, salida ${viewing.depart}` : ""}. Si pregunta "esto", "acá" o "¿conviene?", habla de ese destino y esas fechas.`
       : ""
   }`;
 

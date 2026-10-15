@@ -1,4 +1,4 @@
-import type { ChecklistItem, TripPackage } from "./types.ts";
+import type { ChecklistItem, DayActivity, TripPackage } from "./types.ts";
 
 // Presupuesto día por día y checklist de un viaje guardado (Mis viajes).
 // Se arma solo con los montos del paquete: nada inventado.
@@ -9,6 +9,8 @@ export interface PlanDay {
   date: string;
   kind: "ida" | "destino" | "vuelta" | "ida-vuelta";
   title: string;
+  /** Qué hacer ese día, si se armó con Trippy. */
+  activity?: string;
   /** Alojamiento de esa noche (0 el día de la vuelta). */
   lodgingUSD: number;
   /** Comidas, traslados y actividades del día; null si el paquete no los incluye. */
@@ -58,7 +60,8 @@ export function dayPlan(p: TripPackage): DayPlan | null {
             : `Día en ${p.destinationName}`;
     const lodgingUSD = last ? 0 : Math.round(lodgingPerNight);
     const spendUSD = spendPerDay == null ? null : Math.round(spendPerDay);
-    return { n: i + 1, date: isoOf(from + i * DAY), kind, title, lodgingUSD, spendUSD, totalUSD: lodgingUSD + (spendUSD ?? 0) };
+    const activity = p.activities?.find((a) => a.day === i + 1)?.title;
+    return { n: i + 1, date: isoOf(from + i * DAY), kind, title, ...(activity ? { activity } : {}), lodgingUSD, spendUSD, totalUSD: lodgingUSD + (spendUSD ?? 0) };
   });
 
   return {
@@ -86,3 +89,32 @@ export function defaultChecklist(abroad = true): ChecklistItem[] {
 }
 
 export const checklistProgress = (list: ChecklistItem[]) => ({ done: list.filter((t) => t.done).length, total: list.length });
+
+/**
+ * Itinerario escrito por Trippy: una línea por día que empieza con "Día N".
+ * Devuelve null si no hay al menos dos días.
+ */
+const DAY_LINE = /^d[ií]a\s+(\d{1,2})\s*(?:\([^)]*\))?\s*[:.\-–—]\s*(.+)$/i;
+const cleanLine = (raw: string) => raw.replace(/^[\s*•\-#>]+/, "").replace(/\*\*/g, "").trim();
+
+export function parseItinerary(text: string): DayActivity[] | null {
+  const out = new Map<number, string>();
+  for (const raw of text.split("\n")) {
+    const line = cleanLine(raw);
+    const m = line.match(DAY_LINE);
+    if (!m) continue;
+    const day = Number(m[1]);
+    if (day >= 1 && day <= 60 && !out.has(day)) out.set(day, m[2].trim().slice(0, 200));
+  }
+  if (out.size < 2) return null;
+  return [...out.entries()].sort((a, b) => a[0] - b[0]).map(([day, title]) => ({ day, title }));
+}
+
+/** El texto sin las líneas de días (cuando los días se muestran como lista aparte). */
+export const withoutDayLines = (text: string) =>
+  text
+    .split("\n")
+    .filter((l) => !DAY_LINE.test(cleanLine(l)))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();

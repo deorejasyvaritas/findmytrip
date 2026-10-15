@@ -1614,3 +1614,13 @@ a.list-row:hover { text-decoration: none; background: var(--fill-2); }
 .trippy-followups { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .trippy-followups .chip { min-height: 32px; font-size: 13px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--separator); color: var(--label); }
 .trippy-followups .chip:hover { box-shadow: inset 0 0 0 1px var(--label-3); }
+
+/* ---------- Trippy: itinerario y gustos para el perfil ---------- */
+.trippy-itinerary { background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 12px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.trippy-itinerary ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.trippy-itinerary li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.4; }
+.trippy-day-n { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand-ink); font-size: 12px; font-weight: 700; }
+.trippy-prefs { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--brand-soft); border-top: 1px solid var(--separator); }
+.trippy-prefs .grow { display: flex; flex-direction: column; min-width: 0; }
+.trippy-prefs button { min-height: 32px; padding: 0 12px; }
+.day-activity { font-size: 14px; color: var(--label); }

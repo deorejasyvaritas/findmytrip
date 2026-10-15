@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import type { AgentCard, TripPackage } from "../../shared/types.ts";
-import { MONTH_NAMES, briefChips, clearBriefField, updateBrief, type TripBrief } from "../../shared/brief.ts";
+import { MONTH_NAMES, briefChips, clearBriefField, prefSuggestions, updateBrief, type PrefSuggestion, type TripBrief } from "../../shared/brief.ts";
+import { parseItinerary, withoutDayLines } from "../../shared/itinerary.ts";
 import { capitalize, formatRange, monthName } from "../lib/format.ts";
 import { SOURCE_LABEL } from "./SuggestionCard.tsx";
 import { api } from "../lib/api.ts";
@@ -26,9 +27,10 @@ const FIT_LABEL = { dentro: "Entra holgado", ajustado: "Entra justo", estirando:
 /** Próximas preguntas probables, según lo que acaba de responder Trippy. */
 function followUps(last: ChatMessage | undefined, brief: TripBrief): string[] {
   if (!last || last.role !== "assistant") return [];
+  if (parseItinerary(last.content)) return ["Hacé el día 2 más tranquilo", "Sumá un día de playa o de descanso"];
   const first = last.cards?.[0];
   if (first) return [`Armame el paquete a ${first.name.split(" y ")[0]}`, "¿Hay algo más barato?", "¿Qué otro mes conviene?"];
-  if (last.packages?.length) return ["¿Hay fechas más baratas?", "Mostrame alternativas parecidas"];
+  if (last.packages?.length) return ["Armame los días del viaje", "¿Hay fechas más baratas?", "Mostrame alternativas parecidas"];
   if (brief.destinationName) return [`¿Cuándo conviene ir a ${brief.destinationName.split(" y ")[0]}?`, "Sorprendeme con algo distinto"];
   return ["Sorprendeme con algo distinto", "Algo más barato"];
 }
@@ -40,7 +42,7 @@ const STARTERS = [
 ];
 
 export default function Trippy() {
-  const { meta, profile, packages, savePackage, destinations } = useApp();
+  const { meta, profile, setProfile, packages, savePackage, updatePackage, destinations } = useApp();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -49,6 +51,9 @@ export default function Trippy() {
   // Resumen del viaje: se arma con lo que el usuario escribe y se manda en cada mensaje.
   const [brief, setBrief] = useStored<TripBrief>("fmt.brief", {});
   const [editing, setEditing] = useState(false);
+  // Gustos que dijo en el chat y se pueden guardar en el perfil (lo descartado no se vuelve a ofrecer).
+  const [prefs, setPrefs] = useState<PrefSuggestion[]>([]);
+  const [dismissed, setDismissed] = useStored<string[]>("fmt.prefDismissed", []);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +85,22 @@ export default function Trippy() {
     if (open) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, loading, open]);
 
+  /** Lo que el usuario está mirando (la ficha de un destino), para que "¿conviene?" se entienda. */
+  function viewing() {
+    if (!location.pathname.startsWith("/destino/")) return undefined;
+    const destinationId = location.pathname.split("/")[2];
+    if (!destinationId) return undefined;
+    const month = params.get("month") ?? undefined;
+    const nights = Number(params.get("nights")) || undefined;
+    const depart = params.get("depart") ?? undefined;
+    return {
+      destinationId,
+      ...(month && /^\d{4}-\d{2}$/.test(month) ? { month } : {}),
+      ...(nights && nights <= 60 ? { nights } : {}),
+      ...(depart && /^\d{4}-\d{2}-\d{2}$/.test(depart) ? { depart } : {}),
+    };
+  }
+
   function close() {
     setOpen(false);
     bubbleRef.current?.focus();
@@ -98,6 +119,7 @@ export default function Trippy() {
     const next = [...messages, { role: "user" as const, content }];
     const nextBrief = updateBrief(brief, content, destinations);
     setBrief(nextBrief);
+    setPrefs(prefSuggestions(content, profile).filter((p) => !dismissed.includes(p.key)));
     setMessages(next);
     setInput("");
     await ask(next, nextBrief);
@@ -111,7 +133,7 @@ export default function Trippy() {
       // Mandamos solo las últimas 20 vueltas para mantener el contexto acotado.
       const history = next.slice(-20).map(({ role, content }) => ({ role, content }));
       while (history.length && history[0].role !== "user") history.shift();
-      const reply = await api.agent(history, profile, currentBrief);
+      const reply = await api.agent(history, profile, currentBrief, viewing());
       setMessages([...next, { role: "assistant", content: reply.text, packages: reply.packages, cards: reply.cards }]);
     } catch (e) {
       setError((e as Error).message);
@@ -126,6 +148,8 @@ export default function Trippy() {
   }
 
   const savedIds = new Set(packages.map((p) => p.id));
+  // Solo el último itinerario se muestra como lista para guardar (los anteriores quedaron reemplazados).
+  const lastItineraryIndex = messages.reduce((acc, m, i) => (m.role === "assistant" && parseItinerary(m.content) ? i : acc), -1);
   // El último mensaje quedó sin respuesta (falló el pedido o se cerró la página): se puede reintentar.
   const unanswered = !loading && messages.length > 0 && messages[messages.length - 1].role === "user";
 
@@ -191,7 +215,22 @@ export default function Trippy() {
           )}
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>
-              <div className="bubble">{m.content}</div>
+              {i === lastItineraryIndex ? (
+                withoutDayLines(m.content) && <div className="bubble">{withoutDayLines(m.content)}</div>
+              ) : (
+                <div className="bubble">{m.content}</div>
+              )}
+              {m.role === "assistant" && i === lastItineraryIndex && (
+                <ItineraryCard
+                  days={parseItinerary(m.content)!}
+                  target={
+                    // El viaje guardado del destino del que se habla (el más reciente).
+                    [...packages].reverse().find((p) => p.destinationId === brief.destinationId) ??
+                    [...packages].reverse().find((p) => m.content.includes(p.destinationName.split(" y ")[0]))
+                  }
+                  onSave={(id, activities) => updatePackage(id, { activities })}
+                />
+              )}
               {m.cards?.map((c) => (
                 <TrippyCard key={c.destinationId} card={c} onOpen={() => window.matchMedia("(max-width: 767px)").matches && setOpen(false)} />
               ))}
@@ -246,6 +285,35 @@ export default function Trippy() {
           )}
           <div ref={endRef} />
         </div>
+
+        {prefs.length > 0 && (
+          <div className="trippy-prefs" role="status">
+            <div className="grow">
+              <strong className="small">¿Lo guardo en tu perfil?</strong>
+              <span className="small muted">{prefs.map((p) => p.label).join(" · ")}</span>
+            </div>
+            <button
+              type="button"
+              className="primary small"
+              onClick={() => {
+                setProfile(Object.assign({ ...profile }, ...prefs.map((p) => p.patch)));
+                setPrefs([]);
+              }}
+            >
+              Guardar
+            </button>
+            <button
+              type="button"
+              className="plain small"
+              onClick={() => {
+                setDismissed([...dismissed, ...prefs.map((p) => p.key)].slice(-100));
+                setPrefs([]);
+              }}
+            >
+              Ahora no
+            </button>
+          </div>
+        )}
 
         <form className="trippy-input" onSubmit={submit}>
           <textarea
@@ -380,6 +448,46 @@ function TripBriefBar({
             </select>
           </label>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Itinerario día por día que escribió Trippy, con opción de guardarlo en el viaje. */
+function ItineraryCard({
+  days,
+  target,
+  onSave,
+}: {
+  days: { day: number; title: string }[];
+  target?: TripPackage;
+  onSave: (id: string, activities: { day: number; title: string }[]) => void;
+}) {
+  const saved = Boolean(target?.activities && JSON.stringify(target.activities) === JSON.stringify(days));
+  return (
+    <div className="trippy-itinerary">
+      <ol>
+        {days.map((d) => (
+          <li key={d.day}>
+            <span className="trippy-day-n">{d.day}</span>
+            <span>{d.title}</span>
+          </li>
+        ))}
+      </ol>
+      {target ? (
+        saved ? (
+          <span className="success small row gap-sm">
+            <Icon name="check" size={14} />
+            Guardado en tu viaje a {target.destinationName}
+          </span>
+        ) : (
+          <button type="button" className="primary small" onClick={() => onSave(target.id, days)}>
+            <Icon name="bookmark" size={16} />
+            Guardar en mi viaje a {target.destinationName}
+          </button>
+        )
+      ) : (
+        <span className="small muted">Para guardarlo, primero guardá el viaje (pedile a Trippy que arme el paquete).</span>
       )}
     </div>
   );

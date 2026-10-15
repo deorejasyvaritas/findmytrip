@@ -87,6 +87,7 @@ function DayByDay({ pkg, domestic }: { pkg: TripPackage; domestic: boolean }) {
                 {capitalize(formatDate(d.date, { weekday: "short", day: "numeric", month: "short" }))} · {KIND_LABEL[d.kind]}
               </span>
               <strong className="day-title">{d.title}</strong>
+              {d.activity && <span className="day-activity">{d.activity}</span>}
               {(d.lodgingUSD > 0 || d.spendUSD != null) && (
                 <span className="small muted">
                   {[d.lodgingUSD > 0 ? `Alojamiento ${money(d.lodgingUSD)}` : null, d.spendUSD != null ? `Gastos ${money(d.spendUSD)}` : null]

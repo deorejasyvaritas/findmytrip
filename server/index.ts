@@ -497,13 +497,21 @@ app.post("/agent", async (c) => {
           style: style.optional(),
         })
         .optional(),
+      viewing: z
+        .object({
+          destinationId: z.string().max(60),
+          month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+          nights: z.number().int().min(1).max(60).optional(),
+          depart: isoDate.optional(),
+        })
+        .optional(),
     })
     .parse(await c.req.json());
   if (body.messages[0].role !== "user" || body.messages.at(-1)!.role !== "user") {
     return c.json({ error: "La conversación debe empezar y terminar con un mensaje del usuario." }, 400);
   }
   try {
-    return c.json(await runAgent(env(c), body.messages, body.profile, new Date(), body.brief ?? {}));
+    return c.json(await runAgent(env(c), body.messages, body.profile, new Date(), body.brief ?? {}, body.viewing));
   } catch (err) {
     console.error("[agente]", err);
     const free = !has(env(c).ANTHROPIC_API_KEY);
