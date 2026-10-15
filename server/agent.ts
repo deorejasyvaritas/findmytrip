@@ -43,6 +43,7 @@ Cómo trabajar:
 - Usá las herramientas para obtener precios; no inventes números. Ningún precio es en vivo: los marcados "visto en los últimos días" son reales pero los vio otra gente en Aviasales hace poco (pueden cambiar); "Google Flights hoy" es la cotización del día; el resto son estimaciones en USD. Aclaralo brevemente y nunca digas "en vivo".
 - Si falta un dato clave (presupuesto, cantidad de noches), asumí algo razonable a partir del perfil y decilo, en vez de frenar la conversación con preguntas.
 - Cuando el usuario muestre interés concreto en un destino y fechas, proponé un paquete con la herramienta proponer_paquete para que pueda guardarlo.
+- Nunca le hables al usuario de herramientas, parámetros, errores técnicos ni de "la sección Tu viaje": si una consulta falla, reintentá o respondé con lo que tengas. Si el resumen del viaje ya tiene presupuesto, noches y fechas, no los vuelvas a pedir ni a confirmar: buscá directamente.
 - Respondé breve y escaneable: listas cortas, montos redondeados, y siempre una recomendación clara. Nada de relleno.
 - Mencioná documentación necesaria (DNI/pasaporte/visa) cuando sea relevante, recordando que es orientativo.
 - Si te piden el itinerario o qué hacer cada día, escribí un día por línea con este formato exacto: "Día 1: ...", "Día 2: ..." (una oración corta por día, con lugares concretos). Si piden cambiar un día, devolvé el itinerario completo actualizado con el mismo formato. No inventes precios de actividades.
@@ -224,8 +225,8 @@ export async function runAgent(
         style: z.enum(STYLES).optional(),
       }),
       run: async (input) => {
-        const dest = getDestination(input.destinationId);
-        if (!dest) return `Destino desconocido: ${input.destinationId}`;
+        const dest = getDestination(resolveDestinationId(input.destinationId) ?? input.destinationId);
+        if (!dest) return `Destino desconocido: ${input.destinationId}. Usá un id del catálogo.`;
         const party = input.travelers ? { ...baseParty, adults: input.travelers } : baseParty;
         const rows = monthOverview(origin, dest, input.nights, party, input.style ?? profile.style, today);
         return json(rows.map((r) => ({ mes: `${monthName(r.month)} ${r.year}`, vueloPP: r.flightUSD, totalPP: r.totalPerPersonUSD, recomendado: r.best })));
@@ -240,8 +241,8 @@ export async function runAgent(
         nights: z.number().int().min(1).max(60),
       }),
       run: async (input) => {
-        const dest = getDestination(input.destinationId);
-        if (!dest) return `Destino desconocido: ${input.destinationId}`;
+        const dest = getDestination(resolveDestinationId(input.destinationId) ?? input.destinationId);
+        if (!dest) return `Destino desconocido: ${input.destinationId}. Usá un id del catálogo.`;
         const cal = await flightCalendar(tpToken, origin, dest, input.month, input.nights);
         const top = [...cal.days].sort((a, b) => a.priceUSD - b.priceUSD).slice(0, 5);
         return json({
@@ -260,8 +261,8 @@ export async function runAgent(
         travelers: z.number().int().min(1).max(12).optional(),
       }),
       run: async (input) => {
-        const dest = getDestination(input.destinationId);
-        if (!dest) return `Destino desconocido: ${input.destinationId}`;
+        const dest = getDestination(resolveDestinationId(input.destinationId) ?? input.destinationId);
+        if (!dest) return `Destino desconocido: ${input.destinationId}. Usá un id del catálogo.`;
         const stays = stayOptions(dest, input.checkin, input.nights, input.travelers ? { ...baseParty, adults: input.travelers } : baseParty);
         return json(stays.map(({ links: _links, ...s }) => s));
       },
@@ -281,8 +282,8 @@ export async function runAgent(
         notes: z.string().optional().describe("Tips o comentarios para el usuario"),
       }),
       run: async (input) => {
-        const dest = getDestination(input.destinationId);
-        if (!dest) return `Destino desconocido: ${input.destinationId}`;
+        const dest = getDestination(resolveDestinationId(input.destinationId) ?? input.destinationId);
+        if (!dest) return `Destino desconocido: ${input.destinationId}. Usá un id del catálogo.`;
         const party = partyFrom(input);
         const style = input.style ?? profile.style;
         const cal = await flightCalendar(tpToken, origin, dest, input.departDate.slice(0, 7), input.nights);
@@ -328,7 +329,7 @@ Perfil del usuario:
     briefForAgent(brief)
       ? `
 
-Resumen del viaje que el usuario fue definiendo (respetalo siempre y no lo vuelvas a preguntar; si en el último mensaje cambia algo, seguí lo nuevo):
+Resumen del viaje que el usuario fue definiendo (respetalo siempre y no lo vuelvas a preguntar; si en el último mensaje cambia algo, seguí lo nuevo; si solo confirma con "sí" o "dale", buscá con estos datos; la herramienta explorar_destinos los toma solos si no los pasás):
 ${briefForAgent(brief)}`
       : ""
   }${
@@ -348,6 +349,103 @@ Pantalla actual: el usuario está mirando la ficha de ${getDestination(viewing.d
   // Si ya hay un paquete armado para un destino, la tarjeta del paquete alcanza.
   const packaged = new Set(reply.packages.map((p) => p.destinationId));
   return { ...reply, cards: pickCards(reply.text, seen).filter((c) => !packaged.has(c.destinationId)) };
+}
+
+// ---------------------------------------------------------------------------
+// Arreglo de parámetros: la IA gratuita a veces manda "3000" en vez de 3000,
+// "enero" en vez de 1 o "Natal y Pipa" en vez del id. Lo corregimos acá en vez
+// de devolverle un error (que después le contaba al usuario).
+// ---------------------------------------------------------------------------
+
+const MONTHS_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+/** Id del catálogo a partir de un id o un nombre ("Natal y Pipa", "natal"). */
+export function resolveDestinationId(v: unknown): string | undefined {
+  if (typeof v !== "string" || !v.trim()) return undefined;
+  if (getDestination(v)) return v;
+  const n = normalize(v).replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const slug = n.replace(/ /g, "-");
+  const hit =
+    DESTINATIONS.find((d) => d.id === slug) ??
+    DESTINATIONS.find((d) => normalize(d.name) === n) ??
+    DESTINATIONS.find((d) => n.length >= 4 && (normalize(d.name).startsWith(n) || n.startsWith(normalize(d.name.split(" y ")[0]))));
+  return hit?.id;
+}
+
+/** Opciones de un campo enum (o lista de enums), sin importar si es opcional. */
+function enumOptions(field: unknown): { options: string[]; array: boolean } | null {
+  let f = field as { unwrap?: () => unknown; options?: string[]; element?: unknown; def?: { type?: string } } | undefined;
+  for (let i = 0; i < 3 && f?.unwrap && f.def?.type === "optional"; i++) f = f.unwrap() as typeof f;
+  if (!f) return null;
+  if (Array.isArray(f.options)) return { options: f.options, array: false };
+  const el = f.element as { options?: string[] } | undefined;
+  if (el && Array.isArray(el.options)) return { options: el.options, array: true };
+  return null;
+}
+
+const matchOption = (options: string[], v: unknown) =>
+  typeof v === "string" ? options.find((o) => normalize(o) === normalize(v.trim())) ?? v : v;
+
+function coerceValue(key: string, v: unknown, field: unknown): unknown {
+  if (key === "destinationId") return resolveDestinationId(v) ?? v;
+  const en = enumOptions(field);
+  if (en) {
+    const list = en.array ? (Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : [v]) : null;
+    return list ? list.map((x) => matchOption(en.options, x)) : matchOption(en.options, v);
+  }
+  if (Array.isArray(v)) return v.map((x) => (typeof x === "string" && /^\d+$/.test(x.trim()) ? Number(x) : x));
+  if (typeof v === "string") {
+    const t = normalize(v.trim());
+    if (key === "month") {
+      const m = MONTHS_ES.findIndex((x) => t.startsWith(x.slice(0, 3)));
+      if (m >= 0) return m + 1;
+    }
+    if (/^(true|false)$/.test(t)) return t === "true";
+    if (/^\[.*\]$/.test(t)) {
+      try {
+        return JSON.parse(v);
+      } catch {
+        /* sigue */
+      }
+    }
+    if (/^\d{4}-\d{2}/.test(t)) return v.trim();
+    const num = Number(t.replace(/usd|u\$s|\$|\s/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", "."));
+    if (/\d/.test(t) && Number.isFinite(num)) return num;
+    return v.trim();
+  }
+  if (typeof v === "number" && ["nights", "adults", "month", "travelers"].includes(key)) return Math.round(v);
+  return v;
+}
+
+/**
+ * Valida los parámetros de una herramienta corrigiendo lo típico. Si algo
+ * opcional sigue mal, lo saca (y se usa el valor por defecto del resumen).
+ */
+export function repairArgs<S extends z.ZodObject>(schema: S, raw: unknown): ReturnType<S["safeParse"]> {
+  const obj: Record<string, unknown> = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === null || v === "" || (Array.isArray(v) && v.length === 0)) delete obj[k];
+    else obj[k] = coerceValue(k, v, schema.shape[k]);
+  }
+  let parsed = schema.safeParse(obj) as ReturnType<S["safeParse"]>;
+  for (let i = 0; i < 3 && !parsed.success; i++) {
+    let changed = false;
+    for (const issue of parsed.error!.issues) {
+      const key = String(issue.path[0] ?? "");
+      if (!key || !(key in obj)) continue;
+      // Si el campo es opcional, sin él igual funciona: lo sacamos.
+      if (schema.shape[key]?.safeParse(undefined).success) {
+        delete obj[key];
+        changed = true;
+      } else if (Array.isArray(obj[key]) && typeof issue.path[1] === "number") {
+        (obj[key] as unknown[]).splice(issue.path[1] as number, 1);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+    parsed = schema.safeParse(obj) as ReturnType<S["safeParse"]>;
+  }
+  return parsed;
 }
 
 // ---------------------------------------------------------------------------
@@ -490,11 +588,11 @@ async function runWorkersAI(
           raw = {};
         }
       }
-      const parsed = t.inputSchema.safeParse(raw ?? {});
+      const parsed = repairArgs(t.inputSchema, raw);
       results.push(
         parsed.success
           ? `${t.name}: ${await t.run(parsed.data)}`
-          : `${t.name}: parámetros inválidos (${parsed.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")})`,
+          : `${t.name}: no se pudo consultar con esos datos (${parsed.error.issues.map((i) => i.path.join(".")).join(", ")}). Volvé a llamarla con números y ids del catálogo, sin contarle esto al usuario.`,
       );
     }
     // Devolvemos los resultados como texto: es el formato que mejor entienden todos los modelos.
