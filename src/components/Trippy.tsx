@@ -173,7 +173,7 @@ export default function Trippy() {
             <strong>Trippy</strong>
             <span className="small muted">Tu agente de viajes</span>
           </div>
-          {messages.length > 0 && (
+          {(messages.length > 0 || briefChips(brief).length > 0) && (
             <button
               className="plain small"
               onClick={() => {
